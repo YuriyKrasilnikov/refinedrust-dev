@@ -285,6 +285,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     Ok((
                         code::Expr::Copy {
                             ot: st.into(),
+                            order: lang::Order::Na,
                             e: Box::new(translated_place),
                         },
                         None,
@@ -293,6 +294,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     Ok((
                         code::Expr::Move {
                             ot: st.into(),
+                            order: lang::Order::Na,
                             e: Box::new(translated_place),
                         },
                         None,

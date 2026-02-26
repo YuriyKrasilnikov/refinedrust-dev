@@ -27,6 +27,13 @@ Inductive un_op : Set :=
 Inductive order : Set :=
 | ScOrd | Na1Ord | Na2Ord.
 
+Inductive atomic_rmw_op : Set :=
+  | RmwXchg
+  | RmwAdd | RmwSub
+  | RmwAnd | RmwOr | RmwXor | RmwNand
+  | RmwMaxS | RmwMinS
+  | RmwMaxU | RmwMinU.
+
 Section expr.
 Local Unset Elimination Schemes.
 Inductive expr :=
@@ -41,6 +48,7 @@ Inductive expr :=
 | CopyAllocId (ot1 : op_type) (e1 : expr) (e2 : expr)
 | Deref (o : order) (ot : op_type) (memcast : bool) (e : expr)
 | CAS (ot : op_type) (e1 e2 e3 : expr)
+| AtomicRMW (op : atomic_rmw_op) (ot : op_type) (e1 e2 : expr)
 | Call (f : expr) (args : list expr)
 | Concat (es : list expr)
 | IfE (ot : op_type) (e1 e2 e3 : expr)
@@ -61,6 +69,7 @@ Lemma expr_ind (P : expr → Prop) :
   (∀ (ot1 : op_type) (e1 e2 : expr), P e1 → P e2 → P (CopyAllocId ot1 e1 e2)) →
   (∀ (o : order) (ot : op_type) (memcast : bool) (e : expr), P e → P (Deref o ot memcast e)) →
   (∀ (ot : op_type) (e1 e2 e3 : expr), P e1 → P e2 → P e3 → P (CAS ot e1 e2 e3)) →
+  (∀ (op : atomic_rmw_op) (ot : op_type) (e1 e2 : expr), P e1 → P e2 → P (AtomicRMW op ot e1 e2)) →
   (∀ (f : expr) (args : list expr), P f → Forall P args → P (Call f args)) →
   (∀ (es : list expr), Forall P es → P (Concat es)) →
   (∀ (ot : op_type) (e1 e2 e3 : expr), P e1 → P e2 → P e3 → P (IfE ot e1 e2 e3)) →
@@ -70,9 +79,9 @@ Lemma expr_ind (P : expr → Prop) :
   ∀ (e : expr), P e.
 Proof.
   move => *. generalize dependent P => P. match goal with | e : expr |- _ => revert e end.
-  fix FIX 1. move => [ ^e] => ????????? Hcall Hconcat *.
-  10: { apply Hcall; [ |apply Forall_true => ?]; by apply: FIX. }
-  10: { apply Hconcat. apply Forall_true => ?. by apply: FIX. }
+  fix FIX 1. move => [ ^e] => ?????????? Hcall Hconcat *.
+  11: { apply Hcall; [ |apply Forall_true => ?]; by apply: FIX. }
+  11: { apply Hconcat. apply Forall_true => ?. by apply: FIX. }
   all: auto.
 Qed.
 
@@ -175,6 +184,7 @@ with rtexpr :=
 | RTDeref (o : order) (ot : op_type) (memcast : bool) (e : runtime_expr)
 | RTCall (f : runtime_expr) (args : list runtime_expr)
 | RTCAS (ot : op_type) (e1 e2 e3 : runtime_expr)
+| RTAtomicRMW (op : atomic_rmw_op) (ot : op_type) (e1 e2 : runtime_expr)
 | RTConcat (es : list runtime_expr)
 | RTAlloc (e_size : runtime_expr) (e_align : runtime_expr)
 | RTIfE (ot : op_type) (e1 e2 e3 : runtime_expr)
@@ -213,6 +223,7 @@ Fixpoint to_rtexpr (π : thread_id) (e : expr) : runtime_expr :=
   | Deref o ot mc e => Expr π $ RTDeref o ot mc (to_rtexpr π e)
   | Call f args => Expr π $ RTCall (to_rtexpr π f) (to_rtexpr π <$> args)
   | CAS ot e1 e2 e3 => Expr π $ RTCAS ot (to_rtexpr π e1) (to_rtexpr π e2) (to_rtexpr π e3)
+  | AtomicRMW op ot e1 e2 => Expr π $ RTAtomicRMW op ot (to_rtexpr π e1) (to_rtexpr π e2)
   | Concat es => Expr π $ RTConcat (to_rtexpr π <$> es)
   | IfE ot e1 e2 e3 => Expr π $ RTIfE ot (to_rtexpr π e1) (to_rtexpr π e2) (to_rtexpr π e3)
   | Alloc e_size e_align => Expr π $ RTAlloc (to_rtexpr π e_size) (to_rtexpr π e_align)
@@ -505,6 +516,96 @@ Inductive check_un_op : un_op → op_type → val → bool → Prop :=
     check_un_op op (IntOp it) vs b
 .
 
+(** Evaluate an atomic RMW operation: compute the new value from old and argument. *)
+Definition atomic_rmw_eval (op : atomic_rmw_op) (ot : op_type) (vo varg : val) : option val :=
+  match op with
+  | RmwXchg => Some varg
+  | RmwAdd =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          n ← compute_arith_bin_op n1 n2 it AddOp;
+          val_of_Z (wrap_to_it n it) it
+      | _ => None
+      end
+  | RmwSub =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          n ← compute_arith_bin_op n1 n2 it SubOp;
+          val_of_Z (wrap_to_it n it) it
+      | _ => None
+      end
+  | RmwAnd =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          n ← compute_arith_bin_op n1 n2 it AndOp;
+          val_of_Z (wrap_to_it n it) it
+      | _ => None
+      end
+  | RmwOr =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          n ← compute_arith_bin_op n1 n2 it OrOp;
+          val_of_Z (wrap_to_it n it) it
+      | _ => None
+      end
+  | RmwXor =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          n ← compute_arith_bin_op n1 n2 it XorOp;
+          val_of_Z (wrap_to_it n it) it
+      | _ => None
+      end
+  | RmwNand =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          val_of_Z (wrap_to_it (Z.lnot (Z.land n1 n2)) it) it
+      | _ => None
+      end
+  | RmwMaxS =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          val_of_Z (Z.max n1 n2) it
+      | _ => None
+      end
+  | RmwMinS =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          val_of_Z (Z.min n1 n2) it
+      | _ => None
+      end
+  | RmwMaxU | RmwMinU =>
+      match ot with
+      | IntOp it =>
+          n1 ← val_to_Z vo it;
+          n2 ← val_to_Z varg it;
+          let u1 := n1 `mod` int_modulus it in
+          let u2 := n2 `mod` int_modulus it in
+          let r := match op with
+            | RmwMaxU => if bool_decide (u1 ≥ u2)%Z then n1 else n2
+            | RmwMinU => if bool_decide (u1 ≤ u2)%Z then n1 else n2
+            | _ => n1 (* unreachable — outer match restricts to RmwMaxU|RmwMinU *)
+          end in
+          val_of_Z r it
+      | _ => None
+      end
+  end.
+
 (*** Evaluation of Expressions *)
 
 Inductive expr_step : expr → thread_id → state → list Empty_set → runtime_expr → state → list runtime_expr → Prop :=
@@ -572,6 +673,15 @@ comparing pointers? (see lambda rust) *)
     z1 = z2 →
     expr_step (CAS ot (Val v1) (Val v2) (Val v3)) π σ []
               (RTVal (val_of_bool true)) (heap_fmap (heap_upd l1 v3 (λ _, RSt 0%nat)) σ) []
+| AtomicRMWS op ot l vo σ π v1 v2 v_new:
+    val_to_loc v1 = Some l →
+    heap_at l (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
+    v2 `has_layout_val` ot_layout ot →
+    v_new `has_layout_val` ot_layout ot →
+    ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
+    atomic_rmw_eval op ot vo v2 = Some v_new →
+    expr_step (AtomicRMW op ot (Val v1) (Val v2)) π σ []
+              (RTVal vo) (heap_fmap (heap_upd l v_new (λ _, RSt 0%nat)) σ) []
 | CallS π lsa σ hs' ts ts' vf vs f fn a:
     val_to_loc vf = Some f →
     f = fn_loc a →
@@ -770,6 +880,8 @@ Inductive expr_ectx :=
 | CASLCtx (ot : op_type) (e2 e3 : runtime_expr)
 | CASMCtx (ot : op_type) (v1 : val) (e3 : runtime_expr)
 | CASRCtx (ot : op_type) (v1 v2 : val)
+| AtomicRMWLCtx (op : atomic_rmw_op) (ot : op_type) (e2 : runtime_expr)
+| AtomicRMWRCtx (op : atomic_rmw_op) (ot : op_type) (v1 : val)
 | ConcatCtx (vs : list val) (es : list runtime_expr)
 | IfECtx (ot : op_type) (e2 e3 : runtime_expr)
 | AllocLCtx (e_align : runtime_expr)
@@ -793,6 +905,8 @@ Definition expr_fill_item (Ki : expr_ectx) (e : runtime_expr) : rtexpr :=
   | CASLCtx ot e2 e3 => RTCAS ot e e2 e3
   | CASMCtx ot v1 e3 => RTCAS ot (RTVal v1) e e3
   | CASRCtx ot v1 v2 => RTCAS ot (RTVal v1) (RTVal v2) e
+  | AtomicRMWLCtx op ot e2 => RTAtomicRMW op ot e e2
+  | AtomicRMWRCtx op ot v1 => RTAtomicRMW op ot (RTVal v1) e
   | ConcatCtx vs es => RTConcat (((RTVal <$> vs)) ++ e :: es)
   | IfECtx ot e2 e3 => RTIfE ot e e2 e3
   | AllocLCtx e_align => RTAlloc e e_align

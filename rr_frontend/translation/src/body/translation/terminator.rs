@@ -12,9 +12,52 @@ use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
 
 use super::TX;
+use rr_rustc_interface::span;
+
 use crate::base::*;
 use crate::environment::borrowck::facts;
 use crate::{search, types};
+
+/// Classification of atomic intrinsics.
+///
+/// Rust atomic methods (e.g. `AtomicU8::load`) compile to MIR intrinsics
+/// (`core::intrinsics::atomic_load`). On nightly-2026-02-23, the ordering
+/// is a const generic parameter — the intrinsic name does NOT include the
+/// ordering suffix.
+#[derive(Debug)]
+enum AtomicIntrinsicKind {
+    Load,
+    Store,
+    Rmw(lang::AtomicRmwOp),
+    /// Strong and weak CAS are equivalent in the SC interleaving model.
+    Cxchg,
+    Fence,
+}
+
+/// Classify an atomic intrinsic by its exact name.
+///
+/// Returns `None` for names not recognized as atomic intrinsics.
+/// The caller must treat `None` as an error if the name starts with `"atomic_"`.
+fn classify_atomic_intrinsic(name: &str) -> Option<AtomicIntrinsicKind> {
+    match name {
+        "atomic_load" => Some(AtomicIntrinsicKind::Load),
+        "atomic_store" => Some(AtomicIntrinsicKind::Store),
+        "atomic_cxchg" | "atomic_cxchgweak" => Some(AtomicIntrinsicKind::Cxchg),
+        "atomic_xchg" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xchg)),
+        "atomic_xadd" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Add)),
+        "atomic_xsub" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Sub)),
+        "atomic_and" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::And)),
+        "atomic_or" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Or)),
+        "atomic_xor" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xor)),
+        "atomic_nand" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Nand)),
+        "atomic_max" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MaxSigned)),
+        "atomic_min" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MinSigned)),
+        "atomic_umax" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MaxUnsigned)),
+        "atomic_umin" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MinUnsigned)),
+        "atomic_fence" | "atomic_singlethreadfence" => Some(AtomicIntrinsicKind::Fence),
+        _ => None,
+    }
+}
 
 #[expect(clippy::multiple_inherent_impl)]
 impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
@@ -84,6 +127,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let st = self.ty_translator.translate_type_to_syn_type(ty)?;
         let translated_rhs = code::Expr::Deref {
             ot: st.into(),
+            order: lang::Order::Na,
             e: Box::new(translated_op),
         };
 
@@ -114,11 +158,185 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         let assign = code::PrimStmt::Assign {
             ot: lang::OpType::Int(translated_it),
+            order: lang::Order::Na,
             e1: Box::new(translated_place),
             e2: Box::new(discriminant_acc),
         };
 
         Ok(vec![assign])
+    }
+
+    /// Extract DefId from a function call operand.
+    fn extract_fn_def_id(func: &mir::Operand<'_>) -> Option<DefId> {
+        let mir::Operand::Constant(box c) = func else {
+            return None;
+        };
+
+        let mir::Const::Val(_, ty) = c.const_ else {
+            return None;
+        };
+
+        let ty::TyKind::FnDef(did, _) = ty.kind() else {
+            return None;
+        };
+
+        Some(*did)
+    }
+
+    /// Check if a function call targets an atomic intrinsic and classify it.
+    ///
+    /// Returns `Ok(None)` if the call is not an atomic intrinsic (normal function call).
+    /// Returns `Err` if the call IS an atomic intrinsic but unrecognized (B₃ FAIL-FIRST).
+    fn try_classify_atomic_intrinsic(
+        &self,
+        func: &mir::Operand<'tcx>,
+    ) -> Result<Option<AtomicIntrinsicKind>, TranslationError<'tcx>> {
+        let Some(did) = Self::extract_fn_def_id(func) else {
+            return Ok(None);
+        };
+
+        let Some(intrinsic_def) = self.env.tcx().intrinsic(did) else {
+            return Ok(None);
+        };
+
+        let name = intrinsic_def.name.as_str();
+        if !name.starts_with("atomic_") {
+            return Ok(None);
+        }
+
+        match classify_atomic_intrinsic(name) {
+            Some(kind) => Ok(Some(kind)),
+            None => Err(TranslationError::UnsupportedFeature {
+                description: format!(
+                    "unknown atomic intrinsic '{name}'; \
+                     this may be a new intrinsic not yet supported by RefinedRust"
+                ),
+            }),
+        }
+    }
+
+    /// Extract the pointee OpType from a raw pointer operand.
+    fn get_pointee_op_type(
+        &self,
+        op: &mir::Operand<'tcx>,
+    ) -> Result<lang::OpType, TranslationError<'tcx>> {
+        let ptr_ty = self.get_type_of_operand(op);
+        match ptr_ty.kind() {
+            ty::TyKind::RawPtr(pointee_ty, _) => {
+                let st = self.ty_translator.translate_type_to_syn_type(*pointee_ty)?;
+                Ok((&st).into())
+            },
+            _ => Err(TranslationError::UnsupportedFeature {
+                description: format!(
+                    "expected raw pointer type for atomic intrinsic argument, got {ptr_ty:?}"
+                ),
+            }),
+        }
+    }
+
+    /// Translate an atomic intrinsic to Caesium primitive statements.
+    ///
+    /// All Rust memory orderings map to `ScOrd` (sequentially consistent) — a sound
+    /// over-approximation in the interleaving semantics model.
+    fn translate_atomic_intrinsic(
+        &mut self,
+        kind: AtomicIntrinsicKind,
+        args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
+        destination: &mir::Place<'tcx>,
+    ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
+        match kind {
+            AtomicIntrinsicKind::Load => {
+                // atomic_load<T, ORD>(src: *const T) -> T
+                // Emit: dest <-{ot, Na} !{ot, ScOrd}(ptr)
+                let ot = self.get_pointee_op_type(&args[0].node)?;
+                let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
+
+                let deref_expr = code::Expr::Deref {
+                    ot: ot.clone(),
+                    order: lang::Order::Sc,
+                    e: Box::new(ptr_expr),
+                };
+
+                let dest_place = self.translate_place(destination)?;
+                Ok(vec![code::PrimStmt::Assign {
+                    ot,
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(deref_expr),
+                }])
+            },
+
+            AtomicIntrinsicKind::Store => {
+                // atomic_store<T, ORD>(dst: *mut T, val: T) -> ()
+                // Emit: ptr <-{ot, ScOrd} val; dest <-{UnitOp, Na} zst_val
+                let ot = self.get_pointee_op_type(&args[0].node)?;
+                let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
+                let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
+
+                let atomic_store = code::PrimStmt::Assign {
+                    ot,
+                    order: lang::Order::Sc,
+                    e1: Box::new(ptr_expr),
+                    e2: Box::new(val_expr),
+                };
+
+                let dest_place = self.translate_place(destination)?;
+                let unit_assign = code::PrimStmt::Assign {
+                    ot: lang::SynType::Unit.into(),
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
+                };
+
+                Ok(vec![atomic_store, unit_assign])
+            },
+
+            AtomicIntrinsicKind::Rmw(rmw_op) => {
+                // atomic_xchg/xadd/xsub/and/or/xor/nand/max/min/umax/umin
+                // <T, ORD>(dst: *mut T, val: T) -> T  (returns old value)
+                // Emit: dest <-{ot, Na} AtomicRMW op ot (ptr) (val)
+                let ot = self.get_pointee_op_type(&args[0].node)?;
+                let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
+                let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
+
+                let rmw_expr = code::Expr::AtomicRmw {
+                    op: rmw_op,
+                    ot: ot.clone(),
+                    target: Box::new(ptr_expr),
+                    arg: Box::new(val_expr),
+                };
+
+                let dest_place = self.translate_place(destination)?;
+                Ok(vec![code::PrimStmt::Assign {
+                    ot,
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(rmw_expr),
+                }])
+            },
+
+            AtomicIntrinsicKind::Cxchg => {
+                // Caesium CAS returns bool, Rust returns (T, bool).
+                // Requires multi-step shim with field projection.
+                Err(TranslationError::Unimplemented {
+                    description: "atomic compare_exchange translation \
+                                  (CAS return type mismatch: Caesium returns bool, \
+                                  Rust returns (T, bool))"
+                        .to_owned(),
+                })
+            },
+
+            AtomicIntrinsicKind::Fence => {
+                // No-op in SC interleaving model. Assign () to destination.
+                let dest_place = self.translate_place(destination)?;
+                Ok(vec![code::PrimStmt::Assign {
+                    ot: lang::SynType::Unit.into(),
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
+                }])
+            },
+        }
     }
 
     /// Translate a terminator.
@@ -155,6 +373,14 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     return Ok(code::Stmt::Prim(stmt, Box::new(goto)));
                 }
 
+                if let Some(kind) = self.try_classify_atomic_intrinsic(func)? {
+                    info!("Translating atomic intrinsic: {kind:?}");
+                    let stmts = self.translate_atomic_intrinsic(kind, args, destination)?;
+                    let goto = self.translate_goto_like(&loc, target.unwrap())?;
+
+                    return Ok(code::Stmt::Prim(stmts, Box::new(goto)));
+                }
+
                 self.translate_function_call(func, args, destination, *target, loc, endlfts)
             },
 
@@ -167,6 +393,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 // return place? See also discussion at https://github.com/rust-lang/rust/issues/71117
                 let stmt = code::Stmt::Return(code::Expr::Move {
                     ot: (&self.return_synty).into(),
+                    order: lang::Order::Na,
                     e: Box::new(code::Expr::Var(self.return_name.clone())),
                 });
 

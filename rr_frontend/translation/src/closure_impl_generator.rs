@@ -147,9 +147,11 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
                 // just move the self argument into __1
                 let stmt = code::PrimStmt::Assign {
                     ot: self_var_st.clone().into(),
+                    order: lang::Order::Na,
                     e1: Box::new(code::Expr::Var("__1".to_owned())),
                     e2: Box::new(code::Expr::Move {
                         ot: self_var_st.into(),
+                        order: lang::Order::Na,
                         e: Box::new(code::Expr::Var("self".to_owned())),
                     }),
                 };
@@ -165,6 +167,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
                 });
                 statements.push(code::PrimStmt::Assign {
                     ot: lang::OpType::Ptr,
+                    order: lang::Order::Na,
                     e1: Box::new(code::Expr::Var("__1".to_owned())),
                     e2: Box::new(code::Expr::Borrow {
                         lft: coq::Ident::new(ref_lft),
@@ -183,6 +186,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
                 });
                 statements.push(code::PrimStmt::Assign {
                     ot: lang::OpType::Ptr,
+                    order: lang::Order::Na,
                     e1: Box::new(code::Expr::Var("__1".to_owned())),
                     e2: Box::new(code::Expr::Borrow {
                         lft: coq::Ident::new(ref_lft),
@@ -208,6 +212,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
                 });
                 statements.push(code::PrimStmt::Assign {
                     ot: lang::OpType::Ptr,
+                    order: lang::Order::Na,
                     e1: Box::new(code::Expr::Var("__1".to_owned())),
                     e2: Box::new(code::Expr::Borrow {
                         lft: coq::Ident::new(ref_lft),
@@ -215,6 +220,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
                         ty: None,
                         e: Box::new(code::Expr::Deref {
                             ot: lang::OpType::Ptr,
+                            order: lang::Order::Na,
                             e: Box::new(code::Expr::Var("self".to_owned())),
                         }),
                     }),
@@ -238,6 +244,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
         // first the self argument
         let expr = code::Expr::Move {
             ot: self_call_st.into(),
+            order: lang::Order::Na,
             e: Box::new(code::Expr::Var("__1".to_owned())),
         };
         closure_args.push(expr);
@@ -247,6 +254,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
             let arg_st: lang::SynType = arg_ty.clone().into();
             let expr = code::Expr::Move {
                 ot: arg_st.into(),
+                order: lang::Order::Na,
                 e: Box::new(code::Expr::FieldOf {
                     e: Box::new(code::Expr::Var("args".to_owned())),
                     sls: tuple_sls.to_string(),
@@ -264,6 +272,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
         };
         statements.push(code::PrimStmt::Assign {
             ot: output_st.clone().into(),
+            order: lang::Order::Na,
             e1: Box::new(code::Expr::Var("__0".to_owned())),
             e2: Box::new(call_expr),
         });
@@ -284,6 +293,7 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
         // return
         let ret_expr = code::Expr::Move {
             ot: output_st.clone().into(),
+            order: lang::Order::Na,
             e: Box::new(code::Expr::Var("__0".to_owned())),
         };
         let stmt = code::Stmt::Prim(statements, Box::new(code::Stmt::Return(ret_expr)));

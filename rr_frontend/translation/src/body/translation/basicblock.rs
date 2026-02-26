@@ -115,6 +115,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                         let synty = self.ty_translator.translate_type_to_syn_type(plc_ty.ty)?;
                         prim_stmts.push(code::PrimStmt::Assign {
                             ot: synty.into(),
+                            order: lang::Order::Na,
                             e1: Box::new(translated_place),
                             e2: Box::new(translated_val),
                         });

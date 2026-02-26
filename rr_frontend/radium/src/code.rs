@@ -357,8 +357,12 @@ pub enum Expr {
     },
 
     /// dereference an lvalue
-    #[display("!{{ {} }} ( {} )", ot, &e)]
-    Deref { ot: lang::OpType, e: Box<Self> },
+    #[display("!{{ {}{} }} ( {} )", ot, order.suffix(), &e)]
+    Deref {
+        ot: lang::OpType,
+        order: lang::Order,
+        e: Box<Self>,
+    },
 
     /// dereference a box using the compiler magic
     #[display("!box{{ {}, {} }} ( {} )", tst, ast, &e)]
@@ -369,12 +373,20 @@ pub enum Expr {
     },
 
     /// lvalue to rvalue conversion (move)
-    #[display("move{{ {} }} ({})", ot, &e)]
-    Move { ot: lang::OpType, e: Box<Self> },
+    #[display("move{{ {}{} }} ({})", ot, order.suffix(), &e)]
+    Move {
+        ot: lang::OpType,
+        order: lang::Order,
+        e: Box<Self>,
+    },
 
     /// lvalue to rvalue conversion (copy)
-    #[display("copy{{ {} }} ({})", ot, &e)]
-    Copy { ot: lang::OpType, e: Box<Self> },
+    #[display("copy{{ {}{} }} ({})", ot, order.suffix(), &e)]
+    Copy {
+        ot: lang::OpType,
+        order: lang::Order,
+        e: Box<Self>,
+    },
 
     /// the borrow-operator to get a reference
     #[display("&ref{{ {}, {}, \"{}\" }} ({})", bk, fmt_option(ty.as_ref()), lft, &e)]
@@ -451,6 +463,24 @@ pub enum Expr {
         els: String,
         variant: String,
         e: Box<Self>,
+    },
+
+    /// compare-and-swap (always atomic, single step)
+    #[display("CAS ({}) ({}) ({}) ({})", ot, &target, &expected, &desired)]
+    Cas {
+        ot: lang::OpType,
+        target: Box<Self>,
+        expected: Box<Self>,
+        desired: Box<Self>,
+    },
+
+    /// atomic read-modify-write (single step)
+    #[display("AtomicRMW {} ({}) ({}) ({})", op, ot, &target, &arg)]
+    AtomicRmw {
+        op: lang::AtomicRmwOp,
+        ot: lang::OpType,
+        target: Box<Self>,
+        arg: Box<Self>,
     },
 }
 
@@ -536,9 +566,10 @@ type BlockLabel = usize;
 
 #[derive(Clone, Eq, PartialEq, Debug, Display)]
 pub enum PrimStmt {
-    #[display("{} <-{{ {} }} {};\n", e1, ot, e2)]
+    #[display("{} <-{{ {}{} }} {};\n", e1, ot, order.suffix(), e2)]
     Assign {
         ot: lang::OpType,
+        order: lang::Order,
         e1: Box<Expr>,
         e2: Box<Expr>,
     },

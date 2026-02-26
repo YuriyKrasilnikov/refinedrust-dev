@@ -59,6 +59,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                         let st = self.ty_translator.translate_type_to_syn_type(cur_ty.ty)?;
                         acc_expr = code::Expr::Deref {
                             ot: st.into(),
+                            order: lang::Order::Na,
                             e: Box::new(acc_expr),
                         };
                     }

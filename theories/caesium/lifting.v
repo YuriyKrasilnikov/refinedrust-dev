@@ -198,6 +198,8 @@ Global Instance skipe_atomic π s (v : val) : Atomic s (to_rtexpr π (SkipE v)).
 Proof. solve_atomic. Qed.
 Global Instance deref_atomic π s (l : loc) ly mc : Atomic s (to_rtexpr π (Deref ScOrd ly mc l)).
 Proof. solve_atomic. Qed.
+Global Instance atomic_rmw_atomic π s op ot (v1 v2 : val) : Atomic s (to_rtexpr π (AtomicRMW op ot v1 v2)).
+Proof. solve_atomic. Qed.
 (*Global Instance use_atomic s (l : loc) ly : Atomic s (coerce_rtexpr (Use ScOrd ly l)).*)
 (*Proof. solve_atomic. Qed.*)
 
@@ -802,6 +804,35 @@ Proof.
   iMod (heap_write with "Hhctx Hl1") as "[$ Hmt]" => //. iModIntro.
   iFrame. iSplit => //. iSplit; first done.
   iApply wp_value. by iApply ("HΦ" with "[$] [$]").
+Qed.
+
+Lemma wp_atomic_rmw op vl varg vo v_new Φ l ot π E:
+  val_to_loc vl = Some l →
+  l `has_layout_loc` ot_layout ot →
+  vo `has_layout_val` ot_layout ot →
+  varg `has_layout_val` ot_layout ot →
+  ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
+  atomic_rmw_eval op ot vo varg = Some v_new →
+  v_new `has_layout_val` ot_layout ot →
+  l↦vo -∗
+  (|={E}⧗=> (l ↦ v_new -∗ Φ vo)) -∗
+  WPe{π} AtomicRMW op ot (Val vl) (Val varg) @ E {{ Φ }}.
+Proof.
+  iIntros (Hl Hly Hvo Hvarg Hbpa Heval Hv_new) "Hl HΦ".
+  rewrite expr_wp_unfold.
+  iApply wp_lift_expr_step; auto.
+  iIntros (σ1) "((%&Hhctx&?)&Hfctx)".
+  iDestruct (heap_pointsto_is_alloc with "Hl") as %Haid.
+  iDestruct (heap_pointsto_lookup_1 (λ st : lock_state, st = RSt 0%nat) with "Hhctx Hl") as %? => //.
+  iModIntro. iSplit; first by eauto 15 using AtomicRMWS.
+  iIntros (? e2 σ2 efs Hst ?). inv_expr_step;
+    have ? : (vo = vo0) by [apply: heap_lookup_loc_inj_val => //; congruence]; simplify_eq.
+  have ? : (length vo0 = length v_new) by congruence.
+  iApply physical_step_fupd.
+  iApply (physical_step_wand with "HΦ"). iIntros "HΦ".
+  iMod (heap_write with "Hhctx Hl") as "[$ Hl]" => //. iModIntro.
+  iFrame. iSplit => //. iSplit; first done.
+  iApply wp_value. by iApply ("HΦ" with "[$]").
 Qed.
 
 Lemma wp_neg_int Φ v v' n π E it:

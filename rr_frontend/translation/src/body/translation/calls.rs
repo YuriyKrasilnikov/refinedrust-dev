@@ -817,6 +817,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             );
             let assign_stmt = code::PrimStmt::Assign {
                 ot,
+                order: lang::Order::Na,
                 e1: Box::new(place_expr),
                 e2: Box::new(annotated_rhs),
             };

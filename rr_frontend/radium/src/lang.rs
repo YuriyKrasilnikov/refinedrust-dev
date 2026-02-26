@@ -203,3 +203,71 @@ impl From<&SynType> for OpType {
         }
     }
 }
+
+/// Memory access ordering (maps to Caesium `order`).
+///
+/// All Rust atomic orderings (SeqCst, Acquire, Release, Relaxed) map to `Sc`
+/// (sequentially consistent). This is a sound over-approximation in the
+/// interleaving semantics model.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Display)]
+pub enum Order {
+    /// Sequentially consistent — atomic, single-step access.
+    #[display("ScOrd")]
+    Sc,
+    /// Non-atomic — default two-phase access (Na1Ord/Na2Ord).
+    #[display("Na1Ord")]
+    Na,
+}
+
+impl Order {
+    /// Caesium notation suffix for memory access operations.
+    /// Na1Ord is the default in Caesium notation and is omitted.
+    /// ScOrd requires an explicit suffix: `, ScOrd`.
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Self::Sc => ", ScOrd",
+            Self::Na => "",
+        }
+    }
+}
+
+/// Atomic read-modify-write operation (maps to Caesium `atomic_rmw_op`).
+///
+/// All operations follow the same pattern: atomically read old value,
+/// compute `new = f(old, arg)`, write new, return old.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Display)]
+pub enum AtomicRmwOp {
+    /// `f(old, arg) = arg` — atomic exchange
+    #[display("RmwXchg")]
+    Xchg,
+    /// `f(old, arg) = old + arg`
+    #[display("RmwAdd")]
+    Add,
+    /// `f(old, arg) = old - arg`
+    #[display("RmwSub")]
+    Sub,
+    /// `f(old, arg) = old & arg`
+    #[display("RmwAnd")]
+    And,
+    /// `f(old, arg) = old | arg`
+    #[display("RmwOr")]
+    Or,
+    /// `f(old, arg) = old ^ arg`
+    #[display("RmwXor")]
+    Xor,
+    /// `f(old, arg) = !(old & arg)`
+    #[display("RmwNand")]
+    Nand,
+    /// `f(old, arg) = max(old, arg)` — signed
+    #[display("RmwMaxS")]
+    MaxSigned,
+    /// `f(old, arg) = min(old, arg)` — signed
+    #[display("RmwMinS")]
+    MinSigned,
+    /// `f(old, arg) = max(old, arg)` — unsigned
+    #[display("RmwMaxU")]
+    MaxUnsigned,
+    /// `f(old, arg) = min(old, arg)` — unsigned
+    #[display("RmwMinU")]
+    MinUnsigned,
+}
