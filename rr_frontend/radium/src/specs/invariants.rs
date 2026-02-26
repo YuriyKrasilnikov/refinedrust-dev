@@ -252,6 +252,19 @@ impl Spec {
                 )
                 .unwrap();
             },
+            SpecFlags::Atomic => {
+                #[expect(deprecated)]
+                write!(
+                    out,
+                    "{indent}Program Definition {} {} : {} (at_ex_inv_def ({})%type ({})%type) := ",
+                    spec_name,
+                    attr_binders,
+                    scope.get_all_type_term(),
+                    base_rfn_type,
+                    self.rfn_type,
+                )
+                .unwrap();
+            },
             _ => {
                 #[expect(deprecated)]
                 write!(
@@ -342,8 +355,20 @@ impl Spec {
                 )
                 .unwrap();
             },
-            _ => {
-                panic!("unimplemented invariant spec flag: {:?}", self.flags);
+            SpecFlags::Atomic => {
+                let own_inv = self.assemble_plain_owned_invariant();
+                let lft_outlives = self.assemble_ty_lfts();
+                let lft_wf_elctx = self.assemble_ty_wf_elctx();
+
+                write!(
+                    out,
+                    "{scope} at_mk_ex_inv_def\n\
+                    {indent}{indent}({own_inv})%I\n\
+                    {indent}{indent}({lft_outlives})\n\
+                    {indent}{indent}({lft_wf_elctx})\n\
+                    {indent}.\n",
+                )
+                .unwrap();
             },
         }
         write!(out, "\n").unwrap();
@@ -372,34 +397,52 @@ impl Spec {
         let attr_binders_uses = attr_binders.make_using_terms();
 
         // generate the definition itself.
-        if SpecFlags::NonAtomic == self.flags {
-            #[expect(deprecated)]
-            write!(
-                out,
-                "{indent}Definition {} {attr_binders} : {} (type ({})%type) :=\n\
-                {indent}{indent}{scope} na_ex_plain_t _ _ ({spec_name} {} {}) {}.\n",
-                self.type_name(),
-                scope.get_all_type_term(),
-                self.rfn_type,
-                fmt_list!(attr_binders_uses, " "),
-                scope.identity_instantiation_term(),
-                base_type
-            )
-            .unwrap();
-        } else {
-            #[expect(deprecated)]
-            write!(
-                out,
-                "{indent}Definition {} {attr_binders} : {} (type ({})%type) :=\n\
-                {indent}{indent}{scope} ex_plain_t _ _ ({spec_name} {} {}) {}.\n",
-                self.type_name(),
-                scope.get_all_type_term(),
-                self.rfn_type,
-                fmt_list!(attr_binders_uses, " "),
-                scope.identity_instantiation_term(),
-                base_type
-            )
-            .unwrap();
+        match self.flags {
+            SpecFlags::NonAtomic => {
+                #[expect(deprecated)]
+                write!(
+                    out,
+                    "{indent}Definition {} {attr_binders} : {} (type ({})%type) :=\n\
+                    {indent}{indent}{scope} na_ex_plain_t _ _ ({spec_name} {} {}) {}.\n",
+                    self.type_name(),
+                    scope.get_all_type_term(),
+                    self.rfn_type,
+                    fmt_list!(attr_binders_uses, " "),
+                    scope.identity_instantiation_term(),
+                    base_type
+                )
+                .unwrap();
+            },
+            SpecFlags::Atomic => {
+                #[expect(deprecated)]
+                write!(
+                    out,
+                    "{indent}Definition {} {attr_binders} : {} (type ({})%type) :=\n\
+                    {indent}{indent}{scope} at_ex_plain_t _ _ ({spec_name} {} {}) {}.\n",
+                    self.type_name(),
+                    scope.get_all_type_term(),
+                    self.rfn_type,
+                    fmt_list!(attr_binders_uses, " "),
+                    scope.identity_instantiation_term(),
+                    base_type
+                )
+                .unwrap();
+            },
+            SpecFlags::Persistent | SpecFlags::Plain => {
+                #[expect(deprecated)]
+                write!(
+                    out,
+                    "{indent}Definition {} {attr_binders} : {} (type ({})%type) :=\n\
+                    {indent}{indent}{scope} ex_plain_t _ _ ({spec_name} {} {}) {}.\n",
+                    self.type_name(),
+                    scope.get_all_type_term(),
+                    self.rfn_type,
+                    fmt_list!(attr_binders_uses, " "),
+                    scope.identity_instantiation_term(),
+                    base_type
+                )
+                .unwrap();
+            },
         }
         write!(out, "{indent}Global Typeclasses Transparent {}.\n", self.type_name()).unwrap();
         write!(out, "{indent}Definition {}_rt : RT.\n", self.type_name()).unwrap();

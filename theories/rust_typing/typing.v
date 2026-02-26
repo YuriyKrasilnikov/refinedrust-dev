@@ -1,5 +1,5 @@
 From caesium Require Export tactics.
-From refinedrust Require Export static type program_rules int int_rules unit struct.struct mut_ref.mut_ref shr_ref.shr_ref functions uninit programs enum maybe_uninit alias_ptr fixpoint existentials existentials_na array.array value generics xmap.
+From refinedrust Require Export static type program_rules int int_rules unit struct.struct mut_ref.mut_ref shr_ref.shr_ref functions uninit programs enum maybe_uninit alias_ptr fixpoint existentials existentials_na existentials_atomic array.array value generics xmap.
 From refinedrust Require Export automation.loc_eq manual automation.
 From iris.proofmode Require Import coq_tactics reduction string_ident.
 From refinedrust Require Export automation.simpl.
