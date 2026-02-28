@@ -316,14 +316,106 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             },
 
             AtomicIntrinsicKind::Cxchg => {
-                // Caesium CAS returns bool, Rust returns (T, bool).
-                // Requires multi-step shim with field projection.
-                Err(TranslationError::Unimplemented {
-                    description: "atomic compare_exchange translation \
-                                  (CAS return type mismatch: Caesium returns bool, \
-                                  Rust returns (T, bool))"
-                        .to_owned(),
-                })
+                // atomic_cxchg<T, ORD_S, ORD_F>(dst: *mut T, old: T, src: T) -> (T, bool)
+                //
+                // Caesium CAS returns bool and writes old value to *expected (C11 model).
+                // Rust returns (T, bool). Bridge via temporary:
+                //   1. local_live temp
+                //   2. temp <-{ot} expected_val
+                //   3. dest.1 <-{BoolOp} CAS(ot, target, &raw{Mut}(temp), desired)
+                //   4. dest.0 <-{ot} copy{ot}(temp)   — old value
+                //   5. local_dead temp
+
+                // Pointee SynType + OpType from args[0]: *mut T
+                let ptr_ty = self.get_type_of_operand(&args[0].node);
+                let ty::TyKind::RawPtr(pointee_ty, _) = ptr_ty.kind() else {
+                    return Err(TranslationError::UnsupportedFeature {
+                        description: format!(
+                            "expected raw pointer for atomic CAS target, got {ptr_ty:?}"
+                        ),
+                    });
+                };
+                let pointee_st = self.ty_translator.translate_type_to_syn_type(*pointee_ty)?;
+                let ot: lang::OpType = (&pointee_st).into();
+
+                let (target_ptr, _) = self.translate_operand(&args[0].node, true)?;
+                let (expected_val, _) = self.translate_operand(&args[1].node, true)?;
+                let (desired_val, _) = self.translate_operand(&args[2].node, true)?;
+
+                // Dest tuple (T, bool): get SLS for FieldOf projections
+                let dest_pty = self.get_type_of_place(destination);
+                let dest_lit = self
+                    .ty_translator
+                    .generate_structlike_use(dest_pty.ty, dest_pty.variant_index)?;
+                let dest_sls = dest_lit
+                    .map_or(lang::SynType::Unit, |x| x.generate_raw_syn_type_term())
+                    .to_string();
+                let dest_place = self.translate_place(destination)?;
+
+                let dest_0 = code::Expr::FieldOf {
+                    e: Box::new(dest_place.clone()),
+                    sls: dest_sls.clone(),
+                    name: "0".to_owned(),
+                };
+                let dest_1 = code::Expr::FieldOf {
+                    e: Box::new(dest_place),
+                    sls: dest_sls,
+                    name: "1".to_owned(),
+                };
+
+                let temp_name = "__cas_expected".to_owned();
+                let temp_var = code::Expr::Var(temp_name.clone());
+
+                // 1. Allocate temporary for expected value
+                let stmt_live = code::PrimStmt::LocalLive(code::Variable::new(
+                    temp_name.clone(),
+                    pointee_st,
+                ));
+
+                // 2. Store expected value into temporary
+                let stmt_store = code::PrimStmt::Assign {
+                    ot: ot.clone(),
+                    order: lang::Order::Na,
+                    e1: Box::new(temp_var.clone()),
+                    e2: Box::new(expected_val),
+                };
+
+                // 3. CAS: dest.1 <-{BoolOp} CAS(ot, target, &raw{Mut}(temp), desired)
+                let cas_expr = code::Expr::Cas {
+                    ot: ot.clone(),
+                    target: Box::new(target_ptr),
+                    expected: Box::new(code::Expr::AddressOf {
+                        mt: code::Mutability::Mut,
+                        e: Box::new(temp_var.clone()),
+                    }),
+                    desired: Box::new(desired_val),
+                };
+                let stmt_cas = code::PrimStmt::Assign {
+                    ot: lang::OpType::Bool,
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_1),
+                    e2: Box::new(cas_expr),
+                };
+
+                // 4. Read old value: dest.0 <-{ot} copy{ot}(temp)
+                // After CAS, temp contains old target value in both cases:
+                //   failure: Caesium writes old value to *expected
+                //   success: temp unchanged, but expected == old (match was exact)
+                let stmt_old = code::PrimStmt::Assign {
+                    ot: ot.clone(),
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_0),
+                    e2: Box::new(code::Expr::Copy {
+                        ot,
+                        order: lang::Order::Na,
+                        e: Box::new(temp_var),
+                    }),
+                };
+
+                // 5. Deallocate temporary
+                let stmt_dead = code::PrimStmt::LocalDead(temp_name);
+
+                Ok(vec![stmt_live, stmt_store, stmt_cas, stmt_old, stmt_dead])
             },
 
             AtomicIntrinsicKind::Fence => {

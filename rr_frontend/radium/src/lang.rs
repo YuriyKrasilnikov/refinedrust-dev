@@ -206,7 +206,7 @@ impl From<&SynType> for OpType {
 
 /// Memory access ordering (maps to Caesium `order`).
 ///
-/// All Rust atomic orderings (SeqCst, Acquire, Release, Relaxed) map to `Sc`
+/// All Rust atomic orderings (`SeqCst`, `Acquire`, `Release`, `Relaxed`) map to `Sc`
 /// (sequentially consistent). This is a sound over-approximation in the
 /// interleaving semantics model.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Display)]
@@ -214,16 +214,17 @@ pub enum Order {
     /// Sequentially consistent — atomic, single-step access.
     #[display("ScOrd")]
     Sc,
-    /// Non-atomic — default two-phase access (Na1Ord/Na2Ord).
+    /// Non-atomic — default two-phase access (`Na1Ord`/`Na2Ord`).
     #[display("Na1Ord")]
     Na,
 }
 
 impl Order {
     /// Caesium notation suffix for memory access operations.
-    /// Na1Ord is the default in Caesium notation and is omitted.
-    /// ScOrd requires an explicit suffix: `, ScOrd`.
-    pub fn suffix(self) -> &'static str {
+    /// `Na1Ord` is the default in Caesium notation and is omitted.
+    /// `ScOrd` requires an explicit suffix: `, ScOrd`.
+    #[must_use]
+    pub const fn suffix(self) -> &'static str {
         match self {
             Self::Sc => ", ScOrd",
             Self::Na => "",
