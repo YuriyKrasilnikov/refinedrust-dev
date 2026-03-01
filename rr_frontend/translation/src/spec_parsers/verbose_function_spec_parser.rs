@@ -152,6 +152,8 @@ impl ClosureSpecInfo {
             0,
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_args_rfn_clause.clone()))),
         );
+        // make sure it's in goal shape
+        pre_clauses.push(coq::iris::IProp::True);
         let pre = coq::iris::IProp::Exists(all_params.clone(), Box::new(coq::iris::IProp::Sep(pre_clauses)));
         let pre = pre.purify();
         let pre_encoded = coq::term::Term::Lambda(
@@ -168,6 +170,8 @@ impl ClosureSpecInfo {
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_self_rfn_clause.clone()))),
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_args_rfn_clause.clone()))),
             post_ex_clause,
+            // make sure it's in goal shape
+            coq::iris::IProp::True,
         ];
         let post =
             coq::iris::IProp::Exists(all_params.clone(), Box::new(coq::iris::IProp::Sep(post_clauses)));
@@ -189,6 +193,8 @@ impl ClosureSpecInfo {
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_self_rfn_clause))),
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_args_rfn_clause))),
             post_mut_ex_clause,
+            // make sure it's in goal shape
+            coq::iris::IProp::True,
         ];
         let post_mut =
             coq::iris::IProp::Exists(all_params, Box::new(coq::iris::IProp::Sep(post_mut_clauses)));

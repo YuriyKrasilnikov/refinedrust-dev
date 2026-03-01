@@ -1032,13 +1032,13 @@ impl Function<'_> {
         // add arguments for the code definition
         let mut code_params: Vec<_> =
             self.other_functions.iter().map(|proc_use| proc_use.loc_name.clone()).collect();
+        for s in &self.used_statics {
+            code_params.push(s.loc_name.clone());
+        }
 
         let ty_params = self.spec.generics.get_all_ty_params_with_assocs();
         for names in ty_params.get_coq_ty_st_params().make_using_terms() {
             code_params.push(format!("{names}"));
-        }
-        for s in &self.used_statics {
-            code_params.push(s.loc_name.clone());
         }
         for x in &code_params {
             write!(f, "{}  ", x)?;
