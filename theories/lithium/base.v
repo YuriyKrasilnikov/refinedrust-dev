@@ -1116,7 +1116,7 @@ Proof. by destruct n. Qed.
 (* Qed. *)
 
 Lemma divide_mult_2 n1 n2 : divide 2 (n1 * n2) → divide 2 n1 ∨ divide 2 n2.
-  move => /Nat2Z.divide. rewrite Nat2Z.inj_mul. move => /(prime_mult _ prime_2).
+  move => /Nat2Z.divide. rewrite Nat2Z.inj_mul. move => /(proj1 (Z.divide_prime_mul _ _ _ Z.prime_2)).
   move => [H|H]; [left | right]; apply Z2Nat.divide in H; try lia.
   - rewrite Nat2Z.id in H. assert (Z.to_nat 2 = 2) as Heq by lia. by rewrite Heq in H.
   - rewrite Nat2Z.id in H. assert (Z.to_nat 2 = 2) as Heq by lia. by rewrite Heq in H.
@@ -1239,7 +1239,7 @@ Proof.
   - rewrite orb_true_l andb_true_l /Z_lunot.
     destruct H as [LE GT].
     have -> : (2 ^ bits)%Z = 0 by apply Z.pow_neg_r.
-    by rewrite Zmod_0_r -Z.lnot_spec //=.
+    by rewrite Z.mod_0_r -Z.lnot_spec //=.
   - rewrite orb_false_l.
     case_bool_decide; last first.
     + apply Z.testbit_neg_r. lia.

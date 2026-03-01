@@ -67,7 +67,11 @@ Qed.
 
 Global Instance layout_wf_dec ly : Decision (layout_wf ly).
 Proof.
-  rewrite /layout_wf. apply Znumtheory.Zdivide_dec.
+  rewrite /layout_wf.
+  (* Zdivide_dec is deprecated in favor of Z.BoolSpec_divide in Rocq 9.1,
+     but BoolSpec is in Prop while Decision needs sumbool (Set).
+     No non-deprecated replacement exists for this use case. *)
+  apply Znumtheory.Zdivide_dec.
 Qed.
 
 Class LayoutWf (ly : layout) : Prop := layout_wf_wf : layout_wf ly.
