@@ -8,6 +8,7 @@
 
 #![rr::include("closures")]
 #![rr::include("option")]
+#![rr::include("arithops")]
 
 mod relax;
 mod once;

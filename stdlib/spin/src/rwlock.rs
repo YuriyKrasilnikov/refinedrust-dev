@@ -1,20 +1,22 @@
 use std::ops::{Deref, DerefMut};
 use crate::relax::*;
+use core::marker::PhantomData;
+
 
 
 #[rr::export_as(spin::rwlock::RwLock)]
 #[rr::refined_by("()" : "unit")]
 #[rr::exists("x", "y")]
-pub struct RwLock<T, R = Spin> {
-    #[rr::field("x")]
-    _t : T,
+pub struct RwLock<T : ?Sized, R = Spin> {
     #[rr::field("y")]
-    _r : R,
+    phantom: PhantomData<R>,
+    #[rr::field("x")]
+    data: PhantomData<T>,
 }
 
 #[rr::export_as(spin::rwlock::RwLockReadGuard)]
 #[rr::refined_by("x" : "{rt_of T}")]
-pub struct RwLockReadGuard<'a, T: 'a> {
+pub struct RwLockReadGuard<'a, T: 'a + ?Sized> {
     #[rr::field("#x")]
     _t: &'a T,
 }
@@ -22,7 +24,7 @@ pub struct RwLockReadGuard<'a, T: 'a> {
 #[rr::export_as(spin::rwlock::RwLockWriteGuard)]
 #[rr::refined_by("x" : "place_rfn {rt_of T}")]
 #[rr::exists("y")]
-pub struct RwLockWriteGuard<'a, T: 'a, R = Spin> {
+pub struct RwLockWriteGuard<'a, T: 'a + ?Sized, R = Spin> {
     #[rr::field("#tt")]
     _l: &'a RwLock<T>,
     #[rr::field("y")]
@@ -55,29 +57,25 @@ impl<T, R: RelaxStrategy> RwLock<T, R> {
     }
 }
 
+
+#[rr::instantiate("DerefInto" := "id")]
 #[rr::only_spec]
-impl<T> Deref for RwLockWriteGuard<'_, T> {
+impl<'rwlock, T: ?Sized, R> Deref for RwLockWriteGuard<'rwlock, T, R> {
     type Target = T;
 
-    #[rr::skip]
-    #[rr::params("x")]
-    #[rr::args("#x")]
-    #[rr::returns("#x")]
     fn deref(&self) -> &T {
+        // Safety: We know statically that only we are referencing data
+        //unsafe { &*self.data }
         unimplemented!();
     }
 }
 
+#[rr::instantiate("DerefMutInject" := "λ old γ, 👻 γ")]
 #[rr::only_spec]
-impl<T> DerefMut for RwLockWriteGuard<'_, T> {
-
-    #[rr::skip]
-    #[rr::params("x" : "{rt_of T}")]
-    #[rr::args("(#(#x), γ)")]
-    #[rr::exists("γi")]
-    #[rr::returns("(#x, γi)")]
-    #[rr::observe("γ": "PlaceGhost γi")]
+impl<'rwlock, T: ?Sized, R> DerefMut for RwLockWriteGuard<'rwlock, T, R> {
     fn deref_mut(&mut self) -> &mut T {
+        // Safety: We know statically that only we are referencing data
+        //unsafe { &mut *self.data }
         unimplemented!();
     }
 }

@@ -295,7 +295,7 @@
             {
               pname = "stdlib-spin";
               src = ./stdlib/spin;
-              libDeps = with packages; [stdlib-option];
+              libDeps = with packages; [stdlib-option stdlib-closures stdlib-arithops];
               withTheories = true;
 
               rocqTheoriesArgs = {
@@ -305,7 +305,7 @@
             {
               pname = "stdlib-vec";
               src = ./stdlib/vec;
-              libDeps = with packages; [stdlib-alloc stdlib-iterator stdlib-option stdlib-rr_internal stdlib-closures stdlib-index stdlib-cmp];
+              libDeps = with packages; [stdlib-alloc stdlib-iterator stdlib-option stdlib-rr_internal stdlib-closures stdlib-index stdlib-cmp stdlib-ptr-advanced];
             }
             {
               pname = "stdlib";
