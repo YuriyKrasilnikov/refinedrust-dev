@@ -597,8 +597,8 @@ Definition atomic_rmw_eval (op : atomic_rmw_op) (ot : op_type) (vo varg : val) :
           let u1 := n1 `mod` int_modulus it in
           let u2 := n2 `mod` int_modulus it in
           let r := match op with
-            | RmwMaxU => if bool_decide (u1 ≥ u2)%Z then n1 else n2
-            | RmwMinU => if bool_decide (u1 ≤ u2)%Z then n1 else n2
+            | RmwMaxU => if (u2 <=? u1)%Z then n1 else n2
+            | RmwMinU => if (u1 <=? u2)%Z then n1 else n2
             | _ => n1 (* unreachable — outer match restricts to RmwMaxU|RmwMinU *)
           end in
           val_of_Z r it

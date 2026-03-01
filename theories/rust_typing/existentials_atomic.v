@@ -461,7 +461,7 @@ Section at_subtype.
     iEval (rewrite ltype_own_ofty_unfold /lty_of_ty_own) in "Hb".
     iDestruct "Hb" as (ly Halg Hly) "(Hsc & Hlb & %v & -> & #Hb)".
 
-    iMod (fupd_mask_mono with "Hb") as "#Hb'"; first done; iClear "Hb".
+    iMod (fupd_mask_mono with "Hb") as "#Hb'"; first set_solver; iClear "Hb".
     iEval (unfold ty_shr, at_ex_plain_t) in "Hb'".
     iDestruct "Hb'" as "(Hscr & Hbor & %ly' & %Hly' & %Halg')".
 
@@ -469,7 +469,7 @@ Section at_subtype.
 
     iApply (lc_fupd_add_later with "Hcred").
     do 2 iModIntro.
-    iDestruct "HP" as (%r) "(Hl & HP)".
+    iDestruct "HP" as (r) "(Hl & HP)".
     iExists r. iFrame.
     iIntros (r') "(Hl & HP)".
     iApply ("Hvs" with "[Hl HP]").
