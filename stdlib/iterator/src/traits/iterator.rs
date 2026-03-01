@@ -27,7 +27,7 @@ pub trait Iterator {
 
     /// We pick an invariant Inv
     /// TODO: maybe release Inv when we drop the Map iterator
-    #[rr::params("Inv" : "thread_id → {xt_of Self} → {xt_of F} → iProp Σ")]
+    #[rr::params("Inv" : "map_inv_ty _ _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs FnMut_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
     #[rr::requires(#iris "{Inv} π self")]
     /// Precondition: The picked invariant should hold initially.
     #[rr::requires(#iris "Inv π self f")]
@@ -37,7 +37,7 @@ pub trait Iterator {
         (☒ {Self::Next} π it_state (Some e) it_state') -∗
         Inv π it_state clos_state -∗
         {F::Pre} π clos_state *[e] ∗
-        (∀ e' clos_state', {F::PostMut} π clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state' ∗ True))")]
+        (∀ e' clos_state', ☒ {F::PostMut} π clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state' ∗ True))")]
     /// Precondition: If no element is emitted, the invariant is also upheld.
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state,
         (☒ {Self::Next} π it_state None it_state') -∗

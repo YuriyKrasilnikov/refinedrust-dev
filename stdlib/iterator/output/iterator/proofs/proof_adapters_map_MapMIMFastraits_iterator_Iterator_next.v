@@ -30,7 +30,7 @@ Proof.
     rep <-! liRStep. liShow.
     iRename select (FnMut_PostMut _ _ _ _ _ _) into "Hpost".
     iPoseProof (boringly_intro with "Hpost") as "#Hpost_x".
-    iPoseProof ("Hinv_clos" with "Hpost") as "Hinv".
+    iPoseProof ("Hinv_clos" with "Hpost_x") as "Hinv".
     rep liRStep. liShow.
     liInst Hevar_e_inner r.
     rep liRStep. 

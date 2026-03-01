@@ -1,7 +1,6 @@
 Section extra.
  Context `{RRGS : !refinedrustGS Σ}.
-
-  Lemma iterator_next_fused_trans_map_inv {MB_rt MI_rt MF_rt Item_rt}
+ Lemma iterator_next_fused_trans_map_inv {MB_rt MI_rt MF_rt Item_rt}
   (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt)
   (FnOnce_attrs : FnOnce_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
   (FnMut_attrs : FnMut_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt) π s1 hist s2 :
@@ -12,7 +11,7 @@ Section extra.
       ⌜length states = S (length hist)⌝ ∗
       IteratorNextFusedTrans It_attrs π s1.(map_it) hist' s2.(map_it) ∗
       [∗ list] i ↦ a; b ∈ hist'; hist,
-        ∃ s1 s2, ⌜states !! i = Some s1⌝ ∗ ⌜states !! S i = Some s2⌝ ∗ ☒ FnOnce_attrs.(FnOnce_Pre) π s1 *[a] ∗ ☒ FnMut_attrs.(FnMut_PostMut) π s1 *[a] s2 b
+        ∃ s1 s2, ⌜states !! i = Some s1⌝ ∗ ⌜states !! S i = Some s2⌝ ∗ ☒ FnOnce_attrs.(FnOnce_Pre) π s1 *[a] ∗ FnMut_attrs.(FnMut_PostMut) π s1 *[a] s2 b
   .
   Proof.
     iInduction hist as [ | a hist] "IH" forall (s1 s2); simpl.
@@ -58,9 +57,17 @@ Section extra.
     iDestruct "Ha" as "(%Hlook1 & %Hlook2 & %Hlen & Hnext & Hclos)".
     iPoseProof (It_learn.(iterator_learn_inductive_proof) with "Hnext") as "%Hlearn".
 
+    iAssert (([∗ list] i↦a;b ∈ hist';hist, ∃ s0 s3 : RT_xt MF_rt, ⌜states' !! i = Some s0⌝ ∗ ⌜states' !! S i = Some s3⌝ ∗ ☒ FnOnce_Pre FnOnce_attrs π s0 *[a] ∗ ☒ FnMut_PostMut FnMut_attrs π s0 *[a] s3 b))%I with "[Hclos]" as "Hclos".
+    { iApply boringly_persistent_elim.
+      iApply boringly_mono; last iApply "Hclos".
+      iIntros "Ha". iApply (big_sepL2_impl with "Ha").
+      iModIntro. iIntros (?????) "(% & % & % & % & Hpre & Hpost)".
+      iFrame "∗%". by iApply boringly_intro. }
+
     iAssert (⌜∀ i x y, states' !! i = Some x → states' !! (S i) = Some y → x = y⌝)%I as "%Hstates".
     { iIntros (i ? ? Hlook3 Hlook4). iClear "Hnext".
       assert (i < length hist). { apply lookup_lt_Some in Hlook4. lia. }
+
       iPoseProof (big_sepL2_length with "Hclos") as "%Hlen'".
       odestruct (lookup_lt_is_Some_2 hist i _) as (sb & ?); first lia.
       odestruct (lookup_lt_is_Some_2 hist' i _) as (sa & ?). { rewrite Hlen'. lia. }
