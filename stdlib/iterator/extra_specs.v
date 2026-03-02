@@ -11,12 +11,12 @@ Section extra.
       ⌜length states = S (length hist)⌝ ∗
       IteratorNextFusedTrans It_attrs π s1.(map_it) hist' s2.(map_it) ∗
       [∗ list] i ↦ a; b ∈ hist'; hist,
-        ∃ s1 s2, ⌜states !! i = Some s1⌝ ∗ ⌜states !! S i = Some s2⌝ ∗ ☒ FnOnce_attrs.(FnOnce_Pre) π s1 *[a] ∗ FnOnce_attrs.(FnOnce_PostMut) π s1 *[a] s2 b
+        ∃ s1 s2 p, ⌜states !! i = Some s1⌝ ∗ ⌜states !! S i = Some s2⌝ ∗ ☒ FnOnce_attrs.(FnOnce_Pre) π p s1 *[a] ∗ FnOnce_attrs.(FnOnce_PostMut) π p s1 *[a] s2 b
   .
   Proof.
     iInduction hist as [ | a hist] "IH" forall (s1 s2); simpl.
     { iIntros "<-". iExists [], [s1.(map_clos)]. simpl. done. }
-    iIntros "(%s1' & (_ & %b & Ha & Hpre & Hpost) & Hc)".
+    iIntros "(%s1' & (_ & %b & Ha & %p & Hpre & Hpost) & Hc)".
     iPoseProof ("IH" with "Hc") as "(%hist' & %states & % & % & %Hlen & Hit & Hclos)".
     iExists (b :: hist'), (s1.(map_clos) :: states).
     iR.
@@ -34,16 +34,16 @@ Section extra.
   (FnMut_attrs : FnMut_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
   (It_learn : IteratorLearnInductive It_attrs)
 
-  (FnOnce_pre_learn : ∀ π self args, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_Pre) π self args))
-  (FnMut_postmut_learn : ∀ π self args self' out, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_PostMut) π self args self' out))
-  (FnMut_postmut_stateless : ∀ π args out, RelationIsIdentity (λ self self', (FnMut_postmut_learn π self args self' out).(simplify_boringly_impl_q _)))
+  (FnOnce_pre_learn : ∀ π p self args, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_Pre) π p self args))
+  (FnMut_postmut_learn : ∀ π p self args self' out, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_PostMut) π p self args self' out))
+  (FnMut_postmut_stateless : ∀ π p args out, RelationIsIdentity (λ self self', (FnMut_postmut_learn π p self args self' out).(simplify_boringly_impl_q _)))
   :
     IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs MB_rt MI_rt MF_rt Item_rt It_attrs FnOnce_attrs FnMut_attrs) := {|
       iterator_learn_inductive_Q s1 hist s2 :=
         ∃ π hist',
           It_learn.(iterator_learn_inductive_Q) s1.(map_it) hist' s2.(map_it) ∧
           s1.(map_clos) = s2.(map_clos) ∧
-          Forall2 (λ a b, (FnOnce_pre_learn π s1.(map_clos) *[a]).(simplify_boringly_impl_q _) ∧ (FnMut_postmut_learn π s1.(map_clos) *[a] s1.(map_clos) b).(simplify_boringly_impl_q _)) hist' hist
+          Forall2 (λ a b, ∃ p, (FnOnce_pre_learn π p s1.(map_clos) *[a]).(simplify_boringly_impl_q _) ∧ (FnMut_postmut_learn π p s1.(map_clos) *[a] s1.(map_clos) b).(simplify_boringly_impl_q _)) hist' hist
         ;
     |}.
   Next Obligation.
@@ -57,11 +57,11 @@ Section extra.
     iDestruct "Ha" as "(%Hlook1 & %Hlook2 & %Hlen & Hnext & Hclos)".
     iPoseProof (It_learn.(iterator_learn_inductive_proof) with "Hnext") as "%Hlearn".
 
-    iAssert (([∗ list] i↦a;b ∈ hist';hist, ∃ s0 s3 : RT_xt MF_rt, ⌜states' !! i = Some s0⌝ ∗ ⌜states' !! S i = Some s3⌝ ∗ ☒ FnOnce_Pre FnOnce_attrs π s0 *[a] ∗ ☒ FnOnce_PostMut FnOnce_attrs π s0 *[a] s3 b))%I with "[Hclos]" as "Hclos".
+    iAssert (([∗ list] i↦a;b ∈ hist';hist, ∃ (s0 s3 : RT_xt MF_rt) p, ⌜states' !! i = Some s0⌝ ∗ ⌜states' !! S i = Some s3⌝ ∗ ☒ FnOnce_Pre FnOnce_attrs π p s0 *[a] ∗ ☒ FnOnce_PostMut FnOnce_attrs π p s0 *[a] s3 b))%I with "[Hclos]" as "Hclos".
     { iApply boringly_persistent_elim.
       iApply boringly_mono; last iApply "Hclos".
       iIntros "Ha". iApply (big_sepL2_impl with "Ha").
-      iModIntro. iIntros (?????) "(% & % & % & % & Hpre & Hpost)".
+      iModIntro. iIntros (?????) "(% & % & % & % & % & Hpre & Hpost)".
       iFrame "∗%". by iApply boringly_intro. }
 
     iAssert (⌜∀ i x y, states' !! i = Some x → states' !! (S i) = Some y → x = y⌝)%I as "%Hstates".
@@ -73,9 +73,9 @@ Section extra.
       odestruct (lookup_lt_is_Some_2 hist' i _) as (sa & ?). { rewrite Hlen'. lia. }
 
       iPoseProof (big_sepL2_lookup _ _ _ i sa sb with "Hclos") as "Ha"; [done.. | ].
-      iDestruct "Ha" as "(% & % & % & % & Hpre & Hpost)".
+      iDestruct "Ha" as "(% & % & % & % & % & Hpre & Hpost)".
 
-      rewrite ((FnMut_pure π _ _ _ _).(simplify_boringly_impl_proof)).
+      rewrite ((FnMut_pure π _ _ _ _ _).(simplify_boringly_impl_proof)).
       iDestruct "Hpost" as "%Hpost".
       apply FnMut_stateless in Hpost.
       simplify_eq. done. }
@@ -97,14 +97,14 @@ Section extra.
     iSplitR. { iPureIntro. symmetry. eapply (Hstates' (S (length hist))); last done. lia. }
     iApply big_sepL2_Forall2.
     iApply (big_sepL2_impl with "Hclos").
-    iModIntro. iIntros (? ?? Hlook3 Hlook4) "(%sa & %sb & %Hlook5 & %Hlook6 & Hpre & Hpost)".
-    rewrite ((FnMut_pure _ _ _ _ _).(simplify_boringly_impl_proof)).
-    rewrite ((FnOnce_pure _ _ _).(simplify_boringly_impl_proof)).
+    iModIntro. iIntros (? ?? Hlook3 Hlook4) "(%sa & %sb & %p & %Hlook5 & %Hlook6 & Hpre & Hpost)".
+    rewrite ((FnMut_pure _ _ _ _ _ _).(simplify_boringly_impl_proof)).
+    rewrite ((FnOnce_pure _ _ _ _).(simplify_boringly_impl_proof)).
     iDestruct "Hpre" as "%".
     iDestruct "Hpost" as "%".
     opose proof (Hstates' (S k) k _ _ Hlook5); first lia.
     opose proof (Hstates' (S (S k)) (S k) _ _ Hlook6); first lia.
-    subst. done.
+    subst. iPureIntro. eexists _. done.
   Qed.
 
   Program Definition iterator_learn_range_it

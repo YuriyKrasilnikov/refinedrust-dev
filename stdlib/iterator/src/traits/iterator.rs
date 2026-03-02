@@ -36,8 +36,8 @@ pub trait Iterator {
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state e,
         (☒ {Self::Next} π it_state (Some e) it_state') -∗
         Inv π it_state clos_state -∗
-        {F::Pre} π clos_state *[e] ∗
-        (∀ e' clos_state', ☒ {F::PostMut} π clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state' ∗ True))")]
+        ∃ p, {F::Pre} π p clos_state *[e] ∗
+        (∀ e' clos_state', ☒ {F::PostMut} π p clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state' ∗ True))")]
     /// Precondition: If no element is emitted, the invariant is also upheld.
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state,
         (☒ {Self::Next} π it_state None it_state') -∗
@@ -105,9 +105,9 @@ pub trait Iterator {
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state e,
         {Self::Next} π it_state (Some e) it_state' -∗
         ClosInv π it_state clos_state -∗
-        {F::Pre} π clos_state *[e] ∗
+        ∃ p, {F::Pre} π p clos_state *[e] ∗
         {Self::Next} π it_state (Some e) it_state' ∗ 
-        (∀ b clos_state', {F::PostMut} π clos_state *[e] clos_state' b -∗ ⌜b = true ↔ P e⌝ ∗ ClosInv π it_state' clos_state'))")]
+        (∀ b clos_state', {F::PostMut} π p clos_state *[e] clos_state' b -∗ ⌜b = true ↔ P e⌝ ∗ ClosInv π it_state' clos_state'))")]
     #[rr::exists("seq", "s2", "s2'")]
     // Postcondition: We consume a sequence of elements from the iterator
     #[rr::ensures(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π self.cur seq s2")]
@@ -135,9 +135,9 @@ pub trait Iterator {
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state e,
         {Self::Next} π it_state (Some e) it_state' -∗
         ClosInv π it_state clos_state -∗
-        {F::Pre} π clos_state *[e] ∗
+        ∃ p, {F::Pre} π p clos_state *[e] ∗
         {Self::Next} π it_state (Some e) it_state' ∗ 
-        (∀ b clos_state', {F::PostMut} π clos_state *[e] clos_state' b -∗ ⌜b = true ↔ P e⌝ ∗ ClosInv π it_state' clos_state'))")]
+        (∀ b clos_state', {F::PostMut} π p clos_state *[e] clos_state' b -∗ ⌜b = true ↔ P e⌝ ∗ ClosInv π it_state' clos_state'))")]
     #[rr::exists("seq", "s2", "s2'")]
     // Postcondition: We consume a sequence of elements from the iterator
     #[rr::ensures(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π self.cur seq s2")]

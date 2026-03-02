@@ -64,10 +64,11 @@ impl<T> Option<T> {
         }
     }
 
-    #[rr::params("Hx" : "TyGhostDrop {F}")]
+    #[rr::params("Hx" : "TyGhostDrop {F}", "op")]
+    #[rr::requires(#iris "if_iNone self (⌜op = None⌝)")]
     #[rr::ensures(#iris "if_iNone self (⌜ret = None⌝ ∗ ty_ghost_drop_for {F} Hx π ($# f))")]
-    #[rr::requires(#iris "if_iSome self (λ self, {F::Pre} π f *[self])")]
-    #[rr::ensures(#iris "if_iSome self (λ self, ∃ x, ⌜ret = Some x⌝ ∗ {F::Post} π f *[self] x)")]
+    #[rr::requires(#iris "if_iSome self (λ self, ∃ p, ⌜op = Some p⌝ ∗ {F::Pre} π p f *[self])")]
+    #[rr::ensures(#iris "if_iSome self (λ self, ∃ p x, ⌜op = Some p⌝ ∗ ⌜ret = Some x⌝ ∗ {F::Post} π p f *[self] x)")]
     pub fn map<U, F>(self, f: F) -> Option<U>
     where
         F: FnOnce(T) -> U,
@@ -87,11 +88,12 @@ impl<T> Option<T> {
     }
 
     // TODO: maybe ghost drop Self, too, in case pred returns false.
-    #[rr::params("Hx" : "TyGhostDrop {P}")]
-    #[rr::requires(#iris "if_iSome self (λ self, {P::Pre} π predicate *[self])")]
-    #[rr::ensures(#iris "if_iSome ret (λ ret, ⌜self = Some ret⌝ ∗ {P::Post} π predicate *[ret] true)")]
+    #[rr::params("Hx" : "TyGhostDrop {P}", "op")]
+    #[rr::requires(#iris "if_iSome self (λ self, ∃ p, ⌜op = Some p⌝ ∗ {P::Pre} π p predicate *[self])")]
+    #[rr::requires(#iris "if_iNone self (⌜op = None⌝)")]
+    #[rr::ensures(#iris "if_iSome ret (λ ret, ⌜self = Some ret⌝ ∗ ∃ p, ⌜op = Some p⌝ ∗ {P::Post} π p predicate *[ret] true)")]
     #[rr::ensures(#iris "if_iNone ret (if_iNone self (ty_ghost_drop_for {P} Hx π ($# predicate)) ∗ 
-                            if_iSome self (λ x, {P::Post} π predicate *[x] false))")]
+                            if_iSome self (λ x, ∃ p, ⌜op = Some p⌝ ∗ {P::Post} π p predicate *[x] false))")]
     pub fn filter<P>(self, predicate: P) -> Self
     where
         P: FnOnce(&T) -> bool,

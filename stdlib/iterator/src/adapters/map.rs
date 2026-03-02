@@ -39,8 +39,8 @@ impl<I, F> Map<I, F>
         if_iNone e ({MI::Next} π s1.(map_it) None s2.(map_it)) ∗
         if_iSome e (λ e, ∃ e_inner,
             ({MI::Next} π s1.(map_it) (Some e_inner) s2.(map_it)) ∗
-            boringly ({MF::Pre} π s1.(map_clos) *[e_inner]) ∗
-            ({MF::PostMut} π s1.(map_clos) *[e_inner] s2.(map_clos) e)
+            ∃ p, boringly ({MF::Pre} π p s1.(map_clos) *[e_inner]) ∗
+            ({MF::PostMut} π p s1.(map_clos) *[e_inner] s2.(map_clos) e)
             ))%I")]
 #[rr::instantiate("Inv" := "MapInv traits_iterator_Iterator_MI_spec_attrs {MF::Pre} {MF::PostMut}")]
 impl<MB, MI: Iterator, MF> Iterator for Map<MI, MF>

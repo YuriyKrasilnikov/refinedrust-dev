@@ -53,7 +53,7 @@ Section closure_props.
 
   Context (Clos_rt Args_rt Clos_out_rt : RT).
 
-  Class ClosureHasTrivialPre (fnonce_attrs : FnOnce_spec_attrs Clos_rt Args_rt Clos_out_rt) := closure_has_trivial_pre_proof : ∀ π self args, ⊢ FnOnce_Pre fnonce_attrs π self args.
+  Class ClosureHasTrivialPre (fnonce_attrs : FnOnce_spec_attrs Clos_rt Args_rt Clos_out_rt) := closure_has_trivial_pre_proof : ∀ π self args, ⊢ ∃ p, FnOnce_Pre fnonce_attrs π p self args.
 
 End closure_props.
 
@@ -123,10 +123,10 @@ Global Hint Extern 100 (SimplExist (map_inv_ty _ _ _ _ ?fnonce) _ _) =>
 
 Section map.
   Context `{RRGS : !refinedrustGS Σ}.
-  Definition MapInv {Self_rt Item_rt Clos_rt Clos_out_rt : RT}
+  Definition MapInv {Self_rt Item_rt Clos_rt Clos_out_rt : RT} {Params : Type}
     (iter_attrs : traits_iterator_Iterator_spec_attrs Self_rt Item_rt)
-    (Pre : thread_id → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → iProp Σ)
-    (PostMut : thread_id → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → RT_xt Clos_rt → RT_xt Clos_out_rt → iProp Σ)
+    (Pre : thread_id → Params → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → iProp Σ)
+    (PostMut : thread_id → Params → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → RT_xt Clos_rt → RT_xt Clos_out_rt → iProp Σ)
     (*(fnonce_attrs : FnOnce_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt)*)
     (*(fnmut_attrs : FnMut_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt) *)
     : _ → _ → iProp Σ :=
@@ -140,8 +140,8 @@ Section map.
       li_sealed (□ (∀ it_state it_state' clos_state e,
         (☒ iter_attrs.(traits_iterator_Iterator_Next) π it_state (Some e) it_state') -∗
         Inv π it_state clos_state -∗
-        Pre π clos_state *[e] ∗
-        (∀ e' clos_state', ☒ PostMut π clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state'))) ∗
+        ∃ p, Pre π p clos_state *[e] ∗
+        (∀ e' clos_state', ☒ PostMut π p clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state'))) ∗
       (* progress (no element) *)
       li_sealed (□ (∀ it_state it_state' clos_state,
         (☒ iter_attrs.(traits_iterator_Iterator_Next) π it_state None it_state') -∗

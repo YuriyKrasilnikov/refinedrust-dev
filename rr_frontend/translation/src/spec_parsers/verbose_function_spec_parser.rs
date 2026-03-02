@@ -51,10 +51,10 @@ pub(crate) trait TraitReqHandler<'def>: ParamLookup<'def> {
 
 pub(crate) struct ClosureSpecInfo {
     // the encoded pre and postconditions
+    pub params_encoded: coq::term::Term,
     pub pre_encoded: coq::term::Term,
     pub post_encoded: coq::term::Term,
-    // only if this closure is FnMut or Fn
-    pub post_mut_encoded: Option<coq::term::Term>,
+    pub post_mut_encoded: coq::term::Term,
 }
 impl ClosureSpecInfo {
     fn new_from_parsed_spec<'def>(
@@ -67,19 +67,33 @@ impl ClosureSpecInfo {
         // - disallow attributes that we cannot fit into this
         // - disallow overriding types
         //
-        // Pre self args :=
-        //  ∃ params, self = # (pre_rfn) ∧ args = *[ $# args_patterns ] ∧ precond
+        // Pre ext_params self args :=
+        //  ∃ params, ext_params = *[...] ∧ self = # (pre_rfn) ∧ args = *[ $# args_patterns ] ∧ precond
         //
-        // Post self args ret :=
-        // ∃ params, self = # (pre_rfn) ∧ args = *[ $# args_patterns ] ∧
+        // Post ext_params self args ret :=
+        // ∃ params, ext_params = *[...] ∧ self = # (pre_rfn) ∧ args = *[ $# args_patterns ] ∧
         //  ∃ ex, ret = $# ret_pattern ∧ postcond ∧
         //      (observes for the mutable captures?)
         //
-        // PostMut self args ret self' :=
-        // ∃ params, self = # (pre_rfn) ∧ args = *[ $# args_patterns ] ∧
+        // PostMut ext_params self args ret self' :=
+        // ∃ params, ext_params = *[...] ∧ self = # (pre_rfn) ∧ args = *[ $# args_patterns ] ∧
         //  ∃ ex, ret = $# ret_pattern ∧ postcond ∧
         //    self' = post_pattern
         //
+
+        // get all the params that will be a part of the `Params` type
+        let ext_params = coq::binder::BinderList::new(
+            parsed_spec.params.iter().filter_map(|(x, b)| b.then_some(x.0.clone())).collect(),
+        );
+        let ext_params_tys: Vec<_> = ext_params.0.iter().map(|x| x.get_type().unwrap().to_owned()).collect();
+        let ext_params_ty = coq::term::Type::UserDefined(model::Type::PList(
+            "id".to_owned(),
+            ext_params_tys,
+            "Type".to_owned(),
+        ));
+
+        let params_var = "_params";
+        let params_binder = coq::binder::Binder::new(Some(params_var.to_owned()), ext_params_ty.clone());
 
         let self_var = "_self";
         let self_binder = coq::binder::Binder::new(Some(self_var.to_owned()), coq::term::RocqType::Infer);
@@ -96,7 +110,7 @@ impl ClosureSpecInfo {
             parsed_spec
                 .params
                 .iter()
-                .map(|x| x.0.clone())
+                .map(|(x, _)| x.0.clone())
                 .chain(parsed_captures.params.iter().cloned())
                 .chain(extra_params)
                 .collect(),
@@ -107,6 +121,10 @@ impl ClosureSpecInfo {
         } else {
             format!("{args_var} = *[ {} ]", fmt_list!(&parsed_spec.args, "; ", |x| { x.1.clone() }))
         };
+
+        // the clause for destructuring the external params
+        let ext_params_rfn_clause =
+            format!("{params_var} = *[ {} ]", fmt_list!(&ext_params.0, "; ", |x| { x.get_name() }));
 
         let all_existentials = coq::binder::BinderList::new(
             parsed_spec.existentials.iter().map(|x| x.0.clone()).chain(extra_existentials).collect(),
@@ -152,12 +170,21 @@ impl ClosureSpecInfo {
             0,
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_args_rfn_clause.clone()))),
         );
+        pre_clauses.insert(
+            0,
+            coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(ext_params_rfn_clause.clone()))),
+        );
         // make sure it's in goal shape
         pre_clauses.push(coq::iris::IProp::True);
         let pre = coq::iris::IProp::Exists(all_params.clone(), Box::new(coq::iris::IProp::Sep(pre_clauses)));
         let pre = pre.purify();
         let pre_encoded = coq::term::Term::Lambda(
-            coq::binder::BinderList::new(vec![tid_binder.clone(), self_binder.clone(), args_binder.clone()]),
+            coq::binder::BinderList::new(vec![
+                tid_binder.clone(),
+                params_binder.clone(),
+                self_binder.clone(),
+                args_binder.clone(),
+            ]),
             Box::new(coq::term::Term::UserDefined(model::Term::IProp(pre))),
         );
 
@@ -167,6 +194,7 @@ impl ClosureSpecInfo {
             Box::new(coq::iris::IProp::Sep(post_ex_clauses)),
         );
         let post_clauses = vec![
+            coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(ext_params_rfn_clause.clone()))),
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_self_rfn_clause.clone()))),
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_args_rfn_clause.clone()))),
             post_ex_clause,
@@ -179,6 +207,7 @@ impl ClosureSpecInfo {
         let post_encoded = coq::term::Term::Lambda(
             coq::binder::BinderList::new(vec![
                 tid_binder.clone(),
+                params_binder.clone(),
                 self_binder.clone(),
                 args_binder.clone(),
                 ret_binder.clone(),
@@ -190,6 +219,7 @@ impl ClosureSpecInfo {
         let post_mut_ex_clause =
             coq::iris::IProp::Exists(all_existentials, Box::new(coq::iris::IProp::Sep(post_ex_clauses_mut)));
         let post_mut_clauses = vec![
+            coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(ext_params_rfn_clause))),
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_self_rfn_clause))),
             coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal(pre_args_rfn_clause))),
             post_mut_ex_clause,
@@ -202,6 +232,7 @@ impl ClosureSpecInfo {
         let post_mut_encoded = coq::term::Term::Lambda(
             coq::binder::BinderList::new(vec![
                 tid_binder,
+                params_binder,
                 self_binder,
                 args_binder,
                 self_post_binder,
@@ -213,9 +244,10 @@ impl ClosureSpecInfo {
         // Note: make sure to mangle the arg names of the generated lambdas, so we don't collide
         // with names in the specification (e.g. ret)
         Self {
+            params_encoded: coq::term::RocqTerm::Type(Box::new(ext_params_ty)),
             pre_encoded,
             post_encoded,
-            post_mut_encoded: Some(post_mut_encoded),
+            post_mut_encoded,
         }
     }
 }
@@ -584,7 +616,9 @@ where
 }
 
 struct ParsedSpecInfo<'def> {
-    params: Vec<RRParam>,
+    // boolean flag indicates whether this is a param explicitly added via a rr::params clause or
+    // not
+    params: Vec<(RRParam, bool)>,
     args: Vec<specs::TypeWithRef<'def>>,
     preconditions: Vec<MetaIProp>,
     postconditions: Vec<MetaIProp>,
@@ -616,7 +650,7 @@ impl<'def> ParsedSpecInfo<'def> {
         &self,
         builder: &mut specs::functions::LiteralSpecBuilder<'def>,
     ) -> Result<(), String> {
-        for param in &self.params {
+        for (param, _) in &self.params {
             builder.add_param(param.clone().into())?;
         }
 
@@ -657,7 +691,7 @@ impl<'def> ParsedSpecInfo<'def> {
     /// add a coq type annotation for a parameter when no type is currently known.
     /// this can e.g. be used to later on add knowledge about the type of a refinement.
     fn add_param_type_annot(&mut self, name: &String, ty: coq::term::Type) -> Result<(), String> {
-        for param in &mut self.params {
+        for (param, _) in &mut self.params {
             let Some(param_name) = param.0.get_name_ref() else {
                 continue;
             };
@@ -807,12 +841,12 @@ where
             "params" => {
                 let params = RRParams::parse(buffer, scope).map_err(str_err)?;
                 for param in params.params {
-                    builder.params.push(param);
+                    builder.params.push((param, true));
                 }
             },
             "param" => {
                 let param = RRParam::parse(buffer, scope).map_err(str_err)?;
-                builder.params.push(param);
+                builder.params.push((param, true));
             },
             "args" => {
                 let args = RRArgs::parse(buffer, scope).map_err(str_err)?;
@@ -1197,8 +1231,10 @@ where
             && let Some(arg_names) = self.arg_names
         {
             for (arg, ty) in arg_names.iter().zip(self.arg_types) {
-                spec.params
-                    .push(RRParam(coq::binder::Binder::new(Some(arg.to_owned()), coq::term::Type::Infer)));
+                spec.params.push((
+                    RRParam(coq::binder::Binder::new(Some(arg.to_owned()), coq::term::Type::Infer)),
+                    false,
+                ));
                 let ty_with_ref = specs::TypeWithRef::new(ty.to_owned(), arg.to_owned());
                 spec.args.push(ty_with_ref);
             }

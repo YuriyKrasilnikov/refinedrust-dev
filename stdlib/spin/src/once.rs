@@ -27,10 +27,11 @@ pub struct Once<T = (), R = Spin> {
 #[rr::export_as(spin::once::Once)]
 #[rr::context("onceG Σ ({xt_of T})")]
 impl<T, R: RelaxStrategy> Once<T, R> {
-    #[rr::requires(#iris "{F::Pre} π f ()")]
+    #[rr::params("p")]
+    #[rr::requires(#iris "{F::Pre} π p f ()")]
     #[rr::requires(#iris "once_status_tok self None")]
     #[rr::exists("x")]
-    #[rr::ensures(#iris "{F::Post} π f () x")]
+    #[rr::ensures(#iris "{F::Post} π p f () x")]
     #[rr::ensures(#iris "once_status_tok self (Some x)")]
     #[rr::returns("x")]
     pub fn call_once<F: FnOnce() -> T>(&self, f: F) -> &T {

@@ -395,6 +395,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             args_ty,
             args_tys,
             output_ty,
+            spec_info.params_encoded,
             spec_info.pre_encoded,
             spec_info.post_encoded,
             spec_info.post_mut_encoded,
