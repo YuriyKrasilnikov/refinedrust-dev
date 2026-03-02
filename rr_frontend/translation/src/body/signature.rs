@@ -52,6 +52,8 @@ pub(crate) struct TX<'a, 'def, 'tcx> {
     trait_registry: &'def registry::TR<'tcx, 'def>,
     /// argument types (from the signature, with generics substituted)
     inputs: Vec<ty::Ty<'tcx>>,
+    /// accumulator for non-SeqCst atomic operation spans (crate-level summary warning)
+    non_sc_atomic_spans: &'a mut Vec<span::Span>,
 }
 
 #[expect(clippy::multiple_inherent_impl)]
@@ -205,6 +207,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         trait_registry: &'def registry::TR<'tcx, 'def>,
         proc_registry: &'a procedures::Scope<'tcx, 'def>,
         const_registry: &'a consts::Scope<'def>,
+        non_sc_atomic_spans: &'a mut Vec<span::Span>,
     ) -> Result<(Self, procedures::ClosureImplInfo<'tcx, 'def>), TranslationError<'tcx>> {
         let mut translated_fn = code::FunctionBuilder::new(
             meta.get_name(),
@@ -336,6 +339,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             trait_registry,
             const_registry,
             inputs: all_inputs,
+            non_sc_atomic_spans,
         };
 
         // compute meta information needed to generate the spec
@@ -422,6 +426,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         trait_registry: &'def registry::TR<'tcx, 'def>,
         proc_registry: &'a procedures::Scope<'tcx, 'def>,
         const_registry: &'a consts::Scope<'def>,
+        non_sc_atomic_spans: &'a mut Vec<span::Span>,
     ) -> Result<Self, TranslationError<'tcx>> {
         let mut translated_fn = code::FunctionBuilder::new(
             meta.get_name(),
@@ -572,6 +577,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             trait_registry,
             const_registry,
             inputs: inputs.clone(),
+            non_sc_atomic_spans,
         };
 
         // If this is an impl of a trait, and there are no explicit annotations, use the default specification
@@ -628,6 +634,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             &self.inputs,
             self.inclusion_tracker,
             self.translated_fn,
+            self.non_sc_atomic_spans,
         )?;
         translator.translate(spec_arena)
     }

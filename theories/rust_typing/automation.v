@@ -142,6 +142,10 @@ Ltac liExtensible_to_i2p_hook P bind cont ::=
       cont uconstr:(((_ : TypedCheckBinOp E L f v1 ty1 v2 ty2 o ot1 ot2) T))
   | typed_check_un_op ?E ?L ?f ?v ?ty ?o ?ot ?T =>
       cont uconstr:(((_ : TypedCheckUnOp E L f v ty o ot) T))
+  | typed_cas ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?v3 ?P3 ?ot ?T =>
+      cont uconstr:(((_ : TypedCas E L f v1 P1 v2 P2 v3 P3 ot) T))
+  | typed_atomic_rmw ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?op ?ot ?T =>
+      cont uconstr:(((_ : TypedAtomicRmw E L f v1 P1 v2 P2 op ot) T))
   | typed_call ?E ?L ?f ?eκs ?etys ?v ?P ?vl ?tys ?T =>
       cont uconstr:(((_ : TypedCall E L f eκs etys v P vl tys) T))
   | typed_place ?E ?L ?f ?l ?lt ?r ?bmin0 ?b ?P ?T =>
@@ -272,6 +276,10 @@ Ltac liRIntroduceLetInGoal :=
       (*change_no_check (@envs_entails PROP Δ (@typed_context_fold Σ tG Acc P M π E L m tcx acc H))*)
     | @typed_bin_op ?Σ ?tG ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?op ?ot1 ?ot2 ?T =>
       pose (H := LET_ID T); change_no_check (@envs_entails PROP Δ (@typed_bin_op Σ tG E L f v1 P1 v2 P2 op ot1 ot2 H))
+    | @typed_cas ?Σ ?tG ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?v3 ?P3 ?ot ?T =>
+      pose (H := LET_ID T); change_no_check (@envs_entails PROP Δ (@typed_cas Σ tG E L f v1 P1 v2 P2 v3 P3 ot H))
+    | @typed_atomic_rmw ?Σ ?tG ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?op ?ot ?T =>
+      pose (H := LET_ID T); change_no_check (@envs_entails PROP Δ (@typed_atomic_rmw Σ tG E L f v1 P1 v2 P2 op ot H))
     end
   end.
 
@@ -352,6 +360,7 @@ Ltac liRStmt :=
   | |- envs_entails ?Δ (typed_stmt ?E ?L ?f ?s ?fn ?R ?ϝ) =>
     let s' := W.of_stmt s in
     lazymatch s' with
+    | W.AssignSE ScOrd _ _ _ _ => notypeclasses refine (tac_fast_apply (type_atomic_assign E L f _ _ _ _ fn R ϝ) _)
     | W.AssignSE _ _ _ _ _ => notypeclasses refine (tac_fast_apply (type_assign E L f _ _ _ _ fn R _ ϝ) _)
     | W.Return _ => notypeclasses refine (tac_fast_apply (type_return E L f _ fn R ϝ) _)
     | W.IfS _ _ _ _ _ => notypeclasses refine (tac_fast_apply (type_if E L f _ _ _ fn R _ ϝ) _)
@@ -409,6 +418,9 @@ Ltac liRExpr :=
     | W.UnOp _ _ _ => notypeclasses refine (tac_fast_apply (type_un_op E L f _ _ _ T) _)
     | W.CheckBinOp _ _ _ _ _ => notypeclasses refine (tac_fast_apply (type_check_bin_op E L f _ _ _ _ _ T) _)
     | W.CheckUnOp _ _ _ => notypeclasses refine (tac_fast_apply (type_check_un_op E L f _ _ _ T) _)
+    | W.Deref ScOrd _ true _ => notypeclasses refine (tac_fast_apply (type_atomic_deref E L f _ _ T) _)
+    | W.CAS _ _ _ _ => notypeclasses refine (tac_fast_apply (type_cas E L f _ _ _ _ T) _)
+    | W.AtomicRMW _ _ _ _ => notypeclasses refine (tac_fast_apply (type_atomic_rmw E L f _ _ _ _ T) _)
     | W.Call _ _ _ _ => notypeclasses refine (tac_fast_apply (type_call E L f T _ _ _ _) _)
     | W.AnnotExpr _ ?a _ => notypeclasses refine (tac_fast_apply (type_annot_expr E L f _ a _ T) _)
     | W.StructInit ?sls ?init => notypeclasses refine (tac_fast_apply (type_struct_init E L f sls _ T) _)

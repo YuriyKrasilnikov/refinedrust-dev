@@ -2539,6 +2539,28 @@ Section subsume.
     iIntros "H Hw HP". iApply "H". by iApply "Hw".
   Qed.
 
+  Lemma typed_cas_wand E L f v1 P1 Q1 v2 P2 Q2 v3 P3 Q3 ot T:
+    typed_cas E L f v1 Q1 v2 Q2 v3 Q3 ot T -∗
+    (P1 -∗ Q1) -∗
+    (P2 -∗ Q2) -∗
+    (P3 -∗ Q3) -∗
+    typed_cas E L f v1 P1 v2 P2 v3 P3 ot T.
+  Proof.
+    iIntros "H Hw1 Hw2 Hw3 H1 H2 H3".
+    iApply ("H" with "[Hw1 H1] [Hw2 H2] [Hw3 H3]");
+      [by iApply "Hw1"|by iApply "Hw2"|by iApply "Hw3"].
+  Qed.
+
+  Lemma typed_atomic_rmw_wand E L f v1 P1 Q1 v2 P2 Q2 op ot T:
+    typed_atomic_rmw E L f v1 Q1 v2 Q2 op ot T -∗
+    (P1 -∗ Q1) -∗
+    (P2 -∗ Q2) -∗
+    typed_atomic_rmw E L f v1 P1 v2 P2 op ot T.
+  Proof.
+    iIntros "H Hw1 Hw2 H1 H2".
+    iApply ("H" with "[Hw1 H1]"); [by iApply "Hw1"|by iApply "Hw2"].
+  Qed.
+
   Lemma typed_unop_simplify E L f v P n ot {SH : SimplifyHyp P (Some n)} op T:
     (SH (find_in_context (FindValP v) (λ P, typed_un_op E L f v P op ot T))).(i2p_P)
     ⊢ typed_un_op E L f v P op ot T.
@@ -2572,6 +2594,65 @@ Section subsume.
   Qed.
   Definition typed_binop_simplify_inst := [instance typed_binop_simplify].
   Global Existing Instance typed_binop_simplify_inst | 1000.
+
+  Lemma typed_cas_simplify E L f v1 P1 v2 P2 v3 P3 o1 o2 o3 ot
+    {SH1 : SimplifyHyp P1 o1} {SH2 : SimplifyHyp P2 o2} {SH3 : SimplifyHyp P3 o3}
+    `{!TCOneIsSome3 o1 o2 o3} T:
+    let G1 := (SH1 (find_in_context (FindValP v1) (λ P, typed_cas E L f v1 P v2 P2 v3 P3 ot T))).(i2p_P) in
+    let G2 := (SH2 (find_in_context (FindValP v2) (λ P, typed_cas E L f v1 P1 v2 P v3 P3 ot T))).(i2p_P) in
+    let G3 := (SH3 (find_in_context (FindValP v3) (λ P, typed_cas E L f v1 P1 v2 P2 v3 P ot T))).(i2p_P) in
+    let G :=
+       match o1, o2, o3 with
+     | Some n1, Some n2, Some n3 =>
+         if (n2 ?= n1)%N is Lt then
+           if (n3 ?= n2)%N is Lt then G3 else G2
+         else
+           if (n3 ?= n1)%N is Lt then G3 else G1
+     | Some n1, Some n2, None =>
+         if (n2 ?= n1)%N is Lt then G2 else G1
+     | Some n1, None, Some n3 =>
+         if (n3 ?= n1)%N is Lt then G3 else G1
+     | None, Some n2, Some n3 =>
+         if (n3 ?= n2)%N is Lt then G3 else G2
+     | Some _, None, None => G1
+     | None, Some _, None => G2
+     | _, _, _ => G3
+       end in
+    G
+    ⊢ typed_cas E L f v1 P1 v2 P2 v3 P3 ot T.
+  Proof.
+    iIntros "/= Hs Hv1 Hv2 Hv3".
+    destruct o1 as [n1|], o2 as [n2|], o3 as [n3|] => //; repeat case_match.
+    all: first [ iPoseProof (i2p_proof with "Hs Hv1") as (P) "[Hv Hsub]"
+               | iPoseProof (i2p_proof with "Hs Hv2") as (P) "[Hv Hsub]"
+               | iPoseProof (i2p_proof with "Hs Hv3") as (P) "[Hv Hsub]" ].
+    all: by simpl in *; iApply ("Hsub" with "[$] [$]").
+  Qed.
+  Definition typed_cas_simplify_inst := [instance typed_cas_simplify].
+  Global Existing Instance typed_cas_simplify_inst | 1000.
+
+  Lemma typed_atomic_rmw_simplify E L f v1 P1 v2 P2 o1 o2 op ot
+    {SH1 : SimplifyHyp P1 o1} {SH2 : SimplifyHyp P2 o2}
+    `{!TCOneIsSome o1 o2} T:
+    let G1 := (SH1 (find_in_context (FindValP v1) (λ P, typed_atomic_rmw E L f v1 P v2 P2 op ot T))).(i2p_P) in
+    let G2 := (SH2 (find_in_context (FindValP v2) (λ P, typed_atomic_rmw E L f v1 P1 v2 P op ot T))).(i2p_P) in
+    let G :=
+       match o1, o2 with
+     | Some n1, Some n2 => if (n2 ?= n1)%N is Lt then G2 else G1
+     | Some n1, _ => G1
+     | _, _ => G2
+       end in
+    G
+    ⊢ typed_atomic_rmw E L f v1 P1 v2 P2 op ot T.
+  Proof.
+    iIntros "/= Hs Hv1 Hv2".
+    destruct o1 as [n1|], o2 as [n2|] => //. 1: case_match.
+    1,3,4: iPoseProof (i2p_proof with "Hs Hv1") as (P) "[Hv Hsub]".
+    4,5,6: iPoseProof (i2p_proof with "Hs Hv2") as (P) "[Hv Hsub]".
+    all: by simpl in *; iApply ("Hsub" with "[$]").
+  Qed.
+  Definition typed_atomic_rmw_simplify_inst := [instance typed_atomic_rmw_simplify].
+  Global Existing Instance typed_atomic_rmw_simplify_inst | 1000.
 
   Lemma type_val_context v π (T : typed_value_cont_t) :
     (find_in_context (FindVal v) (λ '(existT rt (ty, r, π', m')),
@@ -2690,6 +2771,42 @@ Section subsume.
     iIntros "He" (Φ) "#LFT #HE HL Hf HΦ".
     wpe_bind. iApply ("He" with "LFT HE HL Hf"). iIntros (L' v m rt ty r) "HL Hf Hv Hop".
     by iApply ("Hop" with "Hv LFT HE HL Hf").
+  Qed.
+
+  Lemma type_cas E L f e1 e2 e3 ot T :
+    typed_val_expr E L f e1 (λ L1 v1 m1 rt1 ty1 r1,
+      typed_val_expr E L1 f e2 (λ L2 v2 m2 rt2 ty2 r2,
+        typed_val_expr E L2 f e3 (λ L3 v3 m3 rt3 ty3 r3,
+          typed_cas E L3 f v1 (v1 ◁ᵥ{f.1, m1} r1 @ ty1) v2 (v2 ◁ᵥ{f.1, m2} r2 @ ty2) v3 (v3 ◁ᵥ{f.1, m3} r3 @ ty3) ot T)))
+    ⊢ typed_val_expr E L f (CAS ot e1 e2 e3) T.
+  Proof.
+    iIntros "He1" (Φ) "#LFT #HE HL Hf HΦ".
+    wpe_bind. iApply ("He1" with "LFT HE HL Hf"). iIntros (L1 v1 m1 rt1 ty1 r1) "HL Hf Hv1 He2".
+    wpe_bind. iApply ("He2" with "LFT HE HL Hf"). iIntros (L2 v2 m2 rt2 ty2 r2) "HL Hf Hv2 He3".
+    wpe_bind. iApply ("He3" with "LFT HE HL Hf"). iIntros (L3 v3 m3 rt3 ty3 r3) "HL Hf Hv3 Hcas".
+    iApply ("Hcas" with "Hv1 Hv2 Hv3 LFT HE HL Hf HΦ").
+  Qed.
+
+  Lemma type_atomic_rmw E L f op e1 e2 ot T :
+    typed_val_expr E L f e1 (λ L1 v1 m1 rt1 ty1 r1,
+      typed_val_expr E L1 f e2 (λ L2 v2 m2 rt2 ty2 r2,
+        typed_atomic_rmw E L2 f v1 (v1 ◁ᵥ{f.1, m1} r1 @ ty1) v2 (v2 ◁ᵥ{f.1, m2} r2 @ ty2) op ot T))
+    ⊢ typed_val_expr E L f (AtomicRMW op ot e1 e2) T.
+  Proof.
+    iIntros "He1" (Φ) "#LFT #HE HL Hf HΦ".
+    wpe_bind. iApply ("He1" with "LFT HE HL Hf"). iIntros (L1 v1 m1 rt1 ty1 r1) "HL Hf Hv1 He2".
+    wpe_bind. iApply ("He2" with "LFT HE HL Hf"). iIntros (L2 v2 m2 rt2 ty2 r2) "HL Hf Hv2 Hrmw".
+    iApply ("Hrmw" with "Hv1 Hv2 LFT HE HL Hf HΦ").
+  Qed.
+
+  Lemma type_atomic_deref E L f ot e T :
+    typed_val_expr E L f e (λ L1 v1 m1 rt1 ty1 r1,
+      typed_atomic_load E L1 f v1 (v1 ◁ᵥ{f.1, m1} r1 @ ty1) ot T)
+    ⊢ typed_val_expr E L f (Deref ScOrd ot true e) T.
+  Proof.
+    iIntros "He" (Φ) "#LFT #HE HL Hf HΦ".
+    wpe_bind. iApply ("He" with "LFT HE HL Hf"). iIntros (L1 v1 m1 rt1 ty1 r1) "HL Hf Hv1 Hload".
+    iApply ("Hload" with "Hv1 LFT HE HL Hf HΦ").
   Qed.
 
   Lemma type_ife E L f e1 e2 e3 T:
@@ -2884,6 +3001,28 @@ Section subsume.
       -  iApply lc_weaken; last done. simpl. unfold num_cred, num_laters_per_step; lia. }
     by iApply ("HT" with "[$LFT $LLCTX] HE HL Hf").
   Qed.
+
+  Lemma type_atomic_assign E L f ot e1 e2 s fn R ϝ :
+    typed_val_expr E L f e2 (λ L1 v_val m1 rt1 ty1 r1,
+      ⌜m1 = MetaNone⌝ ∗
+      typed_val_expr E L1 f e1 (λ L2 v_ptr m2 rt2 ty2 r2,
+        typed_atomic_store E L2 f
+          v_ptr (v_ptr ◁ᵥ{f.1, m2} r2 @ ty2)
+          v_val (v_val ◁ᵥ{f.1, MetaNone} r1 @ ty1)
+          ot
+          (λ L3,
+            introduce_with_hooks E L3 (tr 2 ∗ £ num_cred) (λ L4,
+            typed_stmt E L4 f s fn R ϝ))))
+    ⊢ typed_stmt E L f (AssignSE ScOrd ot e1 e2 s) fn R ϝ.
+  Proof.
+    (* Proof sketch:
+       1. wps_bind: evaluate e2 via typed_val_expr → v_val
+       2. wps_bind + unfold AssignSE: evaluate SkipE(e1)
+          a. wpe_bind: evaluate e1 via typed_val_expr → v_ptr
+          b. wp_skip: handle the SkipE step
+       3. Apply typed_atomic_store with s, fn, R, ϝ
+       4. Instance opens invariant → wps_assign → closes → T L' *)
+  Admitted.
 
   Lemma type_mut_addr_of E L f e (T : typed_val_expr_cont_t) :
     typed_addr_of_mut E L f e (λ L v rt ty r, T L v MetaNone rt ty r)
@@ -4669,6 +4808,10 @@ Global Typeclasses Opaque typed_un_op.
 Global Typeclasses Opaque typed_check_bin_op.
 
 Global Typeclasses Opaque typed_check_un_op.
+
+Global Typeclasses Opaque typed_cas.
+
+Global Typeclasses Opaque typed_atomic_rmw.
 
 Global Typeclasses Opaque typed_if.
 

@@ -369,6 +369,12 @@ impl<'def> Abstract<'def> {
         self.invariant.is_some()
     }
 
+    /// Check if this type has `#[rr::mode(atomic)]`.
+    #[must_use]
+    pub fn is_atomic(&self) -> bool {
+        self.invariant.as_ref().is_some_and(|inv| inv.is_atomic())
+    }
+
     /// Get the name of this struct
     #[must_use]
     fn name(&self) -> &str {
@@ -439,8 +445,26 @@ impl<'def> Abstract<'def> {
 
             // the invariant
             if let Some(spec) = self.invariant.as_ref() {
-                let s =
-                    spec.generate_coq_type_def(self.plain_ty_name(), self.plain_rt_def_name(), &self.scope);
+                // For mode(atomic) + repr(transparent) + single non-ZST field:
+                // use the inner field's type directly as base type of at_ex_plain_t,
+                // bypassing the struct_t wrapper. This ensures ty_has_op_type delegates
+                // to the field type (e.g. IntOp for int) rather than StructOp.
+                let transparent_inner = if spec.is_atomic()
+                    && self.variant_def.repr == Repr::Transparent
+                    && self.variant_def.fields.len() == 1
+                {
+                    let (_, inner_ty) = &self.variant_def.fields[0];
+                    Some((inner_ty.to_string(), inner_ty.get_rfn_type().to_string()))
+                } else {
+                    None
+                };
+
+                let s = spec.generate_coq_type_def(
+                    self.plain_ty_name(),
+                    self.plain_rt_def_name(),
+                    &self.scope,
+                    transparent_inner.as_ref().map(|(ty, rt)| (ty.as_str(), rt.as_str())),
+                );
                 out.push_str(&s);
             }
 

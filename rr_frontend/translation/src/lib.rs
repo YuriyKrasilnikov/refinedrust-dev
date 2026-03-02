@@ -84,6 +84,9 @@ pub struct VerificationCtxt<'tcx, 'rcx> {
     /// trait implementations we generated
     trait_impls: BTreeMap<OrderedDefId, specs::traits::ImplSpec<'rcx>>,
     trait_impl_deps: BTreeMap<OrderedDefId, BTreeSet<OrderedDefId>>,
+
+    /// Spans of non-SeqCst atomic operations (for per-crate summary warning)
+    non_sc_atomic_spans: Vec<span::Span>,
 }
 
 impl<'rcx> VerificationCtxt<'_, 'rcx> {
@@ -1342,6 +1345,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
     let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = vcx.env.tcx().type_of(proc.get_id());
     let ty = ty.instantiate_identity();
 
+    let non_sc_spans = &mut vcx.non_sc_atomic_spans;
     let translator = match ty.kind() {
         ty::TyKind::FnDef(_def, _args) => signature::TX::new(
             vcx.env,
@@ -1352,6 +1356,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
             vcx.trait_registry,
             &vcx.procedure_registry,
             &vcx.const_registry,
+            non_sc_spans,
         )
         .map(|x| (x, None)),
         ty::TyKind::Closure(_, _) => {
@@ -1364,6 +1369,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
                 vcx.trait_registry,
                 &vcx.procedure_registry,
                 &vcx.const_registry,
+                non_sc_spans,
             );
             match translator {
                 Ok((translator, info)) => {
@@ -2171,6 +2177,7 @@ where
         trait_impls: BTreeMap::new(),
         trait_impl_deps: BTreeMap::new(),
         fn_arena: &fn_spec_arena,
+        non_sc_atomic_spans: Vec::new(),
     };
 
     // this needs to be first, in order to ensure consistent ADT use
@@ -2187,6 +2194,22 @@ where
     register_closure_impls(&vcx)?;
 
     translate_functions(&mut vcx);
+
+    // Emit per-crate summary warning for non-SeqCst atomic orderings
+    if !vcx.non_sc_atomic_spans.is_empty() {
+        let spans: Vec<_> = vcx.non_sc_atomic_spans.drain(..).collect();
+        let mut warn = vcx
+            .env
+            .tcx()
+            .dcx()
+            .struct_warn("[RefinedRust] atomic operations verified under sequential consistency");
+        warn.span_labels(spans, "non-SeqCst ordering");
+        warn.note(
+            "all memory orderings are soundly over-approximated as SeqCst \
+             in the interleaving semantics model",
+        );
+        warn.emit();
+    }
 
     // important: happens after all functions have been translated, as this uses the translated
     // function specs

@@ -66,7 +66,12 @@ pub struct Spec {
 
 impl Spec {
     #[must_use]
-    pub(crate) fn type_name(&self) -> String {
+    pub fn is_atomic(&self) -> bool {
+        self.flags == SpecFlags::Atomic
+    }
+
+    #[must_use]
+    pub fn type_name(&self) -> String {
         format!("{}_inv_t", self.name)
     }
 
@@ -466,6 +471,7 @@ impl Spec {
         base_type_name: &str,
         base_rfn_type: &str,
         scope: &GenericScope<'_>,
+        transparent_inner_override: Option<(&str, &str)>,
     ) -> String {
         let mut out = String::with_capacity(200);
 
@@ -491,20 +497,28 @@ impl Spec {
         let (_context_names, context_names_without_sigma) =
             format_extra_context_items(&self.coq_params, &mut out).unwrap();
 
-        // get the applied base_rfn_type
         let rt_instantiations = all_ty_params.get_coq_ty_rt_params().make_using_terms();
-        let applied_base_rt = coq::term::App::new(base_rfn_type, rt_instantiations.clone());
 
-        // get the applied base type
-        let applied_base_type = coq::term::App::new(base_type_name, rt_instantiations.clone());
-        let applied_base_type = format!("({applied_base_type} {})", scope.identity_instantiation_term());
+        // For transparent atomic single-field structs, use the inner field type directly
+        // as at_ex_plain_t base type. Otherwise, apply the struct type/rfn definitions.
+        let (applied_base_rt_str, applied_base_type) =
+            if let Some((inner_ty, inner_rt)) = transparent_inner_override {
+                (inner_rt.to_owned(), format!("({})", inner_ty))
+            } else {
+                let applied_base_rt = coq::term::App::new(base_rfn_type, rt_instantiations.clone());
+                let applied_base_type =
+                    coq::term::App::new(base_type_name, rt_instantiations.clone());
+                let applied_base_type =
+                    format!("({applied_base_type} {})", scope.identity_instantiation_term());
+                (applied_base_rt.to_string(), applied_base_type)
+            };
 
         write!(
             out,
             "{}",
             self.generate_coq_type_def_core(
                 &applied_base_type,
-                applied_base_rt.to_string().as_str(),
+                &applied_base_rt_str,
                 &rt_instantiations,
                 scope,
                 &context_names_without_sigma,

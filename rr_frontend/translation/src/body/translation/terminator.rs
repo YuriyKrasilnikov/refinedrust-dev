@@ -34,11 +34,29 @@ enum AtomicIntrinsicKind {
     Fence,
 }
 
-/// Classify an atomic intrinsic by its exact name.
+/// Strip ordering suffix from old-style atomic intrinsic names.
 ///
-/// Returns `None` for names not recognized as atomic intrinsics.
+/// Old-style (pre-2025): `atomic_load_seqcst` → `atomic_load`
+/// New-style (const generic): `atomic_load` → `atomic_load` (unchanged)
+fn strip_atomic_ordering_suffix(name: &str) -> &str {
+    const SUFFIXES: &[&str] = &[
+        "_seqcst", "_acqrel", "_acquire", "_release", "_relaxed", "_unordered",
+    ];
+    for suffix in SUFFIXES {
+        if let Some(base) = name.strip_suffix(suffix) {
+            return base;
+        }
+    }
+    name
+}
+
+/// Classify an atomic intrinsic by name.
+///
+/// Handles both new-style (`atomic_load`) and old-style (`atomic_load_seqcst`)
+/// intrinsic names. Returns `None` for unrecognized names.
 /// The caller must treat `None` as an error if the name starts with `"atomic_"`.
 fn classify_atomic_intrinsic(name: &str) -> Option<AtomicIntrinsicKind> {
+    let name = strip_atomic_ordering_suffix(name);
     match name {
         "atomic_load" => Some(AtomicIntrinsicKind::Load),
         "atomic_store" => Some(AtomicIntrinsicKind::Store),
@@ -55,6 +73,37 @@ fn classify_atomic_intrinsic(name: &str) -> Option<AtomicIntrinsicKind> {
         "atomic_umax" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MaxUnsigned)),
         "atomic_umin" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MinUnsigned)),
         "atomic_fence" | "atomic_singlethreadfence" => Some(AtomicIntrinsicKind::Fence),
+        _ => None,
+    }
+}
+
+/// Classify a method on a `#[rr::mode(atomic)]` type by name.
+///
+/// Maps standard atomic method names to Caesium operation equivalents.
+/// `signed` selects MaxSigned/MinSigned vs MaxUnsigned/MinUnsigned for fetch_max/fetch_min.
+/// Returns `None` for methods that are not atomic operations (e.g. `new`, `into_inner`).
+fn classify_atomic_method(name: &str, signed: bool) -> Option<AtomicIntrinsicKind> {
+    match name {
+        "load" => Some(AtomicIntrinsicKind::Load),
+        "store" => Some(AtomicIntrinsicKind::Store),
+        "swap" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xchg)),
+        "fetch_add" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Add)),
+        "fetch_sub" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Sub)),
+        "fetch_and" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::And)),
+        "fetch_or" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Or)),
+        "fetch_xor" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xor)),
+        "fetch_nand" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Nand)),
+        "fetch_max" => Some(AtomicIntrinsicKind::Rmw(if signed {
+            lang::AtomicRmwOp::MaxSigned
+        } else {
+            lang::AtomicRmwOp::MaxUnsigned
+        })),
+        "fetch_min" => Some(AtomicIntrinsicKind::Rmw(if signed {
+            lang::AtomicRmwOp::MinSigned
+        } else {
+            lang::AtomicRmwOp::MinUnsigned
+        })),
+        "compare_exchange" | "compare_exchange_weak" => Some(AtomicIntrinsicKind::Cxchg),
         _ => None,
     }
 }
@@ -431,6 +480,171 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         }
     }
 
+    /// Check if a function call targets a method on a `#[rr::mode(atomic)]` type.
+    ///
+    /// If so, returns the classified operation and the inner value's OpType.
+    /// Returns `Ok(None)` for non-atomic methods or non-method calls.
+    fn try_classify_atomic_method(
+        &self,
+        func: &mir::Operand<'tcx>,
+        args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
+    ) -> Result<Option<(AtomicIntrinsicKind, lang::OpType)>, TranslationError<'tcx>> {
+        let Some(did) = Self::extract_fn_def_id(func) else {
+            return Ok(None);
+        };
+
+        let tcx = self.env.tcx();
+
+        // Must be an associated item (method in an impl block)
+        if tcx.impl_of_assoc(did).is_none() {
+            return Ok(None);
+        }
+
+        // Get the self type from the first argument
+        if args.is_empty() {
+            return Ok(None);
+        }
+        let self_ref_ty = self.get_type_of_operand(&args[0].node);
+        let adt_ty = match self_ref_ty.kind() {
+            ty::TyKind::Ref(_, pointee, _) => *pointee,
+            ty::TyKind::Adt(..) => self_ref_ty,
+            _ => return Ok(None),
+        };
+        let ty::TyKind::Adt(adt_def, substs) = adt_ty.kind() else {
+            return Ok(None);
+        };
+
+        // Single-variant structs only
+        if adt_def.variants().len() != 1 {
+            return Ok(None);
+        }
+        let variant = adt_def.variants().iter().next().unwrap();
+
+        // Check mode(atomic) in spec
+        if !self.ty_translator.translator.is_variant_atomic(variant.def_id) {
+            return Ok(None);
+        }
+
+        // Inner field type (repr(transparent) with single field)
+        if variant.fields.len() != 1 {
+            return Err(TranslationError::UnsupportedFeature {
+                description: format!(
+                    "mode(atomic) type {} must have exactly one field (repr(transparent))",
+                    tcx.def_path_str(adt_def.did())
+                ),
+            });
+        }
+        let inner_field = variant.fields.iter().next().unwrap();
+        let inner_ty = inner_field.ty(tcx, substs);
+        let inner_st = self.ty_translator.translate_type_to_syn_type(inner_ty)?;
+        let ot: lang::OpType = (&inner_st).into();
+
+        let signed = matches!(inner_ty.kind(), ty::TyKind::Int(_));
+        let method_name = tcx.item_name(did);
+
+        match classify_atomic_method(method_name.as_str(), signed) {
+            Some(kind) => Ok(Some((kind, ot))),
+            None => Ok(None),
+        }
+    }
+
+    /// Translate an atomic method call on a `#[rr::mode(atomic)]` type to Caesium primitives.
+    ///
+    /// Method argument conventions (Ordering args are ignored — all map to ScOrd):
+    /// - load(&self, order) → Deref ScOrd
+    /// - store(&self, val, order) → Assign ScOrd
+    /// - swap/fetch_*(&self, val, order) → AtomicRMW
+    fn translate_atomic_method(
+        &mut self,
+        kind: AtomicIntrinsicKind,
+        ot: lang::OpType,
+        args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
+        destination: &mir::Place<'tcx>,
+    ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
+        match kind {
+            AtomicIntrinsicKind::Load => {
+                // load(&self, order) -> T
+                let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
+
+                let deref_expr = code::Expr::Deref {
+                    ot: ot.clone(),
+                    order: lang::Order::Sc,
+                    e: Box::new(ptr_expr),
+                };
+
+                let dest_place = self.translate_place(destination)?;
+                Ok(vec![code::PrimStmt::Assign {
+                    ot,
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(deref_expr),
+                }])
+            },
+
+            AtomicIntrinsicKind::Store => {
+                // store(&self, val, order)
+                let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
+                let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
+
+                let atomic_store = code::PrimStmt::Assign {
+                    ot,
+                    order: lang::Order::Sc,
+                    e1: Box::new(ptr_expr),
+                    e2: Box::new(val_expr),
+                };
+
+                let dest_place = self.translate_place(destination)?;
+                let unit_assign = code::PrimStmt::Assign {
+                    ot: lang::SynType::Unit.into(),
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
+                };
+
+                Ok(vec![atomic_store, unit_assign])
+            },
+
+            AtomicIntrinsicKind::Rmw(rmw_op) => {
+                // swap/fetch_*(&self, val, order) -> T
+                let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
+                let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
+
+                let rmw_expr = code::Expr::AtomicRmw {
+                    op: rmw_op,
+                    ot: ot.clone(),
+                    target: Box::new(ptr_expr),
+                    arg: Box::new(val_expr),
+                };
+
+                let dest_place = self.translate_place(destination)?;
+                Ok(vec![code::PrimStmt::Assign {
+                    ot,
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(rmw_expr),
+                }])
+            },
+
+            AtomicIntrinsicKind::Cxchg => {
+                Err(TranslationError::UnsupportedFeature {
+                    description: "compare_exchange via mode(atomic) method mapping is not yet supported; \
+                                  Rust returns Result<T, T> but Caesium CAS returns (T, bool)"
+                        .to_owned(),
+                })
+            },
+
+            AtomicIntrinsicKind::Fence => {
+                let dest_place = self.translate_place(destination)?;
+                Ok(vec![code::PrimStmt::Assign {
+                    ot: lang::SynType::Unit.into(),
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_place),
+                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
+                }])
+            },
+        }
+    }
+
     /// Translate a terminator.
     /// We pass the dying loans during this terminator. They need to be added at the right
     /// intermediate point.
@@ -467,7 +681,27 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
                 if let Some(kind) = self.try_classify_atomic_intrinsic(func)? {
                     info!("Translating atomic intrinsic: {kind:?}");
+
+                    // Collect span for per-crate summary warning (Fence is a no-op, no approximation)
+                    if !matches!(kind, AtomicIntrinsicKind::Fence) {
+                        self.non_sc_atomic_spans.push(term.source_info.span);
+                    }
+
                     let stmts = self.translate_atomic_intrinsic(kind, args, destination)?;
+                    let goto = self.translate_goto_like(&loc, target.unwrap())?;
+
+                    return Ok(code::Stmt::Prim(stmts, Box::new(goto)));
+                }
+
+                // Check for method call on #[rr::mode(atomic)] type
+                if let Some((kind, ot)) = self.try_classify_atomic_method(func, args)? {
+                    info!("Translating mode(atomic) method: {kind:?}");
+
+                    if !matches!(kind, AtomicIntrinsicKind::Fence) {
+                        self.non_sc_atomic_spans.push(term.source_info.span);
+                    }
+
+                    let stmts = self.translate_atomic_method(kind, ot, args, destination)?;
                     let goto = self.translate_goto_like(&loc, target.unwrap())?;
 
                     return Ok(code::Stmt::Prim(stmts, Box::new(goto)));

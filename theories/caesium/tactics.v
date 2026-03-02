@@ -17,6 +17,7 @@ Inductive expr :=
 | CopyAllocId (ot1 : op_type) (e1 e2 : expr)
 | Deref (o : order) (ot : op_type) (memcast : bool) (e : expr)
 | CAS (ot : op_type) (e1 e2 e3 : expr)
+| AtomicRMW (op : atomic_rmw_op) (ot : op_type) (e1 e2 : expr)
 | Call (f : expr) (eκs : list string) (etys : list rust_type) (args : list expr)
 | Concat (es : list expr)
 | IfE (op : op_type) (e1 e2 e3 : expr)
@@ -58,6 +59,7 @@ Lemma expr_ind (P : expr → Prop) :
   (∀ (ot1 : op_type) (e1 e2 : expr), P e1 → P e2 → P (CopyAllocId ot1 e1 e2)) →
   (∀ (o : order) (ot : op_type) (mc : bool) (e : expr), P e → P (Deref o ot mc e)) →
   (∀ (ot : op_type) (e1 e2 e3 : expr), P e1 → P e2 → P e3 → P (CAS ot e1 e2 e3)) →
+  (∀ (op : atomic_rmw_op) (ot : op_type) (e1 e2 : expr), P e1 → P e2 → P (AtomicRMW op ot e1 e2)) →
   (∀ (f : expr) (eκs : list string) (etys : list rust_type) (args : list expr), P f → Forall P args → P (Call f eκs etys args)) →
   (∀ (es : list expr), Forall P es → P (Concat es)) →
   (∀ (ot : op_type) (e1 e2 e3 : expr), P e1 → P e2 → P e3 → P (IfE ot e1 e2 e3)) →
@@ -85,14 +87,14 @@ Lemma expr_ind (P : expr → Prop) :
   (∀ (e : lang.expr), P (Expr e)) → ∀ (e : expr), P e.
 Proof.
   move => *. generalize dependent P => P. match goal with | e : expr |- _ => revert e end.
-  fix FIX 1. move => [ ^e] => ?????????? Hcall Hconcat ?????????????????? Hstruct Henum Hbor ??.
-  11: {
+  fix FIX 1. move => [ ^e] => ??????????? Hcall Hconcat ?????????????????? Hstruct Henum Hbor ??.
+  12: {
     apply Hcall; [ |apply Forall_true => ?]; by apply: FIX.
   }
-  11: {
+  12: {
     apply Hconcat. apply Forall_true => ?. by apply: FIX.
   }
-  29: {
+  30: {
     apply Hstruct. apply Forall_fmap. apply Forall_true => ?. by apply: FIX.
   }
   all: auto.
@@ -110,6 +112,7 @@ Fixpoint to_expr `{!LayoutAlg} (e : expr) : lang.expr :=
   | CopyAllocId ot1 e1 e2 => lang.CopyAllocId ot1 (to_expr e1) (to_expr e2)
   | Deref o ot mc e => lang.Deref o ot mc (to_expr e)
   | CAS ot e1 e2 e3 => lang.CAS ot (to_expr e1) (to_expr e2) (to_expr e3)
+  | AtomicRMW op ot e1 e2 => lang.AtomicRMW op ot (to_expr e1) (to_expr e2)
   | Call f eκs etys args => notation.CallE (to_expr f) eκs etys (to_expr <$> args)
   | Concat es => lang.Concat (to_expr <$> es)
   | IfE ot e1 e2 e3 => lang.IfE ot (to_expr e1) (to_expr e2) (to_expr e3)
@@ -198,6 +201,8 @@ Ltac of_expr e :=
     let e := of_expr e in constr:(Deref o ot mc e)
   | lang.CAS ?ot ?e1 ?e2 ?e3 =>
     let e1 := of_expr e1 in let e2 := of_expr e2 in let e3 := of_expr e3 in constr:(CAS ot e1 e2 e3)
+  | lang.AtomicRMW ?op ?ot ?e1 ?e2 =>
+    let e1 := of_expr e1 in let e2 := of_expr e2 in constr:(AtomicRMW op ot e1 e2)
   | notation.CallE ?f ?eκs ?etys ?args =>
     let f := of_expr f in
     let args := of_expr args in constr:(Call f eκs etys args)
@@ -240,6 +245,8 @@ Inductive ectx_item :=
 | CASLCtx (ot : op_type) (e2 e3 : expr)
 | CASMCtx (ot : op_type) (v1 : val) (e3 : expr)
 | CASRCtx (ot : op_type) (v1 v2 : val)
+| AtomicRMWLCtx (op : atomic_rmw_op) (ot : op_type) (e2 : expr)
+| AtomicRMWRCtx (op : atomic_rmw_op) (ot : op_type) (v1 : val)
 | CallLCtx (eκs : list string) (etys : list rust_type) (args : list expr)
 | CallRCtx (f : val) (eκs : list string) (etys : list rust_type) (vl : list val) (el : list expr)
 | ConcatCtx (vs : list val) (es : list expr)
@@ -278,6 +285,8 @@ Definition fill_item (Ki : ectx_item) (e : expr) : expr :=
   | CASLCtx ot e2 e3 => CAS ot e e2 e3
   | CASMCtx ot v1 e3 => CAS ot (Val v1) e e3
   | CASRCtx ot v1 v2 => CAS ot (Val v1) (Val v2) e
+  | AtomicRMWLCtx op ot e2 => AtomicRMW op ot e e2
+  | AtomicRMWRCtx op ot v1 => AtomicRMW op ot (Val v1) e
   | CallLCtx eκs etys args => Call e eκs etys args
   | CallRCtx f eκs etys vl el => Call (Val f) eκs etys ((Val <$> vl) ++ e :: el)
   | ConcatCtx vs es => Concat ((Val <$> vs) ++ e :: es)
@@ -341,6 +350,12 @@ Fixpoint find_expr_fill (e : expr) (bind_val : bool) : option (list ectx_item * 
     else if find_expr_fill e3 bind_val is Some (Ks, e') then
       if e1 is Val v1 then if e2 is Val v2 then Some (Ks ++ [CASRCtx ot v1 v2], e') else None else None
     else Some ([], e)
+  | AtomicRMW op ot e1 e2 =>
+    if find_expr_fill e1 bind_val is Some (Ks, e') then
+      Some (Ks ++ [AtomicRMWLCtx op ot e2], e')
+    else if find_expr_fill e2 bind_val is Some (Ks, e') then
+           if e1 is Val v1 then Some (Ks ++ [AtomicRMWRCtx op ot v1], e') else None
+         else Some ([], e)
   | Call f eκs etys args =>
     if find_expr_fill f bind_val is Some (Ks, e') then
       Some (Ks ++ [CallLCtx eκs etys args], e') else
@@ -414,6 +429,8 @@ Proof.
     apply: [lang.CASLCtx _ _ _]|
     apply: [lang.CASMCtx _ _ _]|
     apply: [lang.CASRCtx _ _ _]|
+    apply: [lang.AtomicRMWLCtx _ _ _]|
+    apply: [lang.AtomicRMWRCtx _ _ _]|
     apply: [lang.CallLCtx _]|
     apply: [lang.CallRCtx _ _ _]|
     apply: [lang.ConcatCtx _ _]|
@@ -433,7 +450,7 @@ Proof.
     apply: [lang.BinOpRCtx _ _ _ _; lang.DerefCtx _ _ _]|
     apply: [lang.BinOpRCtx _ _ _ _]|..
   ]).
-  move: K => [|||||||||||||||||||||||n||||||] * //=.
+  move: K => [|||||||||||||||||||||||||n||||||] * //=.
   - (** Call *)
     do 2 f_equal.
     rewrite !fmap_app !fmap_cons. repeat f_equal; eauto.

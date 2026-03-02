@@ -599,6 +599,20 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         self.lookup_adt_shim(did).is_some() || self.is_registered_local_adt(did)
     }
 
+    /// Check whether an ADT variant has `#[rr::mode(atomic)]` in its spec.
+    pub(crate) fn is_variant_atomic(&self, variant_did: DefId) -> bool {
+        let ordered = OrderedDefId::new(self.env.tcx(), variant_did);
+        let reg = self.variant_registry.borrow();
+        let Some((_, abstract_ref, _, _)) = reg.get(&ordered) else {
+            return false;
+        };
+        let borrowed = abstract_ref.borrow();
+        let Some(def) = borrowed.as_ref() else {
+            return false;
+        };
+        def.is_atomic()
+    }
+
     /// Get all the struct definitions that clients have used (excluding the variants of enums).
     pub(crate) fn get_struct_defs(&self) -> BTreeMap<OrderedDefId, specs::structs::AbstractRef<'def>> {
         let mut defs = BTreeMap::new();
@@ -1135,12 +1149,22 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         if let Some(invariant_spec) = &mut invariant_spec
             && expect_refinement
         {
-            // make a plist out of this
-            let mut rfn = String::with_capacity(100);
-
-            rfn.push_str("-[");
-            push_str_list!(rfn, &field_refinements, "; ", "#({})");
-            rfn.push(']');
+            let rfn = if invariant_spec.is_atomic() {
+                // For atomic types, inner_rfn is the base type's refinement directly
+                // (e.g. Z for int), not a struct plist. Use the field variable as-is.
+                assert!(
+                    field_refinements.len() == 1,
+                    "mode(atomic) requires repr(transparent) with exactly one field"
+                );
+                field_refinements[0].clone()
+            } else {
+                // make a plist out of this
+                let mut rfn = String::with_capacity(100);
+                rfn.push_str("-[");
+                push_str_list!(rfn, &field_refinements, "; ", "#({})");
+                rfn.push(']');
+                rfn
+            };
 
             invariant_spec.provide_abstracted_refinement(rfn);
         }

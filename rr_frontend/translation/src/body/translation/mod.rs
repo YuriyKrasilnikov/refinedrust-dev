@@ -102,6 +102,8 @@ pub(crate) struct TX<'a, 'def, 'tcx> {
 
     /// the Caesium function buildder
     translated_fn: code::FunctionBuilder<'def>,
+    /// accumulator for non-SeqCst atomic operation spans (crate-level summary warning)
+    non_sc_atomic_spans: &'a mut Vec<rr_rustc_interface::span::Span>,
 }
 
 #[expect(clippy::multiple_inherent_impl)]
@@ -119,6 +121,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         mut inclusion_tracker: InclusionTracker<'a, 'tcx>,
         mut translated_fn: code::FunctionBuilder<'def>,
+        non_sc_atomic_spans: &'a mut Vec<rr_rustc_interface::span::Span>,
     ) -> Result<Self, TranslationError<'tcx>> {
         let body = proc.get_mir();
 
@@ -213,6 +216,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             const_registry,
             trait_registry,
             collected_statics: BTreeSet::new(),
+            non_sc_atomic_spans,
         })
     }
 

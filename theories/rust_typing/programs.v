@@ -620,6 +620,70 @@ Section judgments.
   Class TypedCheckUnOp (E : elctx) (L : llctx) (f : frame_path) (v : val) (P : iProp Σ) (o : un_op) (ot : op_type) : Type :=
     typed_check_un_op_proof T : iProp_to_Prop (typed_check_un_op E L f v P o ot T).
 
+  (** Typing of CAS expressions *)
+  Definition typed_cas (E : elctx) (L : llctx) (f : frame_path)
+    (v1 : val) (P1 : iProp Σ) (v2 : val) (P2 : iProp Σ) (v3 : val) (P3 : iProp Σ)
+    (ot : op_type) (T : typed_val_expr_cont_t) : iProp Σ :=
+    (P1 -∗ P2 -∗ P3 -∗ typed_val_expr E L f (CAS ot v1 v2 v3) T).
+  Class TypedCas (E : elctx) (L : llctx) (f : frame_path)
+    (v1 : val) (P1 : iProp Σ) (v2 : val) (P2 : iProp Σ) (v3 : val) (P3 : iProp Σ)
+    (ot : op_type) : Type :=
+    typed_cas_proof T : iProp_to_Prop (typed_cas E L f v1 P1 v2 P2 v3 P3 ot T).
+
+  (* class for instances specialized to value ownership *)
+  Class TypedCasVal (E : elctx) (L : llctx) (f : frame_path)
+    (v1 : val) {rt1} (ty1 : type rt1) (r1 : rt1)
+    (v2 : val) {rt2} (ty2 : type rt2) (r2 : rt2)
+    (v3 : val) {rt3} (ty3 : type rt3) (r3 : rt3)
+    (ot : op_type) : Type :=
+    typed_cas_val :: TypedCas E L f
+      v1 (v1 ◁ᵥ{f.1, MetaNone} r1 @ ty1)
+      v2 (v2 ◁ᵥ{f.1, MetaNone} r2 @ ty2)
+      v3 (v3 ◁ᵥ{f.1, MetaNone} r3 @ ty3) ot.
+  Global Hint Mode TypedCasVal + + + + + + + + + + + + + + + + : typeclass_instances.
+
+  (** Typing of atomic read-modify-write expressions *)
+  Definition typed_atomic_rmw (E : elctx) (L : llctx) (f : frame_path)
+    (v1 : val) (P1 : iProp Σ) (v2 : val) (P2 : iProp Σ)
+    (op : atomic_rmw_op) (ot : op_type) (T : typed_val_expr_cont_t) : iProp Σ :=
+    (P1 -∗ P2 -∗ typed_val_expr E L f (AtomicRMW op ot v1 v2) T).
+  Class TypedAtomicRmw (E : elctx) (L : llctx) (f : frame_path)
+    (v1 : val) (P1 : iProp Σ) (v2 : val) (P2 : iProp Σ)
+    (op : atomic_rmw_op) (ot : op_type) : Type :=
+    typed_atomic_rmw_proof T : iProp_to_Prop (typed_atomic_rmw E L f v1 P1 v2 P2 op ot T).
+
+  (* class for instances specialized to value ownership *)
+  Class TypedAtomicRmwVal (E : elctx) (L : llctx) (f : frame_path)
+    (v1 : val) {rt1} (ty1 : type rt1) (r1 : rt1)
+    (v2 : val) {rt2} (ty2 : type rt2) (r2 : rt2)
+    (op : atomic_rmw_op) (ot : op_type) : Type :=
+    typed_atomic_rmw_val :: TypedAtomicRmw E L f
+      v1 (v1 ◁ᵥ{f.1, MetaNone} r1 @ ty1)
+      v2 (v2 ◁ᵥ{f.1, MetaNone} r2 @ ty2) op ot.
+  Global Hint Mode TypedAtomicRmwVal + + + + + + + + + + + + + : typeclass_instances.
+
+  (** Typing of atomic load expressions (ScOrd deref).
+
+      The instance opens the atomic invariant, executes [wp_deref ScOrd]
+      at the reduced mask, closes the invariant, and returns the loaded
+      value to the continuation [T].
+
+      Structurally identical to CAS: evaluate pointer arg to value,
+      then dispatch to instance via [find_in_context (FindLoc l)]. *)
+  Definition typed_atomic_load (E : elctx) (L : llctx) (f : frame_path)
+    (v : val) (P : iProp Σ) (ot : op_type) (T : typed_val_expr_cont_t) : iProp Σ :=
+    (P -∗ typed_val_expr E L f (Deref ScOrd ot true v) T).
+  Class TypedAtomicLoad (E : elctx) (L : llctx) (f : frame_path)
+    (v : val) (P : iProp Σ) (ot : op_type) : Type :=
+    typed_atomic_load_proof T : iProp_to_Prop (typed_atomic_load E L f v P ot T).
+
+  (* class for instances specialized to value ownership *)
+  Class TypedAtomicLoadVal (E : elctx) (L : llctx) (f : frame_path)
+    (v : val) {rt} (ty : type rt) (r : rt)
+    (ot : op_type) : Type :=
+    typed_atomic_load_val :: TypedAtomicLoad E L f
+      v (v ◁ᵥ{f.1, MetaNone} r @ ty) ot.
+  Global Hint Mode TypedAtomicLoadVal + + + + + + + + : typeclass_instances.
 
   (** Typed call expressions, assuming a list of argument values with given types and refinements.
     [P] may state additional preconditions on the function. *)
@@ -757,6 +821,34 @@ Section judgments.
       typed_stmt_post_cond f rf R Φ -∗
       WPs{f.1} s {{rf.(f_code), Φ}})%I.
   Global Arguments typed_stmt _ _ _ _%_E _ _%_I _.
+
+  (** Typing of atomic store statements (ScOrd assign).
+
+      Structurally parallel to CAS/AtomicRMW but at the statement level.
+      The instance opens the atomic invariant, executes the store at the
+      reduced mask, and closes the invariant. The continuation [T L']
+      is threaded via [typed_stmt] for the succeeding statement. *)
+  Definition typed_atomic_store (E : elctx) (L : llctx) (f : frame_path)
+    (v_ptr : val) (P_ptr : iProp Σ) (v_val : val) (P_val : iProp Σ)
+    (ot : op_type) (T : llctx → iProp Σ) : iProp Σ :=
+    (P_ptr -∗ P_val -∗
+      ∀ (s : stmt) (fn : function) (R : typed_stmt_R_t) (ϝ : lft),
+      (∀ L', T L' -∗ typed_stmt E L' f s fn R ϝ) -∗
+      typed_stmt E L f (Assign ScOrd ot v_ptr v_val s) fn R ϝ)%I.
+  Class TypedAtomicStore (E : elctx) (L : llctx) (f : frame_path)
+    (v_ptr : val) (P_ptr : iProp Σ) (v_val : val) (P_val : iProp Σ)
+    (ot : op_type) : Type :=
+    typed_atomic_store_proof T : iProp_to_Prop (typed_atomic_store E L f v_ptr P_ptr v_val P_val ot T).
+
+  (* class for instances specialized to value ownership *)
+  Class TypedAtomicStoreVal (E : elctx) (L : llctx) (f : frame_path)
+    (v_ptr : val) {rt1} (ty1 : type rt1) (r1 : rt1)
+    (v_val : val) {rt2} (ty2 : type rt2) (r2 : rt2)
+    (ot : op_type) : Type :=
+    typed_atomic_store_val :: TypedAtomicStore E L f
+      v_ptr (v_ptr ◁ᵥ{f.1, MetaNone} r1 @ ty1)
+      v_val (v_val ◁ᵥ{f.1, MetaNone} r2 @ ty2) ot.
+  Global Hint Mode TypedAtomicStoreVal + + + + + + + + + + + + : typeclass_instances.
 
   (* [P] is an invariant on the context. *)
   Definition typed_block (P : elctx → llctx → iProp Σ) (f : frame_path) (b : label) (fn : function) (R : typed_stmt_R_t) (ϝ : lft) : iProp Σ :=
@@ -4177,6 +4269,8 @@ Ltac generate_i2p_instance_to_tc_hook arg c ::=
   | typed_un_op ?E ?L ?f ?v ?P ?o ?ot => constr:(TypedUnOp E L f v P o ot)
   | typed_check_bin_op ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?o ?ot1 ?ot2 => constr:(TypedCheckBinOp E L f v1 P1 v2 P2 o ot1 ot2)
   | typed_check_un_op ?E ?L ?f ?v ?P ?o ?ot => constr:(TypedCheckUnOp E L f v P o ot)
+  | typed_cas ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?v3 ?P3 ?ot => constr:(TypedCas E L f v1 P1 v2 P2 v3 P3 ot)
+  | typed_atomic_rmw ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?op ?ot => constr:(TypedAtomicRmw E L f v1 P1 v2 P2 op ot)
   | typed_switch ?E ?L ?f ?v ?ty ?r ?it => constr:(TypedSwitch E L f v ty r it)
   | typed_call ?E ?L ?f ?κs ?etys ?v ?P ?vs ?tys => constr:(TypedCall E L f κs etys v P vs tys)
   | typed_place ?E ?L ?f ?l ?lto ?ro ?b1 ?b2 ?K => constr:(TypedPlace E L f l lto ro b1 b2 K)
