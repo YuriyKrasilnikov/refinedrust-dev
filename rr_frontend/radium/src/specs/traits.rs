@@ -89,7 +89,7 @@ pub struct InstanceSpec<'def> {
 #[derive(Constructor, Clone, Debug)]
 pub struct SpecAttrsDecl {
     /// a map of attributes and their types
-    attrs: Option<BTreeMap<String, coq::term::Type>>,
+    attrs: Option<Vec<(String, coq::term::Type)>>,
     /// optionally, a semantic interpretation (like `Copy`) of the trait in terms of semantic types
     semantic_interp: Option<String>,
 }
@@ -1491,7 +1491,10 @@ impl ImplSpec<'_> {
             coq::term::Term::Literal(of_trait.spec_record_attrs_constructor_name())
         } else {
             let mut components = Vec::new();
-            for (attr_name, inst) in &attrs.attrs {
+            // Important: do this in the same order as at declaration site.
+
+            for attr_name in &self.trait_ref.of_trait.declared_attrs {
+                let inst = &attrs.attrs[attr_name];
                 // create an item for every attr
                 let record_item_name = of_trait.make_spec_attr_name(attr_name);
 

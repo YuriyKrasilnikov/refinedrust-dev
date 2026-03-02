@@ -4,7 +4,7 @@
 // If a copy of the BSD-3-clause license was not distributed with this
 // file, You can obtain one at https://opensource.org/license/bsd-3-clause/.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use attribute_parse::{MToken, parse};
 use derive_more::Constructor;
@@ -78,7 +78,8 @@ where
     F: Fn(&str) -> String,
 {
     fn parse_trait_attrs<'a>(&'a mut self, attrs: &'a [&'a hir::AttrItem]) -> Result<TraitAttrs, String> {
-        let mut trait_attrs = BTreeMap::new();
+        let mut trait_attrs = Vec::new();
+        let mut used_attrs = HashSet::new();
 
         let mut external_attrs = false;
         let mut semantic_interp = None;
@@ -118,9 +119,10 @@ where
                         self.make_record_id.call((&parsed_name.to_string(),)),
                     );
                     let parsed_type: RRCoqType = buffer.parse(&self.scope).map_err(str_err)?;
-                    if trait_attrs.insert(parsed_name.to_string(), parsed_type.ty).is_some() {
+                    if !used_attrs.insert(parsed_name.to_string()) {
                         return Err(format!("attribute {parsed_name} has been declared multiple times"));
                     }
+                    trait_attrs.push((parsed_name.to_string(), parsed_type.ty));
                 },
                 "semantic" => {
                     let parsed_term: parse::LitStr = buffer.parse(&self.scope).map_err(str_err)?;
