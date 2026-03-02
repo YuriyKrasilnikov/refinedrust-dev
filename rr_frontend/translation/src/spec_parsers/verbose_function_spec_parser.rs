@@ -1010,6 +1010,7 @@ where
                     ty::UpvarCapture::ByValue => {
                         // full ownership
                         let (processed_ty, _) = self.make_type_with_ref(pre, ty);
+                        let rfn = processed_ty.1.clone();
                         pre_types.push(processed_ty);
 
                         if let Some(post) = post {
@@ -1019,6 +1020,9 @@ where
                                 post
                             ));
                         }
+
+                        // to make things well-typed in the PostMut definition
+                        post_patterns.push(CapturePostRfn::ImmutOrConsume(rfn));
                     },
                     ty::UpvarCapture::ByRef(ty::BorrowKind::Immutable) => {
                         // shared borrow

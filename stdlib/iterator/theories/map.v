@@ -65,7 +65,7 @@ Ltac solve_closure_has_trivial_pre :=
     iStartProof;
     unshelve (repeat liRStep; solve[fail]);
     unshelve (sidecond_solver);
-    sidecond_hammer; 
+    sidecond_hammer;
     apply inhabitant
   end.
 
@@ -77,19 +77,17 @@ Section map_inv_variants.
   Context `{!refinedrustGS Σ}.
 
   Definition map_inv_ty (Self_rt Item_rt Clos_rt Clos_out_rt : RT)
-    (fnonce_attrs : FnOnce_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt)
-    (fnmut_attrs : FnMut_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt) :=
+    (fnonce_attrs : FnOnce_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt) :=
     thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ.
   Global Arguments map_inv_ty : simpl never.
 
   Context
     (Self_rt Item_rt Clos_rt Clos_out_rt : RT)
     (fnonce_attrs : FnOnce_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt)
-    (fnmut_attrs : FnMut_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt)
   .
 
   Lemma simpl_exist_map_inv_trivial Q :
-    SimplExist (map_inv_ty _ _ _ _ fnonce_attrs fnmut_attrs) Q
+    SimplExist (map_inv_ty _ _ _ _ fnonce_attrs) Q
       (∃ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ), Q Inv).
   Proof.
     unfold SimplExist.
@@ -99,7 +97,7 @@ Section map_inv_variants.
   (* For a trivial pre, instantiate with a trivial invariant *)
   Lemma simpl_exist_map_inv_pure_pre Q :
     ClosureHasTrivialPre _ _ _ fnonce_attrs →
-    SimplExist (map_inv_ty Self_rt Item_rt Clos_rt Clos_out_rt fnonce_attrs fnmut_attrs) Q
+    SimplExist (map_inv_ty Self_rt Item_rt Clos_rt Clos_out_rt fnonce_attrs) Q
       (Q (λ _ _ _, True)%I).
   Proof.
     intros Hpre.
@@ -108,19 +106,19 @@ Section map_inv_variants.
   Qed.
 
   Lemma simpl_forall_map_inv Q :
-    SimplForall (map_inv_ty _ _ _ _ fnonce_attrs fnmut_attrs) 1 Q (∀ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ), Q Inv).
+    SimplForall (map_inv_ty _ _ _ _ fnonce_attrs) 1 Q (∀ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ), Q Inv).
   Proof.
     unfold SimplForall.
     done.
   Qed.
 End map_inv_variants.
-Global Hint Extern 1000 (SimplExist (map_inv_ty _ _ _ _ ?fnonce ?fnmut) _ _) =>
-  notypeclasses refine (simpl_exist_map_inv_trivial _ _ _ _ fnonce fnmut _) : typeclass_instances.
-Global Hint Extern 10 (SimplForall (map_inv_ty _ _ _ _ ?fnonce ?fnmut) _ _ _) =>
-  notypeclasses refine (simpl_forall_map_inv _ _ _ _ fnonce fnmut _) : typeclass_instances.
+Global Hint Extern 1000 (SimplExist (map_inv_ty _ _ _ _ ?fnonce) _ _) =>
+  notypeclasses refine (simpl_exist_map_inv_trivial _ _ _ _ fnonce _) : typeclass_instances.
+Global Hint Extern 10 (SimplForall (map_inv_ty _ _ _ _ ?fnonce) _ _ _) =>
+  notypeclasses refine (simpl_forall_map_inv _ _ _ _ fnonce _) : typeclass_instances.
 
-Global Hint Extern 100 (SimplExist (map_inv_ty _ _ _ _ ?fnonce ?fnmut) _ _) =>
-  notypeclasses refine (simpl_exist_map_inv_pure_pre _ _ _ _ fnonce fnmut _ _);
+Global Hint Extern 100 (SimplExist (map_inv_ty _ _ _ _ ?fnonce) _ _) =>
+  notypeclasses refine (simpl_exist_map_inv_pure_pre _ _ _ _ fnonce _ _);
   typeclasses eauto : typeclass_instances.
 
 Section map.

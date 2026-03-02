@@ -27,7 +27,7 @@ pub trait Iterator {
 
     /// We pick an invariant Inv
     /// TODO: maybe release Inv when we drop the Map iterator
-    #[rr::params("Inv" : "map_inv_ty _ _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs FnMut_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
+    #[rr::params("Inv" : "map_inv_ty _ _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
     #[rr::requires(#iris "{Inv} π self")]
     /// Precondition: The picked invariant should hold initially.
     #[rr::requires(#iris "Inv π self f")]

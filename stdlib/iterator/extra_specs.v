@@ -11,7 +11,7 @@ Section extra.
       ⌜length states = S (length hist)⌝ ∗
       IteratorNextFusedTrans It_attrs π s1.(map_it) hist' s2.(map_it) ∗
       [∗ list] i ↦ a; b ∈ hist'; hist,
-        ∃ s1 s2, ⌜states !! i = Some s1⌝ ∗ ⌜states !! S i = Some s2⌝ ∗ ☒ FnOnce_attrs.(FnOnce_Pre) π s1 *[a] ∗ FnMut_attrs.(FnMut_PostMut) π s1 *[a] s2 b
+        ∃ s1 s2, ⌜states !! i = Some s1⌝ ∗ ⌜states !! S i = Some s2⌝ ∗ ☒ FnOnce_attrs.(FnOnce_Pre) π s1 *[a] ∗ FnOnce_attrs.(FnOnce_PostMut) π s1 *[a] s2 b
   .
   Proof.
     iInduction hist as [ | a hist] "IH" forall (s1 s2); simpl.
@@ -35,7 +35,7 @@ Section extra.
   (It_learn : IteratorLearnInductive It_attrs)
 
   (FnOnce_pre_learn : ∀ π self args, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_Pre) π self args))
-  (FnMut_postmut_learn : ∀ π self args self' out, SimplifyBoringlyImpl (FnMut_attrs.(FnMut_PostMut) π self args self' out))
+  (FnMut_postmut_learn : ∀ π self args self' out, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_PostMut) π self args self' out))
   (FnMut_postmut_stateless : ∀ π args out, RelationIsIdentity (λ self self', (FnMut_postmut_learn π self args self' out).(simplify_boringly_impl_q _)))
   :
     IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs MB_rt MI_rt MF_rt Item_rt It_attrs FnOnce_attrs FnMut_attrs) := {|
@@ -57,7 +57,7 @@ Section extra.
     iDestruct "Ha" as "(%Hlook1 & %Hlook2 & %Hlen & Hnext & Hclos)".
     iPoseProof (It_learn.(iterator_learn_inductive_proof) with "Hnext") as "%Hlearn".
 
-    iAssert (([∗ list] i↦a;b ∈ hist';hist, ∃ s0 s3 : RT_xt MF_rt, ⌜states' !! i = Some s0⌝ ∗ ⌜states' !! S i = Some s3⌝ ∗ ☒ FnOnce_Pre FnOnce_attrs π s0 *[a] ∗ ☒ FnMut_PostMut FnMut_attrs π s0 *[a] s3 b))%I with "[Hclos]" as "Hclos".
+    iAssert (([∗ list] i↦a;b ∈ hist';hist, ∃ s0 s3 : RT_xt MF_rt, ⌜states' !! i = Some s0⌝ ∗ ⌜states' !! S i = Some s3⌝ ∗ ☒ FnOnce_Pre FnOnce_attrs π s0 *[a] ∗ ☒ FnOnce_PostMut FnOnce_attrs π s0 *[a] s3 b))%I with "[Hclos]" as "Hclos".
     { iApply boringly_persistent_elim.
       iApply boringly_mono; last iApply "Hclos".
       iIntros "Ha". iApply (big_sepL2_impl with "Ha").
