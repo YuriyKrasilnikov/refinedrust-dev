@@ -516,91 +516,41 @@ Inductive check_un_op : un_op → op_type → val → bool → Prop :=
     check_un_op op (IntOp it) vs b
 .
 
-(** Evaluate an atomic RMW operation: compute the new value from old and argument. *)
+(** Pure Z-level computation for each RMW operation.
+    Separated from [atomic_rmw_eval] to make the decode→compute→encode
+    structure explicit and avoid repeating the [match ot] nine times. *)
+Definition atomic_rmw_compute (op : atomic_rmw_op)
+    (n1 n2 : Z) (it : int_type) : option Z :=
+  match op with
+  | RmwXchg => None
+  | RmwAdd  => n ← compute_arith_bin_op n1 n2 it AddOp; Some (wrap_to_it n it)
+  | RmwSub  => n ← compute_arith_bin_op n1 n2 it SubOp; Some (wrap_to_it n it)
+  | RmwAnd  => n ← compute_arith_bin_op n1 n2 it AndOp; Some (wrap_to_it n it)
+  | RmwOr   => n ← compute_arith_bin_op n1 n2 it OrOp;  Some (wrap_to_it n it)
+  | RmwXor  => n ← compute_arith_bin_op n1 n2 it XorOp; Some (wrap_to_it n it)
+  | RmwNand => Some (wrap_to_it (Z.lnot (Z.land n1 n2)) it)
+  | RmwMaxS => Some (Z.max n1 n2)
+  | RmwMinS => Some (Z.min n1 n2)
+  | RmwMaxU =>
+      let u1 := n1 `mod` int_modulus it in
+      let u2 := n2 `mod` int_modulus it in
+      Some (if (u2 <=? u1)%Z then n1 else n2)
+  | RmwMinU =>
+      let u1 := n1 `mod` int_modulus it in
+      let u2 := n2 `mod` int_modulus it in
+      Some (if (u1 <=? u2)%Z then n1 else n2)
+  end.
+
+(** Evaluate an atomic RMW operation: decode operands, compute, encode result. *)
 Definition atomic_rmw_eval (op : atomic_rmw_op) (ot : op_type) (vo varg : val) : option val :=
   match op with
   | RmwXchg => Some varg
-  | RmwAdd =>
+  | _ =>
       match ot with
       | IntOp it =>
           n1 ← val_to_Z vo it;
           n2 ← val_to_Z varg it;
-          n ← compute_arith_bin_op n1 n2 it AddOp;
-          val_of_Z (wrap_to_it n it) it
-      | _ => None
-      end
-  | RmwSub =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          n ← compute_arith_bin_op n1 n2 it SubOp;
-          val_of_Z (wrap_to_it n it) it
-      | _ => None
-      end
-  | RmwAnd =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          n ← compute_arith_bin_op n1 n2 it AndOp;
-          val_of_Z (wrap_to_it n it) it
-      | _ => None
-      end
-  | RmwOr =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          n ← compute_arith_bin_op n1 n2 it OrOp;
-          val_of_Z (wrap_to_it n it) it
-      | _ => None
-      end
-  | RmwXor =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          n ← compute_arith_bin_op n1 n2 it XorOp;
-          val_of_Z (wrap_to_it n it) it
-      | _ => None
-      end
-  | RmwNand =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          val_of_Z (wrap_to_it (Z.lnot (Z.land n1 n2)) it) it
-      | _ => None
-      end
-  | RmwMaxS =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          val_of_Z (Z.max n1 n2) it
-      | _ => None
-      end
-  | RmwMinS =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          val_of_Z (Z.min n1 n2) it
-      | _ => None
-      end
-  | RmwMaxU | RmwMinU =>
-      match ot with
-      | IntOp it =>
-          n1 ← val_to_Z vo it;
-          n2 ← val_to_Z varg it;
-          let u1 := n1 `mod` int_modulus it in
-          let u2 := n2 `mod` int_modulus it in
-          let r := match op with
-            | RmwMaxU => if (u2 <=? u1)%Z then n1 else n2
-            | RmwMinU => if (u1 <=? u2)%Z then n1 else n2
-            | _ => n1 (* unreachable — outer match restricts to RmwMaxU|RmwMinU *)
-          end in
+          r ← atomic_rmw_compute op n1 n2 it;
           val_of_Z r it
       | _ => None
       end

@@ -4813,6 +4813,10 @@ Global Typeclasses Opaque typed_cas.
 
 Global Typeclasses Opaque typed_atomic_rmw.
 
+Global Typeclasses Opaque typed_atomic_load.
+
+Global Typeclasses Opaque typed_atomic_store.
+
 Global Typeclasses Opaque typed_if.
 
 Global Typeclasses Opaque typed_call.
