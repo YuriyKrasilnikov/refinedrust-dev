@@ -468,6 +468,15 @@ impl<'a, T: 'a> Iterator for Iter<'a, T> {
     {
         unimplemented!();
     }
+
+    #[rr::only_spec]
+    fn all<F>(&mut self, f: F) -> bool
+    where
+        Self: Sized,
+        F: FnMut(Self::Item) -> bool,
+    {
+        unimplemented!();
+    }
 }
 
 // Slice IterMut
