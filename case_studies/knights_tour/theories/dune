@@ -1,0 +1,15 @@
+(rocq.theory
+ (flags -w -notation-overridden -w -redundant-canonical-projection)
+ (name refinedrust.examples.knights_tour.theories)
+ (generate_project_file)
+ (theories
+  stdpp
+  iris
+  iris_contrib
+  Ltac2
+  Equations
+  lrust
+  caesium
+  lithium
+  refinedrust
+  Stdlib))
