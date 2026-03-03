@@ -12,7 +12,7 @@ Lemma traits_iterator_Iterator_map_proof (π : thread_id) :
 Proof.
   traits_iterator_Iterator_map_prelude.
 
-  repeat liRStep; liShow.
+  rep <- 1 liRStep; liShow.
   iEval (rewrite /traits_iterator_Iterator_Inv/=).
   unfold MapInv.
   repeat liRStep; liShow.

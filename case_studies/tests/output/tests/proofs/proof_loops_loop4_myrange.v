@@ -16,10 +16,6 @@ Proof.
   loops_loop4_myrange_prelude.
 
   rep liRStep; liShow.
-  rewrite /traits_iterator_Iterator_Inv/=.
-  rep liRStep; liShow.
-  rewrite /traits_iterator_Iterator_Inv/=.
-  rep liRStep; liShow.
 
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.

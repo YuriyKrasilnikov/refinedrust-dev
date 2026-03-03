@@ -13,8 +13,6 @@ Proof.
   loops_MyRangeasstd_iter_Iterator_next_prelude.
 
   repeat liRStep; liShow.
-  rewrite /traits_iterator_Iterator_Inv/=.
-  rep liRStep; liShow.
 
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.

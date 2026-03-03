@@ -176,10 +176,11 @@ impl<T, A: Allocator> IntoIterator for Vec<T, A> {
     }
 }
 
-#[rr::instantiate("Next" := "λ π l e l2, 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ π _ l e l2, 
     (⌜if_None e (l = [] ∧ l2 = [])⌝∗
     ⌜if_Some e (λ e, l = e :: l2)⌝)%I")]
-#[rr::instantiate("Inv" := "λ π self, True%I")]
+#[rr::instantiate("Inv" := "λ π _ self, True%I")]
 impl<T, A: Allocator> Iterator for IntoIter<T, A> {
     type Item = T;
 
@@ -448,10 +449,11 @@ pub struct Iter<'a, T: 'a> {
     _marker: PhantomData<&'a T>,
 }
 
-#[rr::instantiate("Next" := "λ π l e l2, 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ π _ l e l2, 
     (⌜if_None e (l = [] ∧ l2 = [])⌝∗
     ⌜if_Some e (λ e, l = e :: l2)⌝)%I")]
-#[rr::instantiate("Inv" := "λ π self, True%I")]
+#[rr::instantiate("Inv" := "λ π _ self, True%I")]
 impl<'a, T: 'a> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
@@ -500,10 +502,11 @@ pub struct IterMut<'a, T: 'a> {
     _marker: PhantomData<&'a mut T>,
 }
 
-#[rr::instantiate("Next" := "λ π l1 e l2, 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ π _ l1 e l2, 
     (⌜if_None e (l1 = [] ∧ l2 = [])⌝ ∗
     ⌜if_Some e (λ e, l1 = e :: l2)⌝)%I")]
-#[rr::instantiate("Inv" := "λ π self, True%I")]
+#[rr::instantiate("Inv" := "λ π _ self, True%I")]
 impl<'a, T: 'a> Iterator for IterMut<'a, T> {
     type Item = &'a mut T;
 

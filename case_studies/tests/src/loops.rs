@@ -71,11 +71,12 @@ struct MyRange {
 }
 
 
-#[rr::instantiate("Next" := "λ _ s1 e s2, ⌜s1.2 = s2.2 ∧ 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ _ _ s1 e s2, ⌜s1.2 = s2.2 ∧ 
     if_None e (s1 = s2 ∧ s1.1 = s1.2) ∧ 
     if_Some e (λ e, s1.1 = e ∧ s2.1 = (1 + s1.1)%Z ∧ s1.1 < s1.2)⌝%I")]
 //#[rr::instantiate("Inv" := "λ π s, (⌜(s.1 ≤ s.2)%Z⌝)%I")]
-#[rr::instantiate("Inv" := "λ π s, True%I")]
+#[rr::instantiate("Inv" := "λ π _ s, True%I")]
 impl Iterator for MyRange {
     type Item = usize; 
 

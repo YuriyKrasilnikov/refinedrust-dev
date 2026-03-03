@@ -14,7 +14,7 @@ Proof.
 
   repeat liRStep. liShow.
 
-  iRename select (traits_iterator_Iterator_Inv _ _ _) into "Hinv".
+  iRename select (traits_iterator_Iterator_Inv _ _ _ _) into "Hinv".
   iEval (rewrite /traits_iterator_Iterator_Inv/=) in "Hinv".
   unfold MapInv. iDestruct "Hinv" as "(%Inv & Hinv & Hinv_nested & Hsome & Hnone)".
   rep <-! liRStep; liShow. 
@@ -22,7 +22,7 @@ Proof.
 
   destruct inner_el as [inner_el | ].
   { (* obtain an element *)
-    iRename select (traits_iterator_Iterator_Next _ _ _ _ _) into "Hnext".
+    iRename select (traits_iterator_Iterator_Next _ _ _ _ _ _) into "Hnext".
     iPoseProof (li_sealed_use_pers with "Hsome") as "#Hsome'".
     iPoseProof (li_sealed_use_pers with "Hnone") as "#Hnone'".
     iPoseProof (boringly_intro with "Hnext") as "#Hnext_x".
@@ -40,7 +40,7 @@ Proof.
     liInst Hevar_e_inner inner_el.
     rep liRStep. 
     liInst Hevar_x p.
-    rep liRStep.
+    rep <- 2 liRStep.
     iEval (rewrite /traits_iterator_Iterator_Inv/=).
     rewrite /MapInv.
     rep liRStep; liShow.
@@ -48,12 +48,12 @@ Proof.
     rep liRStep.
   }
   { (* no element *)
-    iRename select (traits_iterator_Iterator_Next _ _ _ _ _) into "Hnext".
+    iRename select (traits_iterator_Iterator_Next _ _ _ _ _ _) into "Hnext".
     iPoseProof (li_sealed_use_pers with "Hnone") as "#Hnone'".
     iPoseProof (boringly_intro with "Hnext") as "#Hnext_x".
     iPoseProof ("Hnone'" with "Hnext_x Hinv") as "Hinv".
     rep <-! liRStep. liShow. 
-    rep liRStep. 
+    rep <- 1 liRStep. 
     iEval (rewrite /traits_iterator_Iterator_Inv/=).
     rewrite /MapInv.
     rep liRStep; liShow.

@@ -64,10 +64,11 @@ struct ListIter<'a, T> {
     l: &'a List<T>,    
 }
 
-#[rr::instantiate("Next" := "λ π l e l2, 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ π _ l e l2, 
     (⌜if_None e (l = [] ∧ l2 = [])⌝∗
     ⌜if_Some e (λ e, l = e :: l2)⌝)%I")]
-#[rr::instantiate("Inv" := "λ π s, True%I")]
+#[rr::instantiate("Inv" := "λ π _ s, True%I")]
 impl<'a, T> Iterator for ListIter<'a, T> {
     type Item = &'a T;
 
