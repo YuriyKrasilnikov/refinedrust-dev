@@ -111,11 +111,10 @@ Section deinit.
   (* First, if the syntype is equal *)
   Lemma owned_subltype_step_ofty_uninit_eq π E L {rt} (lt : ltype rt) r st l `{Hst : !TCDone (ltype_st lt = st)} T :
     owned_subltype_step π E L l #r #() lt (◁ uninit st) T :-
-    return cast_ltype_to_type E L lt (λ ty, find_tc_inst (TyGhostDrop ty) (λ Hg, T L (ty_ghost_drop_for ty Hg π r))).
+    return cast_ltype_to_type E L lt (λ ty, T L (ty_ghost_drop ty π r)).
   Proof.
     unfold TCDone in Hst. subst st.
     iDestruct 1 as "(%ty & %Heqt & HT)".
-    iDestruct "HT" as (?) "HT".
     iIntros (??) "CTX HE HL Hl". simp_ltypes; simpl.
 
     iPoseProof (full_eqltype_acc with "CTX HE HL") as "#Hincl"; first apply Heqt.
@@ -148,17 +147,15 @@ Section deinit.
     owned_subltype_step π E L l #r #() lt (◁ uninit st) T :-
     return
     cast_ltype_to_type E L lt (λ ty,
-    find_tc_inst (TyGhostDrop ty) (λ Hg,
     li_tactic (compute_layout_goal (ty_syn_type ty MetaNone)) (λ ly1,
       ⌜syn_type_has_layout (ty_syn_type ty MetaNone) ly1⌝ -∗
       li_tactic (compute_layout_goal st) (λ ly2,
         ⌜syn_type_has_layout st ly2⌝ -∗
         ⌜l `has_layout_loc` ly1⌝ -∗ ⌜l `has_layout_loc` ly2⌝ ∗
         ⌜ly_size ly1 = ly_size ly2⌝ ∗
-        T L (ty_ghost_drop_for ty Hg π r))))).
+        T L (ty_ghost_drop ty π r)))).
   Proof.
     iDestruct 1 as "(%ty & %Heqt & HT)".
-    iDestruct "HT" as (?) "HT".
     rewrite /compute_layout_goal.
     iDestruct "HT" as "(%ly1 & %Hst1 & HT)".
     iDestruct ("HT" with "[//]") as "(%ly2 & %Hst2 & HT)".

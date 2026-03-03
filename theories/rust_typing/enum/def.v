@@ -115,6 +115,8 @@ Section union.
         ⌜l `has_layout_loc` ul⌝ ∗
         l ◁ₗ{π, MetaNone, κ} r @ ty ∗
         (l +ₗ ly.(ly_size)) ◁ₗ{π, MetaNone, κ} () @ uninit (UntypedSynType $ active_union_rest_ly ul ly))%I;
+    ty_ghost_drop π r :=
+      ty_ghost_drop ty π r;
     _ty_lfts := ty_lfts ty;
     _ty_wf_E := ty_wf_E ty;
     ty_sidecond := True;
@@ -248,6 +250,11 @@ Section union.
     iApply ty_shr_mono; done.
   Qed.
   Next Obligation.
+    iIntros (??????????) "Hb".
+    iDestruct "Hb" as "(%ul & %ly & -> & %Halg & %Hly & ? & Hv & _)".
+    iPoseProof (ty_own_ghost_drop with "Hv") as "Ha"; last iApply (logical_step_wand with "Ha"); eauto.
+  Qed.
+  Next Obligation.
     intros rt ty variant uls ot mt st π r m v (ul & Hul & ->).
     iIntros "Hv".
     destruct mt; first done; last done.
@@ -258,14 +265,6 @@ Section union.
     apply syn_type_has_layout_union_inv in Hst as (variants & ul & -> & Hul & Hf).
     exists ul. split; last done.
     by eapply use_union_layout_alg_Some.
-  Qed.
-
-  Global Program Instance active_union_ghost_drop {rt} (ty : type rt) `{Hg : !TyGhostDrop ty} v uls : TyGhostDrop (active_union_t ty v uls) :=
-    mk_ty_ghost_drop _ (λ π r, ty_ghost_drop_for ty Hg π r) _.
-  Next Obligation.
-    iIntros (???????????) "Hb".
-    iDestruct "Hb" as "(%ul & %ly & -> & %Halg & %Hly & ? & Hv & _)".
-    iPoseProof (ty_own_ghost_drop with "Hv") as "Ha"; last iApply (logical_step_wand with "Ha"); eauto.
   Qed.
 End union.
 
@@ -341,6 +340,9 @@ Section enum.
     _ty_has_op_type ot mt :=
       is_enum_ot e ot mt;
     ty_sidecond := True%I;
+    ty_ghost_drop π r :=
+      (* TODO *)
+      True%I;
     _ty_lfts := e.(enum_lfts);
     _ty_wf_E := e.(enum_wf_E);
   |}.
@@ -421,6 +423,9 @@ Section enum.
     iApply (ty_shr_mono with "Hincl Hl").
   Qed.
   Next Obligation.
+    intros. iIntros "_". by iApply logical_step_intro.
+  Qed.
+  Next Obligation.
     iIntros (rt en ot mt st π r m v Hot) "Hl".
     iDestruct "Hl" as "(%ly & %tag & -> & %Hst & %Htag & Ha)".
     destruct mt; first done; first last.
@@ -469,13 +474,6 @@ Section enum.
     TySized (enum_t e).
   Proof.
     econstructor; done.
-  Qed.
-
-  Global Program Instance enum_t_ghost_drop {rt} (en : enum rt) : TyGhostDrop (enum_t en) :=
-    mk_ty_ghost_drop _ (λ _ _, True)%I _.
-  Next Obligation.
-    iIntros (rt e π r m v F ?) "Hv".
-    iApply logical_step_intro. done.
   Qed.
 End enum.
 
@@ -707,6 +705,7 @@ Section ne.
       generalize (enum_ne_rt_consistent ty ty' r); intros Heq.
       destruct Heq.
       done.
+    - solve_type_proper.
   Qed.
 
   Global Instance enum_t_contr {rt1 rt2} (F : type rt1 → enum rt2) :
@@ -793,6 +792,7 @@ Section ne.
       generalize (enum_contr_rt_consistent ty ty' r); intros Heq.
       destruct Heq.
       done.
+    - solve_type_proper.
   Qed.
 
 End ne.

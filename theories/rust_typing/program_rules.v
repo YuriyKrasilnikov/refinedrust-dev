@@ -3420,9 +3420,9 @@ Section subsume.
   (* TODO the syntype equality requirement currently is too strong: it does not allow us to go from UntypedSynType to "proper sy types".
      Can we lift the equality requirement in our typesystem?
   *)
-  Lemma type_write_ofty_strong E L {rt rt2} π l (ty : type rt) (ty2 : type rt2) `{Hg : !TyGhostDrop ty2} r1 (r2 : rt2) v ot `{Hst_eq : !TCDone (ty_syn_type ty MetaNone = ty_syn_type ty2 MetaNone)} (T : typed_write_end_cont_t UpdStrong rt2) :
+  Lemma type_write_ofty_strong E L {rt rt2} π l (ty : type rt) (ty2 : type rt2) r1 (r2 : rt2) v ot `{Hst_eq : !TCDone (ty_syn_type ty MetaNone = ty_syn_type ty2 MetaNone)} (T : typed_write_end_cont_t UpdStrong rt2) :
     (⌜ty_has_op_type ty ot MCNone⌝ ∗
-        (ty_ghost_drop_for ty2 Hg π r2 -∗ T L rt ty r1 (mkPUKRes (allowed:=UpdStrong) UpdStrong I I)))
+        (ty_ghost_drop ty2 π r2 -∗ T L rt ty r1 (mkPUKRes (allowed:=UpdStrong) UpdStrong I I)))
     ⊢ typed_write_end π E L ot v ty r1 (Owned) UpdStrong l (◁ ty2) (#r2) T.
   Proof.
     iIntros "(%Hot & HT)".
@@ -3438,7 +3438,7 @@ Section subsume.
     iModIntro. iSplitR; first done.
     iSplitL "Hl0".
     { iExists v0. iFrame. iSplitR; first done. done. }
-    iPoseProof (ty_own_ghost_drop _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
+    iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
     iApply (logical_step_compose with "Hcl").
     iApply (logical_step_compose with "Hgdrop").
     iApply logical_step_intro.
@@ -3459,12 +3459,12 @@ Section subsume.
   (* Write v : r1 @ ty to l : #r2 @ ◁ ty2.
      We first need to show that ty is a subtype of ty2 (in order to handl e
      Afterwards, we obtain l : #r3 @ ◁ ty2 for some r3, as well as the result of ghost-dropping r2 @ ty2. *)
-  Lemma type_write_ofty_weak E L {rt} π b2 bmin l (ty ty2 : type rt) `{Hg : !TyGhostDrop ty2} r1 r2 v ot (T : typed_write_end_cont_t bmin rt) :
+  Lemma type_write_ofty_weak E L {rt} π b2 bmin l (ty ty2 : type rt) r1 r2 v ot (T : typed_write_end_cont_t bmin rt) :
     (∃ r3, owned_subtype π E L false r1 r3 ty ty2 (λ L2,
       ⌜ty_syn_type ty = ty_syn_type ty2⌝ ∗ (* TODO: would be nice to remove this requirement *)
       ⌜ty_has_op_type ty ot MCNone⌝ ∗ ⌜lctx_bor_kind_alive E L2 b2⌝ ∗
       ⌜bor_kind_writeable b2⌝ ∗
-      (ty_ghost_drop_for ty2 Hg π r2 -∗
+      (ty_ghost_drop ty2 π r2 -∗
         T L2 rt ty2 r3 (mkPUKRes UpdBot opt_place_update_eq_refl opt_place_update_eq_refl))))
     ⊢ typed_write_end π E L ot v ty r1 b2 bmin l (◁ ty2) (#r2) T.
   Proof.
@@ -3485,7 +3485,7 @@ Section subsume.
       assert (ly = ot_layout ot) as ->. { eapply syn_type_has_layout_inj; first done. by rewrite -Hst_eq. }
       iModIntro. iSplitR; first done. iSplitL "Hl".
       { iExists v0. iFrame. done. }
-      iPoseProof (ty_own_ghost_drop _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
+      iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
       iApply (logical_step_compose with "Hcl").
       iApply (logical_step_compose with "Hgdrop").
       iApply logical_step_intro. iIntros "Hgdrop Hcl Hl".
@@ -3514,7 +3514,7 @@ Section subsume.
       assert (ly = ot_layout ot) as ->. { eapply syn_type_has_layout_inj; first done. by rewrite -Hst_eq. }
       iModIntro. iSplitR; first done. iSplitL "Hl".
       { iExists v0. iFrame. done. }
-      iPoseProof (ty_own_ghost_drop _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
+      iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
       iApply (logical_step_compose with "Hgdrop").
       iApply (logical_step_mask_mono lftE); first done.
       iApply (logical_step_compose with "Hcl").

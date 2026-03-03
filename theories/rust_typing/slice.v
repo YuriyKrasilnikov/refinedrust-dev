@@ -37,6 +37,9 @@ Section def.
     _ty_has_op_type ot mt :=
       (* no copies supported since this is unsized *)
       False;
+    ty_ghost_drop π r :=
+      (* TODO *)
+      True%I;
     ty_sidecond := True;
     _ty_lfts := ty_lfts ty;
     _ty_wf_E := ty_wf_E ty;
@@ -146,6 +149,9 @@ Section def.
     iApply (big_sepL_wand with "Hb"). iApply big_sepL_intro.
     iIntros "!>" (k x Hlook) "(% & ? & Hb)".
     iExists _; iFrame. iApply ty_shr_mono; done.
+  Qed.
+  Next Obligation.
+    intros. iIntros "_". by iApply logical_step_intro.
   Qed.
   Next Obligation.
     iIntros (ty ot mt st π r m v Hot) "Hb".

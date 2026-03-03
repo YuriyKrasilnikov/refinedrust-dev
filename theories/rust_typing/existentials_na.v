@@ -156,6 +156,7 @@ Section na_ex.
     ty_syn_type := ty.(ty_syn_type);
     _ty_has_op_type ot mt := ty_has_op_type ty ot mt;
     ty_sidecond := ty.(ty_sidecond);
+    ty_ghost_drop _ _ := True%I;
 
     _ty_lfts := P.(na_inv_P_lfts) ++ ty_lfts ty;
     _ty_wf_E := P.(na_inv_P_wf_E) ++ ty_wf_E ty;
@@ -231,6 +232,12 @@ Qed.
     iFrame. iApply (na_bor_shorten with "Hincl Hbor").
   Qed.
 
+  (* ty_own_ghost_drop *)
+  Next Obligation.
+    iIntros (???????) "Hv".
+    by iApply logical_step_intro.
+  Qed.
+
   (* _ty_memcast_compat *)
   Next Obligation.
     iIntros (ty ot mt st π r m v Hot) "(%x & ? & Hv)".
@@ -292,6 +299,8 @@ Section contr.
           unfold CanSolve. lia. }
       do 5 f_equiv.
       apply HF.
+    - intros n ty ty' Hd.
+      intros. done.
   Qed.
 
   Global Instance na_ex_inv_def_ne {rt X Y : RT}
@@ -339,6 +348,8 @@ Section contr.
           unfold CanSolve. lia. }
       do 5 f_equiv.
       apply HF. apply Hd.
+    - intros n ty ty' Hd.
+      intros. done.
   Qed.
 End contr.
 

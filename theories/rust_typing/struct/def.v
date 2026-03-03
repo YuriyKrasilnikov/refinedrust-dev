@@ -27,7 +27,7 @@ Definition is_struct_ot `{typeGS Σ} (sls : struct_layout_spec)
           syn_type_has_layout ((projT2 ty).(ty_syn_type) MetaNone) (ot_layout ot)))
         True (zip (hzipl _ tys) ots)
   | UntypedOp ly =>
-      (* ly is a valid layout for this sls *)
+      (* lyis a valid layout for this sls *)
       ∃ sl, use_struct_layout_alg sls = Some sl ∧ ly = sl
   | _ => False
   end.
@@ -222,6 +222,10 @@ Section structs.
         loc_in_bounds l 0 (ly_size sl) ∗
         [∗ list] i ↦ ty ∈ pad_struct sl.(sl_members) (hpzipl rts tys r) struct_make_uninit_type,
           struct_own_el_shr π κ i sl.(sl_members) l (projT2 ty).2 (projT2 ty).1)%I;
+    ty_ghost_drop π r :=
+      ([∗ list] x ∈ hpzipl rts tys r,
+        ∃ r' : RT_rt (projT1 x), place_rfn_interp_owned ((projT2 x).2) r' ∗
+        ty_ghost_drop (projT2 x).1 π r')%I;
     _ty_lfts := mjoin (fmap (λ ty, ty_lfts (projT2 ty)) (hzipl rts tys));
     _ty_wf_E := mjoin (fmap (λ ty, ty_wf_E (projT2 ty)) (hzipl rts tys));
   |}.
@@ -389,6 +393,22 @@ Section structs.
     iApply (ty_shr_mono with "Hincl Hb").
   Qed.
   Next Obligation.
+    iIntros (rts sls tys π r m v F ?). simpl.
+    iIntros "(%sl & -> & %Halg & %Hlen & %Hlyv & Hv)".
+    iPoseProof (big_sepL_to_exists_l with "Hv") as "Hv".
+    iPoseProof (pad_struct_focus_no_uninit with "Hv") as "(Hv & _)".
+    { rewrite length_hpzipl. rewrite named_fields_field_names_length (struct_layout_spec_has_layout_fields_length sls); done. }
+    { specialize (sl_nodup sl). rewrite bool_decide_spec. done. }
+    iApply logical_step_big_sepL.
+    iApply (big_sepL_impl with "Hv").
+    iModIntro. iIntros (? [rt [lt r1]] ?).
+    iIntros "(%j & % & % & % & % & % & Hv)".
+    iDestruct "Hv" as "(% & % & Hrfn & % & % & Hv)".
+    simpl. iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv") as "Hv"; first done.
+    iApply (logical_step_wand with "Hv").
+    iIntros "$". done.
+  Qed.
+  Next Obligation.
     iIntros (rts sls tys ot mt st π r m v Hot).
     apply (mem_cast_compat_Untyped) => ?.
     iIntros "(%sl & -> & %Halg & %Hlen & %Hsl & Hmem)".
@@ -465,14 +485,6 @@ Section structs.
     apply syn_type_has_layout_struct_inv in Hst as (fields & sl & -> & Halg & Hf).
     simpl. exists sl. split; last done.
     by eapply use_struct_layout_alg_Some.
-  Qed.
-
-  (* TODO *)
-  Global Program Instance struct_t_ghost_drop {rts} (tys : hlist type rts) sls : TyGhostDrop (struct_t sls tys) :=
-    mk_ty_ghost_drop _ (λ _ _, True)%I _.
-  Next Obligation.
-    iIntros (rts sls tys π r m v F ?) "(%sl & %Halg & Hlen & %Hly & Hmem)".
-    by iApply logical_step_intro.
   Qed.
 
 
@@ -642,6 +654,17 @@ Section structs.
         cbn. setoid_rewrite <-shift_loc_assoc_nat.
         eapply IH; first done. simpl in Hlen. lia.
       + f_equiv. setoid_rewrite <-shift_loc_assoc_nat. apply IH; done.
+    - intros n ty ty' Hd.
+      destruct HT as [Ts' Hne ->].
+      iIntros (π r). rewrite /ty_ghost_drop/=.
+      elim: rts Ts' Hne r => //.
+      { simpl. intros Ts'. inv_hlist Ts'. simpl. done. }
+      intros rt' rts IH Ts' Hne r.
+      inv_hlist Ts'. intros T1 Ts'.
+      intros [Hne1 Hne]%HTForall_cons_inv.
+      simpl. f_equiv.
+      { solve_type_proper. }
+      apply IH; done.
   Qed.
 
   (* For this to be contractive, the [sls] must not depend on the recursive type *)
@@ -729,6 +752,17 @@ Section structs.
         cbn. setoid_rewrite <-shift_loc_assoc_nat.
         eapply IH; first done. simpl in Hlen. lia.
       + f_equiv. setoid_rewrite <-shift_loc_assoc_nat. apply IH; done.
+    - intros n ty ty' Hd.
+      destruct HT as [Ts' Hne ->].
+      iIntros (π r). rewrite /ty_ghost_drop/=.
+      elim: rts Ts' Hne r => //.
+      { simpl. intros Ts'. inv_hlist Ts'. simpl. done. }
+      intros rt' rts IH Ts' Hne r.
+      inv_hlist Ts'. intros T1 Ts'.
+      intros [Hne1 Hne]%HTForall_cons_inv.
+      simpl. f_equiv.
+      { solve_type_proper. }
+      apply IH; done.
   Qed.
 
   (* variant with constant sls *)
@@ -740,7 +774,7 @@ Section structs.
   Qed.
 End structs.
 
-(** Hint Extern in case we cannot determine the constantness syntactically. 
+(** Hint Extern in case we cannot determine the constantness syntactically.
   This can be expensive, so we prefer the other one. *)
 Global Hint Extern 100 (TypeContractive (λ ty, struct_t _ _)) =>
   match goal with

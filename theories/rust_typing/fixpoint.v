@@ -107,25 +107,33 @@ Section fixpoint_def.
   Qed.
 
   (* We define a chain consisting of the ownership and sharing predicate and take the fixpoint over that. *)
-  Definition ty_own_shrO : ofe := prodO (thread_id -d> rt -d> metadataO -d> val -d> iPropO Σ) (lft -d> thread_id -d> rt -d> metadataO -d> loc -d> iPropO Σ).
+  Definition ty_own_shrO : ofe :=
+    prodO (thread_id -d> rt -d> metadataO -d> val -d> iPropO Σ)
+    (prodO (lft -d> thread_id -d> rt -d> metadataO -d> loc -d> iPropO Σ)
+           (thread_id -d> rt -d> iPropO Σ))
+  .
 
   (* We have the [2+] in order to fix up the [0] base case *)
   Lemma ty_own_shr_cauchy (i n : nat) :
     n ≤ i →
     (∀ π r m v, dist_later n (v ◁ᵥ{π, m} r @ (Fn (2+i)))%I (v ◁ᵥ{π, m} r @ (Fn (2+n)))%I) ∧
-    (∀ κ π r m l, (l ◁ₗ{π, m, κ} r @ (Fn (2+i)))%I ≡{n}≡ (l ◁ₗ{π, m, κ} r @ (Fn (2+n)))%I).
+    (∀ κ π r m l, (l ◁ₗ{π, m, κ} r @ (Fn (2+i)))%I ≡{n}≡ (l ◁ₗ{π, m, κ} r @ (Fn (2+n)))%I) ∧
+    (∀ π r, dist_later n (ty_ghost_drop (Fn (2+i)) π r)%I (ty_ghost_drop (Fn (2+n)) π r)%I)
+  .
   Proof using Hcr.
     induction n as [ | n IH] in i |-*; simpl; intros Hle.
     { split; first (intros; dist_later_intro; unfold_sidx; lia).
+      split; last (intros; dist_later_intro; unfold_sidx; lia).
       intros. eapply Hcr. constructor.
       - eapply Hcr.
       - eapply Hcr. intros ?. erewrite (Fn_syn_type_const i 0); done.
       - intros. dist_later_2_intro; lia.
       - intros. dist_later_intro. unfold_sidx. lia.
+      - intros. dist_later_2_intro; lia.
     }
     destruct i; first lia.
-    destruct (IH i) as [Hown Hshr]; first lia.
-    split.
+    destruct (IH i) as [Hown [Hshr Hghost]]; first lia.
+    split; last split.
     - intros. dist_later_intro.
       simpl. eapply Hcr. constructor.
       + eapply Hcr.
@@ -136,23 +144,41 @@ Section fixpoint_def.
       + intros. eapply dist_le; first apply Hshr.
         unfold_sidx.
         lia.
+      + intros. dist_later_intro.
+        eapply dist_later_fin_lt; [eapply Hghost | ].
+        unfold_sidx. lia.
     - intros. simpl. eapply Hcr. constructor.
       + eapply Hcr.
       + eapply Hcr. intros ?. rewrite (Fn_syn_type_const (1+i) (1+n)); done.
       + intros. dist_later_2_intro. eapply dist_later_lt; first done. unfold_sidx. lia.
       + intros. dist_later_intro. eapply dist_le; first apply Hshr. unfold_sidx. lia.
+      + intros. dist_later_2_intro. eapply dist_later_lt; first done. unfold_sidx. lia.
+    - intros. dist_later_intro.
+      simpl. eapply Hcr. constructor.
+      + eapply Hcr.
+      + eapply Hcr. intros ?. rewrite (Fn_syn_type_const (1+i) (1+n)); done.
+      + intros. dist_later_intro.
+        eapply dist_later_fin_lt; [eapply Hown | ].
+        unfold_sidx. lia.
+      + intros. eapply dist_le; first apply Hshr.
+        unfold_sidx.
+        lia.
+      + intros. dist_later_intro.
+        eapply dist_later_fin_lt; [eapply Hghost | ].
+        unfold_sidx. lia.
   Qed.
 
   (* [3+] because that's what we need to apply the above lemma proving that the chain is Cauchy *)
   Program Definition F_ty_own_val_ty_shr_chain : chain ty_own_shrO := {|
-    chain_car n := ((Fn (3 + n)).(ty_own_val), (Fn (3+n)).(ty_shr))
+    chain_car n := ((Fn (3 + n)).(ty_own_val), ((Fn (3+n)).(ty_shr), (Fn (3 + n)).(ty_ghost_drop)))
   |}.
   Next Obligation.
     simpl. intros n i Hle.
-    destruct (ty_own_shr_cauchy (S i) (S n)) as [Hown Hshr]; first lia.
-    constructor; simpl.
+    destruct (ty_own_shr_cauchy (S i) (S n)) as [Hown [Hshr Hghost]]; first lia.
+    constructor; last constructor; simpl.
     - intros ????. eapply dist_later_lt; first eapply Hown. unfold_sidx. lia.
     - intros ?????. eapply dist_le; first eapply Hshr. lia.
+    - intros ??. eapply dist_later_lt; first eapply Hghost. unfold_sidx. lia.
   Qed.
   Definition F_ty_own_val_ty_shr_fixpoint : ty_own_shrO :=
     compl F_ty_own_val_ty_shr_chain.
@@ -166,7 +192,8 @@ Section fixpoint_def.
     ty_syn_type := (Fn 0).(ty_syn_type);
     _ty_has_op_type := (Fn 0).(_ty_has_op_type _);
     ty_own_val := F_ty_own_val_ty_shr_fixpoint.1;
-    ty_shr := F_ty_own_val_ty_shr_fixpoint.2;
+    ty_shr := F_ty_own_val_ty_shr_fixpoint.2.1;
+    ty_ghost_drop := F_ty_own_val_ty_shr_fixpoint.2.2;
     ty_sidecond := (Fn 1).(ty_sidecond);
     _ty_lfts := ty_lfts (Fn 0);
     _ty_wf_E := ty_wf_E (Fn 1);
@@ -251,6 +278,16 @@ Section fixpoint_def.
     intros. unfold F_ty_own_val_ty_shr_fixpoint.
     eapply @limit_preserving_compl.
     - eapply bi.limit_preserving_entails; first apply _.
+      intros ? [? []] [? []] Heq.
+      f_equiv; first eapply Heq.
+      f_equiv. apply Heq.
+    - intros ?.
+      simpl. by eapply ty_own_ghost_drop.
+  Qed.
+  Next Obligation.
+    intros. unfold F_ty_own_val_ty_shr_fixpoint.
+    eapply @limit_preserving_compl.
+    - eapply bi.limit_preserving_entails; first apply _.
       intros ? [] [] Heq. f_equiv; first eapply Heq.
       f_equiv. eapply Heq.
     - intros ?.
@@ -274,6 +311,13 @@ Section fixpoint_def.
     (l ◁ₗ{π, m, κ} r @ type_fixpoint)%I ≡{n}≡ (l ◁ₗ{π, m, κ} r @ Fn (3+n))%I.
   Proof.
     rewrite {1}/ty_shr/=/F_ty_own_val_ty_shr_fixpoint/=.
+    etrans. { apply (conv_compl n _). }
+    simpl. done.
+  Qed.
+  Lemma type_fixpoint_ghost_drop_unfold_n n π r :
+    (ty_ghost_drop type_fixpoint π r)%I ≡{n}≡ (ty_ghost_drop (Fn (3+n)) π r)%I.
+  Proof.
+    rewrite {1}/ty_ghost_drop/=/F_ty_own_val_ty_shr_fixpoint/=.
     etrans. { apply (conv_compl n _). }
     simpl. done.
   Qed.
@@ -304,6 +348,11 @@ Section fixpoint_def.
       etrans.
       { symmetry. eapply (ty_own_shr_cauchy (S n) (n)). lia. }
       done.
+    - intros. dist_later_intro.
+      rewrite type_fixpoint_ghost_drop_unfold_n.
+      eapply dist_later_lt.
+      { eapply (ty_own_shr_cauchy n (S _)). unfold_sidx. lia. }
+      unfold_sidx. lia.
   Qed.
   Lemma type_fixpoint_shr_unfold l π κ r m :
     (l ◁ₗ{π, m, κ} r @ type_fixpoint)%I ≡ (l ◁ₗ{π, m, κ} r @ F type_fixpoint)%I.
@@ -324,6 +373,36 @@ Section fixpoint_def.
       eapply dist_le.
       { eapply (ty_own_shr_cauchy n (S _) ). unfold_sidx. lia. }
       lia.
+    - intros. dist_later_2_intro.
+      rewrite type_fixpoint_ghost_drop_unfold_n.
+      simpl. eapply dist_later_lt.
+      { eapply (ty_own_shr_cauchy n). lia. }
+      unfold_sidx. lia.
+  Qed.
+  Lemma type_fixpoint_ghost_drop_unfold π r :
+    (ty_ghost_drop type_fixpoint π r)%I ≡ (ty_ghost_drop (F type_fixpoint) π r)%I.
+  Proof.
+    apply equiv_dist => n. rewrite type_fixpoint_ghost_drop_unfold_n.
+    rewrite Fn_succ.
+    eapply Hcr. constructor.
+    - rewrite type_fixpoint_syn_type. intros. erewrite Fn_syn_type_const; done.
+    - rewrite type_fixpoint_sidecond. rewrite (Fn_sidecond_const (2+n)); first done.
+      lia.
+    - intros. dist_later_intro.
+      rewrite type_fixpoint_own_val_unfold_n.
+      eapply dist_later_lt.
+      { eapply (ty_own_shr_cauchy n (S _)). unfold_sidx. lia. }
+      unfold_sidx. lia.
+    - intros.
+      rewrite type_fixpoint_shr_unfold_n.
+      etrans.
+      { symmetry. eapply (ty_own_shr_cauchy (S n) (n)). lia. }
+      done.
+    - intros. dist_later_intro.
+      rewrite type_fixpoint_ghost_drop_unfold_n.
+      eapply dist_later_lt.
+      { eapply (ty_own_shr_cauchy n (S _)). unfold_sidx. lia. }
+      unfold_sidx. lia.
   Qed.
   Lemma type_fixpoint_equiv :
     type_fixpoint ≡ F type_fixpoint.
@@ -376,6 +455,16 @@ Proof.
   - iIntros (?????).
     rewrite !type_fixpoint_shr_unfold_n.
     my_f_equiv.
+    generalize (3+n) as m'.
+    induction m' as [ | m' IH]; simpl.
+    { apply Heq. }
+    specialize (Heq (Fn T1 m')).
+    setoid_rewrite Heq.
+    (* here we need that T2 is also non-expansive *)
+    by rewrite IH.
+  - iIntros (??).
+    rewrite !type_fixpoint_ghost_drop_unfold_n.
+    f_equiv.
     generalize (3+n) as m'.
     induction m' as [ | m' IH]; simpl.
     { apply Heq. }

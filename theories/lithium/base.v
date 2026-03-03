@@ -857,6 +857,26 @@ Lemma big_sepL_exists {Σ} {A X} (Φ : nat → A → X → iProp Σ) (l : list A
   ([∗ list] i ↦ a ∈ l, ∃ x : X, Φ i a x) ⊣⊢
   (∃ xl : list X, [∗ list] i ↦ a; x ∈ l; xl, Φ i a x).
 Proof. apply (big_sepL_exists' _ _ 0). Qed.
+Lemma big_sepL_exists_l {Σ} {A X} (Φ : nat → A → X → iProp Σ) (l : list A) :
+  ([∗ list] i ↦ a ∈ l, ∃ x : X, Φ i a x) ⊣⊢
+  (∃ xl : list X, [∗ list] i ↦ x; a ∈ xl; l, Φ i a x).
+Proof.
+  rewrite big_sepL_exists.
+  f_equiv. intros xl.
+  iApply big_sepL2_flip.
+Qed.
+
+Lemma big_sepL_to_exists_l {Σ} {A X} (Φ : nat → A → X → iProp Σ) (l : list A) xl :
+  ([∗ list] i ↦ x; a ∈ xl; l, Φ i a x) ⊢ ([∗ list] i ↦ a ∈ l, ∃ x : X, Φ i a x).
+Proof.
+  rewrite big_sepL_exists_l. iIntros "$".
+Qed.
+Lemma big_sepL_to_exists_r {Σ} {A X} (Φ : nat → A → X → iProp Σ) (l : list A) xl :
+  ([∗ list] i ↦ a; x ∈ l; xl, Φ i a x) ⊢ ([∗ list] i ↦ a ∈ l, ∃ x : X, Φ i a x).
+Proof.
+  rewrite big_sepL_exists. iIntros "$".
+Qed.
+
 
 Lemma big_sepL2_exists_r {Σ} {A B C} l1 l2 (Φ : nat → A → B → C → iProp Σ):
   ([∗ list] i ↦ x; y ∈ l1; l2, ∃ z, Φ i x y z) ⊢ ∃ l3, ⌜length l2 = length l3⌝ ∗ ([∗ list] i ↦ x; y ∈ l1; zip l2 l3, Φ i x y.1 y.2).
@@ -903,6 +923,26 @@ Proof.
   iIntros "Ha". iInduction l as [ | x l] "IH"; simpl; first done.
   iDestruct "Ha" as "(%Ha & Hb)". iPoseProof ("IH" with "Hb") as "%Hc".
   iPureIntro. constructor; done.
+Qed.
+Local Lemma big_sepL2_Forall3' {Σ} {A B} (Φ : nat → A → B → Prop) l1 l2 i0 :
+  ([∗ list] i ↦ x;y ∈ l1; l2, ⌜Φ (i + i0)%nat x y⌝) -∗ ⌜Forall3 Φ (seq i0 (length l1)) l1 l2⌝ : iProp Σ.
+Proof.
+  iIntros "Ha". iInduction l1 as [ | x l1] "IH" forall (l2 i0) "Ha"; destruct l2 as [ | y l2]; simpl.
+  { iPureIntro. apply Forall3_nil. }
+  { done. }
+  { done. }
+  iDestruct "Ha" as "(%Hh & Ha)".
+  setoid_rewrite <- Nat.add_succ_r.
+  iPoseProof ("IH" with "Ha") as "%Hf".
+  iPureIntro. econstructor; done.
+Qed.
+Lemma big_sepL2_Forall3 {Σ} {A B} (Φ : nat → A → B → Prop) l1 l2 :
+  ([∗ list] i ↦ x;y ∈ l1; l2, ⌜Φ i x y⌝) -∗ ⌜Forall3 Φ (seq 0 (length l1)) l1 l2⌝ : iProp Σ.
+Proof.
+  iIntros "Ha".
+  iApply big_sepL2_Forall3'.
+  setoid_rewrite Nat.add_0_r.
+  done.
 Qed.
 
 (** We can thread around a non-persistent proposition [P] *)

@@ -38,6 +38,13 @@ Section mut_ref.
           ▷ □ (|={lftE}=> inner.(ty_shr) (κ⊓κ') π r' MetaNone li))%I;
     (* NOTE: we cannot descend below the borrow here to get more information recursively.
        But this is fine, since the observation about γ here already contains all the information we need. *)
+    ty_ghost_drop π '(r, γ) :=
+      (*place_rfn_interp_mut r γ;*)
+      match r with
+      | #r' => gvar_pobs γ r'
+      | PlaceGhost γ' => RelEq (T:=rt) γ' γ
+      end;
+
     (* We need the inner lifetimes also to initiate sharing *)
     _ty_lfts := [κ] ++ ty_lfts inner;
     _ty_wf_E := ty_wf_E inner ++ ty_outlives_E inner κ;
@@ -187,6 +194,13 @@ Section mut_ref.
     iApply lft_intersect_mono; last done. iApply lft_incl_refl.
   Qed.
   Next Obligation.
+    iIntros (????[r γ]????) "(%l & %ly & -> & -> & _ & _ & _ & _ & Hrfn & Hcred &  _)".
+    iApply fupd_logical_step. destruct r as [ r | γ'].
+    - iMod (gvar_obs_persist with "Hrfn") as "?".
+      iApply logical_step_intro. by iFrame.
+    - by iApply logical_step_intro.
+  Qed.
+  Next Obligation.
     iIntros (??? ot mt st ? [r γ] m ? Hot).
     destruct mt.
     - eauto.
@@ -200,23 +214,6 @@ Section mut_ref.
   Next Obligation.
     intros ??? ly mt _ Hst. apply syn_type_has_layout_ptr_inv in Hst as ->.
     done.
-  Qed.
-
-  Global Program Instance mut_ref_ghost_drop {rt} κ (ty : type rt)  : TyGhostDrop (mut_ref κ ty) :=
-    mk_ty_ghost_drop _ (
-      λ _ '(r, γ),
-      (*place_rfn_interp_mut r γ;*)
-      match r with
-      | #r' => gvar_pobs γ r'
-      | PlaceGhost γ' => RelEq (T:=rt) γ' γ
-      end
-    ) _.
-  Next Obligation.
-    iIntros (????[r γ]????) "(%l & %ly & -> & -> & _ & _ & _ & _ & Hrfn & Hcred &  _)".
-    iApply fupd_logical_step. destruct r as [ r | γ'].
-    - iMod (gvar_obs_persist with "Hrfn") as "?".
-      iApply logical_step_intro. by iFrame.
-    - by iApply logical_step_intro.
   Qed.
 
   Global Instance mut_ref_sized {rt} (ty : type rt) κ : TySized (mut_ref κ ty).
@@ -240,8 +237,9 @@ Section mut_ref.
     - intros n ty ty' ?.
       intros κ' π [] l. rewrite /ty_shr/=.
       solve_type_proper.
+    - intros n ty ty' ?.
+      intros. done.
   Qed.
-
 
   Global Instance mut_ref_type_ne {rt : RT} κ : TypeNonExpansive (mut_ref (rt:=rt) κ).
   Proof. apply type_contractive_type_ne, _. Qed.

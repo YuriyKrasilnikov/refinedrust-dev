@@ -81,6 +81,8 @@ pub trait Iterator {
     #[rr::ensures(#iris "{Next} π p s2 None s2'")]
     // TODO: have an escape to refer to the attrs record instead
     #[rr::ensures(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π p self seq s2")]
+    // Extract observations from dropping self.
+    #[rr::ensures(#iris "ty_ghost_drop {Self} π ($# s2)")]
     #[rr::returns("{B::FromSequence} seq")]
     fn collect<B: FromIterator<Self::Item>>(self) -> B
     where
