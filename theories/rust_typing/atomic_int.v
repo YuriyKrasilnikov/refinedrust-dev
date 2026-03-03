@@ -8,7 +8,7 @@ From refinedrust Require Import options.
     equals the physical inner value [x]. Parameterized by [int_type], so one
     definition covers all 10 stable integer atomics (AtomicU8 through AtomicIsize).
 
-    Sharing is handled automatically by [at_bor] (Iris concurrent invariant). *)
+    Sharing is handled automatically by [rr_at_bor] (Iris concurrent invariant). *)
 
 Section atomic_int.
   Context `{!typeGS Σ}.

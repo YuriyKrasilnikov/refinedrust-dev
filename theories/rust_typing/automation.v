@@ -144,6 +144,10 @@ Ltac liExtensible_to_i2p_hook P bind cont ::=
       cont uconstr:(((_ : TypedCheckUnOp E L f v ty o ot) T))
   | typed_cas ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?v3 ?P3 ?ot ?T =>
       cont uconstr:(((_ : TypedCas E L f v1 P1 v2 P2 v3 P3 ot) T))
+  | typed_atomic_load ?E ?L ?f ?v ?P ?ot ?T =>
+      cont uconstr:(((_ : TypedAtomicLoad E L f v P ot) T))
+  | typed_atomic_store ?E ?L ?f ?v_ptr ?P_ptr ?v_val ?P_val ?ot ?T =>
+      cont uconstr:(((_ : TypedAtomicStore E L f v_ptr P_ptr v_val P_val ot) T))
   | typed_atomic_rmw ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?op ?ot ?T =>
       cont uconstr:(((_ : TypedAtomicRmw E L f v1 P1 v2 P2 op ot) T))
   | typed_call ?E ?L ?f ?eκs ?etys ?v ?P ?vl ?tys ?T =>
@@ -276,6 +280,10 @@ Ltac liRIntroduceLetInGoal :=
       (*change_no_check (@envs_entails PROP Δ (@typed_context_fold Σ tG Acc P M π E L m tcx acc H))*)
     | @typed_bin_op ?Σ ?tG ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?op ?ot1 ?ot2 ?T =>
       pose (H := LET_ID T); change_no_check (@envs_entails PROP Δ (@typed_bin_op Σ tG E L f v1 P1 v2 P2 op ot1 ot2 H))
+    | @typed_atomic_load ?Σ ?tG ?E ?L ?f ?v ?P ?ot ?T =>
+      pose (H := LET_ID T); change_no_check (@envs_entails PROP Δ (@typed_atomic_load Σ tG E L f v P ot H))
+    | @typed_atomic_store ?Σ ?tG ?E ?L ?f ?v_ptr ?P_ptr ?v_val ?P_val ?ot ?T =>
+      pose (H := LET_ID T); change_no_check (@envs_entails PROP Δ (@typed_atomic_store Σ tG E L f v_ptr P_ptr v_val P_val ot H))
     | @typed_cas ?Σ ?tG ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?v3 ?P3 ?ot ?T =>
       pose (H := LET_ID T); change_no_check (@envs_entails PROP Δ (@typed_cas Σ tG E L f v1 P1 v2 P2 v3 P3 ot H))
     | @typed_atomic_rmw ?Σ ?tG ?E ?L ?f ?v1 ?P1 ?v2 ?P2 ?op ?ot ?T =>

@@ -6,34 +6,34 @@ From refinedrust Require Import options.
 (** Atomic borrow: wraps an indexed borrow token in an Iris concurrent invariant.
     Unlike [na_bor], does not require a thread_id [π] — the invariant is globally
     accessible via atomic mask-changing updates. *)
-Definition at_bor `{!typeGS Σ}
+Definition rr_at_bor `{!typeGS Σ}
            (κ : lft) (N : namespace) (P : iProp Σ) :=
   (∃ i, &{κ,i}P ∗ inv N (idx_bor_own 1 i))%I.
 
-Notation "&at{ κ , N }" := (at_bor κ N)
+Notation "&at{ κ , N }" := (rr_at_bor κ N)
     (format "&at{ κ , N }") : bi_scope.
 
-Section at_bor.
+Section rr_at_bor.
   Context `{!typeGS Σ}
           (N : namespace) (P : iProp Σ).
 
-  Global Instance at_bor_ne κ n : Proper (dist n ==> dist n) (at_bor κ N).
+  Global Instance rr_at_bor_ne κ n : Proper (dist n ==> dist n) (rr_at_bor κ N).
   Proof. solve_proper. Qed.
-  Global Instance at_bor_contractive κ : Contractive (at_bor κ N).
+  Global Instance rr_at_bor_contractive κ : Contractive (rr_at_bor κ N).
   Proof. solve_contractive. Qed.
-  Global Instance at_bor_proper κ : Proper ((⊣⊢) ==> (⊣⊢)) (at_bor κ N).
+  Global Instance rr_at_bor_proper κ : Proper ((⊣⊢) ==> (⊣⊢)) (rr_at_bor κ N).
   Proof. solve_proper. Qed.
 
-  Lemma at_bor_iff κ P' :
+  Lemma rr_at_bor_iff κ P' :
     ▷ □ (P ↔ P') -∗ &at{κ, N} P -∗ &at{κ, N} P'.
   Proof.
     iIntros "HPP' H". iDestruct "H" as (i) "[HP ?]". iExists i. iFrame.
     iApply (idx_bor_iff with "HPP' HP").
   Qed.
 
-  Global Instance at_bor_persistent κ : Persistent (&at{κ,N} P) := _.
+  Global Instance rr_at_bor_persistent κ : Persistent (&at{κ,N} P) := _.
 
-  Lemma bor_at κ E : ↑lftN ⊆ E → &{κ}P ={E}=∗ &at{κ,N}P.
+  Lemma bor_rr_at κ E : ↑lftN ⊆ E → &{κ}P ={E}=∗ &at{κ,N}P.
   Proof.
     iIntros (?) "HP". rewrite bor_unfold_idx. iDestruct "HP" as (i) "[#? Hown]".
     iExists i. iFrame "#". iApply (inv_alloc N with "[Hown]"). auto.
@@ -42,7 +42,7 @@ Section at_bor.
   (** Opening an atomic borrow is mask-changing: [={E, E∖↑N}=∗].
       Precondition [↑lftN ⊆ E ∖ ↑N] (not just [↑lftN ⊆ E]) because
       [idx_bor_acc] runs inside the open invariant where the mask is [E∖↑N]. *)
-  Lemma at_bor_acc q κ E :
+  Lemma rr_at_bor_acc q κ E :
     ↑lftN ⊆ E ∖ ↑N →
     ↑N ⊆ E →
     lft_ctx -∗ &at{κ,N}P -∗ q.[κ] ={E, E∖↑N}=∗
@@ -56,19 +56,19 @@ Section at_bor.
     iMod ("Hclose'" with "HP") as "[Hown $]". iApply "Hclose". by iFrame.
   Qed.
 
-  Lemma at_bor_shorten κ κ': κ ⊑ κ' -∗ &at{κ',N}P -∗ &at{κ,N}P.
+  Lemma rr_at_bor_shorten κ κ': κ ⊑ κ' -∗ &at{κ',N}P -∗ &at{κ,N}P.
   Proof.
     iIntros "Hκκ' H". iDestruct "H" as (i) "[H ?]". iExists i. iFrame.
     iApply (idx_bor_shorten with "Hκκ' H").
   Qed.
 
-  Lemma at_bor_fake E κ: ↑lftN ⊆ E → lft_ctx -∗ [†κ] ={E}=∗ &at{κ,N}P.
+  Lemma rr_at_bor_fake E κ: ↑lftN ⊆ E → lft_ctx -∗ [†κ] ={E}=∗ &at{κ,N}P.
   Proof.
-    iIntros (?) "#LFT #H†". iApply (bor_at with "[>]"); first done.
+    iIntros (?) "#LFT #H†". iApply (bor_rr_at with "[>]"); first done.
     by iApply (bor_fake with "LFT H†").
   Qed.
-End at_bor.
-Global Typeclasses Opaque at_bor.
+End rr_at_bor.
+Global Typeclasses Opaque rr_at_bor.
 
 
 Record at_ex_inv_def `{!typeGS Σ} (X : RT) (Y : RT) : Type := at_mk_ex_inv_def' {
@@ -190,7 +190,7 @@ Section at_ex.
     eauto.
   Qed.
 
-  (* ty_share — uses bor_at instead of bor_na, no na_own needed *)
+  (* ty_share — uses bor_rr_at instead of bor_na, no na_own needed *)
   Next Obligation.
     iIntros (ty E κ l ly π r m q ?) "#(LFT & LLCTX) _ Htok %Halg %Hly Hlb Hbor".
     iEval (setoid_rewrite bi.sep_exist_l) in "Hbor".
@@ -211,7 +211,7 @@ Section at_ex.
       iModIntro; iSplit; [iNext | done].
       iExists v; iFrame. }
 
-    iMod (bor_at with "Hbor") as "Hbor"; first solve_ndisj.
+    iMod (bor_rr_at with "Hbor") as "Hbor"; first solve_ndisj.
 
     iModIntro; iFrame "∗ #".
     iExists ly; eauto with iFrame.
@@ -220,7 +220,7 @@ Section at_ex.
   (* ty_shr_mono *)
   Next Obligation.
     iIntros (ty κ κ' π r ? l) "Hincl ($ & Hbor & %ly & ? & ?)".
-    iFrame. iApply (at_bor_shorten with "Hincl Hbor").
+    iFrame. iApply (rr_at_bor_shorten with "Hincl Hbor").
   Qed.
 
   (* _ty_memcast_compat *)
@@ -465,7 +465,7 @@ Section at_subtype.
     iEval (unfold ty_shr, at_ex_plain_t) in "Hb'".
     iDestruct "Hb'" as "(Hscr & Hbor & %ly' & %Hly' & %Halg')".
 
-    iMod (at_bor_acc with "LFT Hbor Hq") as "(HP & Hvs)"; [done..|].
+    iMod (rr_at_bor_acc with "LFT Hbor Hq") as "(HP & Hvs)"; [done..|].
 
     iApply (lc_fupd_add_later with "Hcred").
     do 2 iModIntro.

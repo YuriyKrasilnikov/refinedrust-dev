@@ -11,12 +11,10 @@ Lemma test_load_proof (π : thread_id) :
   test_load_lemma π.
 Proof.
   test_load_prelude.
-
-  rep <-! liRStep; liShow.
-
+  repeat liRStep.
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
   Unshelve. all: print_remaining_sidecond.
-Admitted. (* underlying typed_atomic_load lemmas still Admitted *)
+Qed.
 End proof.
