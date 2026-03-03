@@ -17,7 +17,12 @@ Proof.
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
-  all: admit.
+  { rename select (Forall2 _ _ _) into Hf.
+    opose proof* Forall2_length as Hlen; first apply Hf.
+    do 11 (try destruct x' as [ | ? x']; simpl in *; first try lia); last lia. 
+    apply Forall2_Forall2_cb in Hf.
+    move: Hf. simpl. 
+    naive_solver. }
   Unshelve. all: print_remaining_sidecond.
-Admitted.
+Qed.
 End proof.

@@ -1860,7 +1860,7 @@ Section subsume.
     find_observation rt γ FindObsModeDirect (λ or,
       match or with
       | None =>
-          ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
+          ⌜fast_eq_hint (rm = ResolveTry)⌝ ∗ T L (PlaceGhost γ) True false
       | Some r =>
           (* try again in case we should descend into the type or we have still got a PlaceGhost *)
           resolve_ghost π E L rm lb l (◁ ty)%I (Owned) r T
@@ -1883,7 +1883,7 @@ Section subsume.
   Lemma resolve_ghost_ofty_Uniq {rt} π E L l (ty : type rt) γ rm lb κ γ' T :
     find_observation rt γ FindObsModeDirect (λ or,
       match or with
-      | None => ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
+      | None => ⌜fast_eq_hint (rm = ResolveTry)⌝ ∗ T L (PlaceGhost γ) True false
       | Some r =>
           (* try again in case we should descend into the type or we have still got a PlaceGhost *)
           resolve_ghost π E L rm lb l (◁ ty)%I (Uniq κ γ') r T
