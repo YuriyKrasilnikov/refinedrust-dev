@@ -26,6 +26,68 @@ Section extra.
     iFrame. done.
   Qed.
 
+  (** Declared as an extern instance below, to enforce order on the argument resolution *)
+  Program Definition iterator_learn_map_stateful {MB_rt MI_rt MF_rt Item_rt}
+  (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt)
+  (FnOnce_attrs : FnOnce_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
+  (FnMut_attrs : FnMut_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
+  p (It_learn : IteratorLearnInductive It_attrs p) 
+
+  (FnOnce_pre_learn : ∀ π p self args, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_Pre) π p self args))
+  (FnMut_postmut_learn : ∀ π p self args self' out, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_PostMut) π p self args self' out))
+  :
+    IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs MB_rt MI_rt MF_rt Item_rt It_attrs FnOnce_attrs FnMut_attrs) p := {|
+      iterator_learn_inductive_Q s1 hist s2 :=
+        ∃ π hist' clos_states,
+          It_learn.(iterator_learn_inductive_Q) s1.(map_it) hist' s2.(map_it) ∧
+          length clos_states = (1 + length hist')%nat ∧
+          head clos_states = Some(s1.(map_clos)) ∧
+          last clos_states = Some(s2.(map_clos)) ∧
+          Forall3 (λ idx a b, 
+            ∃ pclos, 
+            ∃ clos1 clos2, clos_states !! idx = Some clos1 ∧ clos_states !! (S idx) = Some clos2 ∧
+            (FnOnce_pre_learn π pclos clos1 *[a]).(simplify_boringly_impl_q _) ∧
+            (FnMut_postmut_learn π pclos clos1 *[a] clos2 b).(simplify_boringly_impl_q _)
+          ) (seq 0 (length hist)) hist' hist
+    |}.
+  Next Obligation.
+    intros ???? It_attrs FnOnce_attrs FnMut_attrs p It_learn FnOnce_pure FnMut_pure.
+    simpl. iIntros (? s1 hist s2) "Hnext".
+    iPoseProof (boringly_mono with "Hnext") as "Ha".
+    { iApply iterator_next_fused_trans_map_inv. }
+    repeat setoid_rewrite boringly_exists.
+    iDestruct "Ha" as "(%hist' & %states' & Ha)".
+    rewrite !boringly_sep !boringly_persistent_elim.
+    iDestruct "Ha" as "(%Hlook1 & %Hlook2 & %Hlen & Hnext & Hclos)".
+    iPoseProof (It_learn.(iterator_learn_inductive_proof) with "Hnext") as "%Hlearn".
+
+    iAssert (([∗ list] i↦a;b ∈ hist';hist, ⌜∃ p (s0 s3 : RT_xt MF_rt), states' !! i = Some s0 ∧ states' !! S i = Some s3 ∧ simplify_boringly_impl_q (FnOnce_Pre FnOnce_attrs π p s0 *[a]) ∧ 
+      simplify_boringly_impl_q (FnOnce_PostMut FnOnce_attrs π p s0 *[a] s3 b)⌝)%I) with "[Hclos]" as "Hclos".
+    { iApply boringly_persistent_elim.
+      iApply boringly_mono; last iApply "Hclos".
+      iIntros "Ha". iApply (big_sepL2_impl with "Ha").
+      iModIntro. iIntros (?????) "(% & % & % & % & % & Hpre & Hpost)".
+      iPoseProof (boringly_intro with "Hpost") as "Hpost".
+      rewrite ((FnMut_pure _ _ _ _ _ _).(simplify_boringly_impl_proof)).
+      rewrite ((FnOnce_pure _ _ _ _).(simplify_boringly_impl_proof)).
+      iDestruct "Hpre" as "%Hpre".
+      iDestruct "Hpost" as "%Hpost".
+      iPureIntro.
+      eexists _, _, _. split_and!; done. }
+    iPoseProof (big_sepL2_Forall3 with "Hclos") as "%Hf".
+    iPureIntro. 
+
+    exists π, hist', states'.
+    split; first done.
+    opose proof* Forall3_length_lr as Hlen1; first done.
+    opose proof* Forall3_length_lm as Hlen2; first done.
+    simpl in *.
+    split. { rewrite Hlen. lia. }
+    split. { rewrite head_lookup. done. }
+    split. { rewrite last_lookup. rewrite Hlen. done. }
+    replace (length hist) with (length hist') by lia.
+    done.
+  Qed.
 
   (** Declared as an extern instance below, to enforce order on the argument resolution *)
   Program Definition iterator_learn_map_stateless {MB_rt MI_rt MF_rt Item_rt}
@@ -226,6 +288,7 @@ Section extra.
 
 
 End extra.
-Global Hint Extern 100 (IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ _ _ _)) =>
+Global Hint Extern 100 (IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ _ _ _) _ ) =>
   unshelve notypeclasses refine (iterator_learn_map_stateless _ _ _ _ _ _ _ _); [tc_solve | tc_solve | tc_solve | tc_solve] : typeclass_instances.
-
+Global Hint Extern 101 (IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ _ _ _) _) =>
+  unshelve notypeclasses refine (iterator_learn_map_stateful _ _ _ _ _ _ _); [tc_solve | tc_solve | tc_solve] : typeclass_instances.
