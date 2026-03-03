@@ -100,18 +100,26 @@ Section ex.
   Qed.
 End ex.
 
+(* Use a smarter solver for persistence here *)
+Class ExInvPersistent {Σ} (P : iProp Σ) := ex_inv_pers_proof : Persistent P.
+Global Hint Mode ExInvPersistent + + : typeclass_instances.
+
+Ltac ex_t_solve_persistent := fail "implement ex_t_solve_persistent".
+Global Hint Extern 10 (ExInvPersistent _) =>
+  unfold ExInvPersistent; ex_t_solve_persistent : typeclass_instances.
+
 Section copy.
   Context `{!typeGS Σ}.
 
   Global Instance ex_plain_t_pers_copy {X Y : RT} ty (P : ex_inv_def X Y)  :
     Copyable ty →
-    (∀ π a b, Persistent (P.(inv_P) π a b)) →
+    (∀ π a b, (ExInvPersistent (P.(inv_P) π a b))) →
     (* Alternative: I could also require invariants to have a sharing accessor *)
     TCDone (∀ π κ a b, P.(inv_P) π a b = P.(inv_P_shr) π κ a b) →
     Copyable (ex_plain_t X Y P ty).
   Proof.
     intros Hcopy Hpers Heq. econstructor.
-    { apply _. }
+    { unfold ExInvPersistent in *. apply _. }
     iIntros (???? r m q ?).
     iIntros "CTX Hs Htok".
     iDestruct "Hs" as "(%x & Hshr & Hl)".

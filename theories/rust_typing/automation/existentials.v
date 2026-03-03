@@ -35,7 +35,7 @@ Local Ltac prepare_initial_coq_context :=
   end.
 
 (** ** Solve [Persistent]/[Timeless] assumptions. *)
-Ltac ex_t_solve_persistent :=
+Ltac ex_t_solve_persistent ::=
   simpl;
   intro_adt_params;
   rewrite /TCNoResolve; intros; prepare_initial_coq_context; apply _.
