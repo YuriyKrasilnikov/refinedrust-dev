@@ -16,6 +16,7 @@
 #![rr::include("index")]
 #![rr::include("ptr")]
 #![rr::include("ptr_advanced")]
+#![rr::include("clone")]
 
 use std::alloc::{Allocator, Global};
 use std::marker::PhantomData;
@@ -130,6 +131,15 @@ impl<T, A: Allocator> Vec<T, A> {
         unreachable!();
     }
 
+}
+
+#[rr::only_spec]
+#[rr::export_as(alloc::vec::from_elem)]
+#[rr::requires("(size_of_array_in_bytes {st_of T} (2 * (Z.to_nat n)) ≤ MaxInt ISize)%Z")]
+#[rr::returns("replicate (Z.to_nat n) elem")]
+pub fn vec_from_elem<T: Clone>(elem: T, n: usize) -> Vec<T> {
+    unimplemented!();
+    //<T as SpecFromElem>::from_elem(elem, n, Global)
 }
 
 #[rr::export_as(alloc::vec::Vec)]
