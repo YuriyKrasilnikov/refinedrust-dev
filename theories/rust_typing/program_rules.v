@@ -23,7 +23,7 @@ Section find.
     {| rt_fic := FindValP v |}.
 
   Global Instance related_to_named_lfts M : RelatedTo (named_lfts M) | 100 :=
-    {| rt_fic:= FindNamedLfts |}.
+{| rt_fic:= FindNamedLfts |}.
 
   Global Instance related_to_gvar_pobs {rt} γ (r : rt) : RelatedTo (gvar_pobs γ r) | 100 :=
     {| rt_fic := FindGvarPobsP γ |}.
@@ -40,7 +40,7 @@ Section find.
   Global Instance related_to_loc_in_bounds l pre suf : RelatedTo (loc_in_bounds l pre suf) | 100 :=
     {| rt_fic := FindLocInBounds l |}.
 
-  Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) | 100 :=
+Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) | 100 :=
     {| rt_fic := FindLocal f x |}.
 
   Global Instance related_to_alloc_locals f locals : RelatedTo (allocated_locals f locals) | 100 :=
@@ -3530,6 +3530,30 @@ Section subsume.
   Qed.
   Definition type_write_ofty_weak_inst := [instance @type_write_ofty_weak].
   Global Existing Instance type_write_ofty_weak_inst | 20.
+
+  (** For now, cast other ltypes to [OfTy]. Longer term, we should have specialized rules for them. *)
+  Definition type_write_end_fold_to_ofty E L {rt} π ot v (ty : type rt) r1 b2 bmin l (lt : ltype rt) r T :
+    cast_ltype_to_type E L lt (λ ty',
+      typed_write_end π E L ot v ty r1 b2 bmin l (◁ ty') r T)
+    ⊢ typed_write_end π E L ot v ty r1 b2 bmin l lt r T.
+  Proof.
+    iIntros "(%ty' & %Heqt & HT)".
+    iIntros (?????) "#CTX #HE HL Hl Hv".
+    iPoseProof (full_eqltype_acc with "CTX HE HL") as "#Heq"; first apply Heqt.
+    iDestruct ("Heq" $! _ _) as "(#Hincl & _)".
+    iMod (ltype_incl_use with "Hincl Hl") as "Hl"; first done.
+    iDestruct "Hincl" as "(%Hst & _)".
+    iMod ("HT" with "[] [] [] [] CTX HE HL Hl Hv") as "(% & $ & Hstep)"; [done.. | ].
+    iR. iApply (logical_step_wand with "Hstep").
+    iModIntro. iIntros "HT Hl".
+    iMod ("HT" with "Hl") as "(%L2 & % & % & % & % & HL & Hl & %Hst' & ? & Hcond & ?)".
+    iFrame.
+    rewrite Hst. iR.
+    iApply ltype_eq_place_cond_ty_trans; last done.
+    done.
+  Qed.
+  Definition type_write_end_fold_to_ofty_inst := [instance @type_write_end_fold_to_ofty].
+  Global Existing Instance type_write_end_fold_to_ofty_inst | 100.
 
   (* TODO move *)
   (*
