@@ -1,6 +1,6 @@
 From refinedrust Require Import typing shims.
 From rrstd.iterator.theories Require Import iterator.
-From rrstd.closures.closures.generated Require Import generated_specs_closures.
+From rrstd.closures.theories Require Import closures.
 
 Record MapX (I : RT) (F : RT) : Type := mk_map_x {
   map_it : RT_xt I;
@@ -12,7 +12,7 @@ Global Arguments mk_map_x {_ _}.
 Canonical Structure MapXRT (I F : RT) := directRT (MapX I F).
 
 Global Instance MapX_inh I F :
-Inhabited (RT_xt I) → Inhabited (RT_xt F) → Inhabited (MapX I F).
+  Inhabited (RT_xt I) → Inhabited (RT_xt F) → Inhabited (MapX I F).
 Proof.
   intros Ha Hb. exact (populate (mk_map_x inhabitant inhabitant)).
 Qed.
@@ -36,43 +36,7 @@ Proof.
   destruct m1, m2; naive_solver.
 Qed.
 
-
-(* TODO move *)
-Definition li_sealed `{!refinedrustGS Σ} (P : iProp Σ) : iProp Σ :=
-  P.
-Global Typeclasses Opaque li_sealed.
-
-Lemma li_sealed_use_pers `{!refinedrustGS Σ} (P : iProp Σ) `{!Persistent P} :
-  li_sealed P -∗ □ P.
-Proof.
-  unfold li_sealed. iIntros "#Ha". iModIntro. done.
-Qed.
-
-Section closure_props.
-  Context `{!refinedrustGS Σ}.
-
-  Context (Clos_rt Args_rt Clos_out_rt : RT).
-
-  Class ClosureHasTrivialPre (fnonce_attrs : FnOnce_spec_attrs Clos_rt Args_rt Clos_out_rt) := closure_has_trivial_pre_proof : ∀ π self args, ⊢ ∃ p, FnOnce_Pre fnonce_attrs π p self args.
-
-End closure_props.
-
-Ltac solve_closure_has_trivial_pre :=
-  match goal with
-  | |- ClosureHasTrivialPre _ _ _ _ =>
-    unfold ClosureHasTrivialPre;
-    intros ???; prepare_initial_coq_context;
-    iStartProof;
-    unshelve (repeat liRStep; solve[fail]);
-    unshelve (sidecond_solver);
-    sidecond_hammer;
-    apply inhabitant
-  end.
-
-(* TODO: don't have this as hint, but generate instances in the frontend *)
-Global Hint Extern 100 (ClosureHasTrivialPre _ _ _ _) =>
-  solve_closure_has_trivial_pre : typeclass_instances.
-
+(** Instantiation hints for iterator adapters which are mapping a closure over an iterator (map, all, position, exists, ...) *)
 Section map_inv_variants.
   Context `{!refinedrustGS Σ}.
 
@@ -81,18 +45,17 @@ Section map_inv_variants.
     thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ.
   Global Arguments map_inv_ty : simpl never.
 
-  Context
-    (Self_rt Item_rt Clos_rt Clos_out_rt : RT)
-    (fnonce_attrs : FnOnce_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt)
-  .
+  Context (Self_rt Item_rt Clos_rt Clos_out_rt : RT)
+    (fnonce_attrs : FnOnce_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt).
 
+  (* Default instantiation *)
   Lemma simpl_exist_map_inv_trivial Q :
     SimplExist (map_inv_ty _ _ _ _ fnonce_attrs) Q
       (∃ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ), Q Inv).
-  Proof.
-    unfold SimplExist.
-    done.
-  Qed.
+  Proof. unfold SimplExist. done. Qed.
+  Lemma simpl_forall_map_inv Q :
+    SimplForall (map_inv_ty _ _ _ _ fnonce_attrs) 1 Q (∀ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ), Q Inv).
+  Proof. unfold SimplForall. done. Qed.
 
   (* For a trivial pre, instantiate with a trivial invariant *)
   Lemma simpl_exist_map_inv_pure_pre Q :
@@ -103,13 +66,6 @@ Section map_inv_variants.
     intros Hpre.
     unfold SimplExist.
     eauto with iFrame.
-  Qed.
-
-  Lemma simpl_forall_map_inv Q :
-    SimplForall (map_inv_ty _ _ _ _ fnonce_attrs) 1 Q (∀ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ), Q Inv).
-  Proof.
-    unfold SimplForall.
-    done.
   Qed.
 End map_inv_variants.
 Global Hint Extern 1000 (SimplExist (map_inv_ty _ _ _ _ ?fnonce) _ _) =>
@@ -127,8 +83,6 @@ Section map.
     (iter_attrs : traits_iterator_Iterator_spec_attrs Self_rt Item_rt)
     (Pre : thread_id → ClosParams → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → iProp Σ)
     (PostMut : thread_id → ClosParams → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → RT_xt Clos_rt → RT_xt Clos_out_rt → iProp Σ)
-    (*(fnonce_attrs : FnOnce_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt)*)
-    (*(fnmut_attrs : FnMut_spec_attrs Clos_rt (tuple1_rt Item_rt) Clos_out_rt) *)
     : _ → _ → _ → iProp Σ :=
     λ (π : thread_id) (inner_p : _) (s : MapX Self_rt Clos_rt),
     (∃ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ),

@@ -207,6 +207,7 @@
           {
             pname = "stdlib-closures";
             src = ./stdlib/closures;
+            withTheories = true;
           }
           {
             pname = "stdlib-cmp";

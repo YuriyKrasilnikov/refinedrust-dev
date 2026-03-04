@@ -102,7 +102,7 @@ pub trait Iterator {
 
 
     #[rr::only_spec]
-    #[rr::params("p", "P" : "{xt_of Self::Item} → Prop", "ClosInv" : "thread_id → {xt_of Self} → {xt_of F} → iProp Σ")]
+    #[rr::params("p", "P" : "{xt_of Self::Item} → Prop", "ClosInv" : "map_inv_ty  _ _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
     #[rr::requires(#iris "{Inv} π p self.cur")]
     #[rr::requires(#iris "ClosInv π self.cur f")]
     /// Precondition: If the inner iterator has been advanced, we can call the closure.
@@ -132,7 +132,7 @@ pub trait Iterator {
     }
 
     #[rr::only_spec]
-    #[rr::params("p", "P" : "{xt_of Self::Item} → Prop", "ClosInv" : "thread_id → {xt_of Self} → {xt_of F} → iProp Σ")]
+    #[rr::params("p", "P" : "{xt_of Self::Item} → Prop", "ClosInv" : "map_inv_ty  _ _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
     #[rr::requires(#iris "{Inv} π p self.cur")]
     #[rr::requires(#iris "ClosInv π self.cur f")]
     /// Precondition: If the inner iterator has been advanced, we can call the closure.

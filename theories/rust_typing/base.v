@@ -50,6 +50,14 @@ Local Definition coPset_disjoint_empty_r := disjoint_empty_r (C:=coPset).
 Local Definition coPset_disjoint_empty_l := disjoint_empty_l (C:=coPset).
 Global Hint Extern 1 (CoPsetFact ?P) => (change P; clear; eauto using coPset_disjoint_empty_r, coPset_disjoint_empty_r with solve_ndisj) : typeclass_instances.
 
+(** Sealing things for Lithium, in user-defined specs *)
+Definition li_sealed {Σ} (P : iProp Σ) : iProp Σ := P.
+Global Typeclasses Opaque li_sealed.
+Lemma li_sealed_use_pers {Σ} (P : iProp Σ) `{!Persistent P} :
+  li_sealed P -∗ □ P.
+Proof.
+  unfold li_sealed. iIntros "#Ha". iModIntro. done.
+Qed.
 
 Class LayoutSizeEq (ly1 ly2 : layout) := layout_size_eq_proof : ly_size ly1 = ly_size ly2.
 Global Instance layout_size_eq_refl ly : LayoutSizeEq ly ly.
