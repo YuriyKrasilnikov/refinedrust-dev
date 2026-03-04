@@ -413,7 +413,7 @@ Ltac solve_check_list_elem_of ::=
   match goal with
   | |- check_list_elem_of_pure_goal ?x ?xs ?b =>
       unfold check_list_elem_of_pure_goal;
-      first [unify b true; simpl; simple_list_elem_solver | unify b false; simpl; exact I]
+      first [unify b true; simpl; solve [simple_list_elem_solver] | unify b false; simpl; exact I]
   end.
 
 (** ** lifetime inclusion solver *)
