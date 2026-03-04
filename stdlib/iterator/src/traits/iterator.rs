@@ -28,25 +28,26 @@ pub trait Iterator {
 
     /// We pick an invariant Inv
     /// TODO: maybe release Inv when we drop the Map iterator
-    #[rr::params("p", "Inv" : "map_inv_ty _ _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
-    #[rr::requires(#iris "{Inv} π p self")]
+    #[rr::params("p_inner", "Inv" : "map_inv_ty _ _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
+    #[rr::params("ParamPred" : "clos_param_pred_ty _ _ _ FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs")]
+    #[rr::requires(#iris "{Inv} π p_inner self")]
     /// Precondition: The picked invariant should hold initially.
     #[rr::requires(#iris "Inv π self f")]
     /// Precondition: persistently, each iteration preserves the invariant.
     /// If the inner iterator has been advanced, we can call the closure.
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state e,
-        (☒ {Self::Next} π p it_state (Some e) it_state') -∗
+        (☒ {Self::Next} π p_inner it_state (Some e) it_state') -∗
         Inv π it_state clos_state -∗
-        ∃ pclos, {F::Pre} π pclos clos_state *[e] ∗
+        ∃ pclos, ⌜ParamPred pclos⌝ ∗ {F::Pre} π pclos clos_state *[e] ∗
         (∀ e' clos_state', ☒ {F::PostMut} π pclos clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state' ∗ True))")]
     /// Precondition: If no element is emitted, the invariant is also upheld.
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state,
-        (☒ {Self::Next} π p it_state None it_state') -∗
+        (☒ {Self::Next} π p_inner it_state None it_state') -∗
         Inv π it_state clos_state -∗
         Inv π it_state' clos_state ∗ True)")]
     #[rr::ensures("ret = mk_map_x self f")]
     // TODO: spec shortcut to refer to attrs of Self
-    #[rr::ensures(#iris "traits_iterator_Iterator_Inv (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ traits_iterator_Iterator_Self_spec_attrs FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs FnMut_F_Selfastraits_iterator_Iterator_Item_spec_attrs) π p ret")]
+    #[rr::ensures(#iris "traits_iterator_Iterator_Inv (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ traits_iterator_Iterator_Self_spec_attrs FnOnce_F_Selfastraits_iterator_Iterator_Item_spec_attrs FnMut_F_Selfastraits_iterator_Iterator_Item_spec_attrs) π (p_inner, ParamPred) ret")]
     fn map<B, F>(self, f: F) -> Map<Self, F>
     where
         Self: Sized,
