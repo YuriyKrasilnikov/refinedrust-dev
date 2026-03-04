@@ -1,16 +1,16 @@
 From caesium Require Import lang notation.
 From refinedrust Require Import typing shims.
-From refinedrust.examples.atomic_test.generated Require Import generated_code_atomic_test generated_specs_atomic_test generated_template_test_load.
+From refinedrust.examples.atomic_test.generated Require Import generated_code_atomic_test generated_specs_atomic_test generated_template_test_store.
 
 Set Default Proof Using "Type".
 
 Section proof.
 Context `{RRGS : !refinedrustGS Σ}.
 
-Lemma test_load_proof (π : thread_id) :
-  test_load_lemma π.
+Lemma test_store_proof (π : thread_id) :
+  test_store_lemma π.
 Proof.
-  test_load_prelude.
+  test_store_prelude.
 
   rep <-! liRStep; liShow.
 

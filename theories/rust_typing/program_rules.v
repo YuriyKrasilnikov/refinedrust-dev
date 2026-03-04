@@ -3015,14 +3015,37 @@ Section subsume.
             typed_stmt E L4 f s fn R ϝ))))
     ⊢ typed_stmt E L f (AssignSE ScOrd ot e1 e2 s) fn R ϝ.
   Proof.
-    (* Proof sketch:
-       1. wps_bind: evaluate e2 via typed_val_expr → v_val
-       2. wps_bind + unfold AssignSE: evaluate SkipE(e1)
-          a. wpe_bind: evaluate e1 via typed_val_expr → v_ptr
-          b. wp_skip: handle the SkipE step
-       3. Apply typed_atomic_store with s, fn, R, ϝ
-       4. Instance opens invariant → wps_assign → closes → T L' *)
-  Admitted.
+    iIntros "He". iIntros (?) "#(LFT & LLCTX) #HE HL Hf Hcont".
+    (* Phase 1: evaluate e2 → v_val *)
+    wps_bind. iApply ("He" with "[$LFT $LLCTX] HE HL Hf").
+    iIntros (L1 v_val m1 rt1 ty1 r1) "HL Hf Hv_val (-> & He1)".
+    (* Phase 2: evaluate e1 → v_ptr (wps_bind extracts e1 from SkipE) *)
+    wps_bind. iApply ("He1" with "[$LFT $LLCTX] HE HL Hf").
+    iIntros (L2 v_ptr m2 rt2 ty2 r2) "HL Hf Hv_ptr Hstore".
+    (* Phase 3: handle SkipE step, acquire credits.
+       Goal is WPs (AssignSE ScOrd ot (Val v_ptr) (Val v_val) s).
+       Unfold AssignSE to expose SkipE, then wps_bind extracts it. *)
+    unfold AssignSE. wps_bind.
+    iMod (tr_zero) as "Ha".
+    iApply wp_skip.
+    iApply (physical_step_intro_tr with "Ha").
+    iNext. iIntros "Ha Hcred !>".
+    (* Phase 4: delegate to typed_atomic_store.
+       Goal: WPs (Assign ScOrd ot (Val v_ptr) (Val v_val) s).
+       Feed value ownerships + continuation wrapper with credits. *)
+    unfold typed_atomic_store.
+    iSpecialize ("Hstore" with "Hv_ptr Hv_val").
+    iSpecialize ("Hstore" $! s fn R ϝ with "[Ha Hcred]").
+    { iIntros (L3) "Hiwh".
+      iIntros (?) "#(LFT' & LLCTX') #HE' HL3 Hf' HΨ'".
+      iMod ("Hiwh" with "[] HE' HL3 [Ha Hcred]") as "(%L4 & HL4 & Hstmt)".
+      { done. }
+      { iSplitL "Ha".
+        - iApply tr_weaken; last done. simpl. unfold num_laters_per_step; lia.
+        - iApply lc_weaken; last done. simpl. unfold num_cred, num_laters_per_step; lia. }
+      by iApply ("Hstmt" with "[$LFT' $LLCTX'] HE' HL4 Hf' HΨ'"). }
+    by iApply ("Hstore" with "[$LFT $LLCTX] HE HL Hf Hcont").
+  Qed.
 
   Lemma type_mut_addr_of E L f e (T : typed_val_expr_cont_t) :
     typed_addr_of_mut E L f e (λ L v rt ty r, T L v MetaNone rt ty r)

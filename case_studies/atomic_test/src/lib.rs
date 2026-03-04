@@ -25,9 +25,20 @@ impl MyAtomicU8 {
     pub fn load(&self) -> u8 {
         unimplemented!()
     }
+
+    /// Spec-only: intercepted by mode(atomic) → Assign ScOrd.
+    #[rr::only_spec]
+    pub fn store(&self, _value: u8) {
+        unimplemented!()
+    }
 }
 
 #[rr::verify]
 fn test_load(x: &MyAtomicU8) {
     let _v = x.load();
+}
+
+#[rr::verify]
+fn test_store(x: &MyAtomicU8) {
+    x.store(42);
 }
