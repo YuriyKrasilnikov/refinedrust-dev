@@ -31,6 +31,14 @@ impl MyAtomicU8 {
     pub fn store(&self, _value: u8) {
         unimplemented!()
     }
+
+    /// Spec-only: intercepted by mode(atomic) → AtomicRMW RmwXchg.
+    #[rr::only_spec]
+    #[rr::exists("x" : "Z")]
+    #[rr::returns("x")]
+    pub fn swap(&self, _value: u8) -> u8 {
+        unimplemented!()
+    }
 }
 
 #[rr::verify]
@@ -41,4 +49,9 @@ fn test_load(x: &MyAtomicU8) {
 #[rr::verify]
 fn test_store(x: &MyAtomicU8) {
     x.store(42);
+}
+
+#[rr::verify]
+fn test_swap(x: &MyAtomicU8) {
+    let _v = x.swap(99);
 }

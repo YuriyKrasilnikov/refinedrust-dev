@@ -246,33 +246,194 @@ Section atomic_rmw.
   Context `{!typeGS Σ}.
   Context {Y : RT} (P : at_ex_inv_def Z Y).
 
-  (** One instance covers all RMW operations — [op] is universally quantified. *)
+  (** Helper: [atomic_rmw_eval] on integer types always produces a well-typed
+      result when both operands are well-typed. Required because [wp_atomic_rmw]
+      takes [atomic_rmw_eval = Some v_new] as a premise — without totality,
+      the program would be stuck (UB). All [atomic_rmw_op] constructors avoid
+      division/modulo, so the computation always succeeds for integer types. *)
+  Lemma atomic_rmw_eval_int_total (op : atomic_rmw_op) (it : int_type)
+      (v_old v_arg : val) (z n_arg : Z) :
+    val_to_Z v_old it = Some z →
+    val_to_Z v_arg it = Some n_arg →
+    ∃ v_new r_new,
+      atomic_rmw_eval op (IntOp it) v_old v_arg = Some v_new ∧
+      val_to_Z v_new it = Some r_new.
+  Proof.
+    intros Hz Hn.
+    destruct op; rewrite /atomic_rmw_eval.
+    - (* RmwXchg *) eauto.
+    - (* RmwAdd *) rewrite Hz Hn /=.
+      have Hin := wrap_to_it_in_range (z + n_arg) it.
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (wrap_to_it (z + n_arg) it). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwSub *) rewrite Hz Hn /=.
+      have Hin := wrap_to_it_in_range (z - n_arg) it.
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (wrap_to_it (z - n_arg) it). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwAnd *) rewrite Hz Hn /=.
+      have Hin := wrap_to_it_in_range (Z.land z n_arg) it.
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (wrap_to_it (Z.land z n_arg) it). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwOr *) rewrite Hz Hn /=.
+      have Hin := wrap_to_it_in_range (Z.lor z n_arg) it.
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (wrap_to_it (Z.lor z n_arg) it). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwXor *) rewrite Hz Hn /=.
+      have Hin := wrap_to_it_in_range (Z.lxor z n_arg) it.
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (wrap_to_it (Z.lxor z n_arg) it). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwNand *) rewrite Hz Hn /=.
+      have Hin := wrap_to_it_in_range (Z.lnot (Z.land z n_arg)) it.
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (wrap_to_it (Z.lnot (Z.land z n_arg)) it). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwMaxS *) rewrite Hz Hn /=.
+      have Hz_in := val_to_Z_in_range _ _ _ Hz.
+      have Hn_in := val_to_Z_in_range _ _ _ Hn.
+      have Hin : Z.max z n_arg ∈ it by (destruct (Z.max_spec z n_arg) as [(?&->) | (?&->)]; done).
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (Z.max z n_arg). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwMinS *) rewrite Hz Hn /=.
+      have Hz_in := val_to_Z_in_range _ _ _ Hz.
+      have Hn_in := val_to_Z_in_range _ _ _ Hn.
+      have Hin : Z.min z n_arg ∈ it by (destruct (Z.min_spec z n_arg) as [(?&->) | (?&->)]; done).
+      have [v Hv] := val_of_Z_is_Some _ _ Hin.
+      exists v, (Z.min z n_arg). rewrite Hv. split; [done|].
+      by apply val_to_of_Z.
+    - (* RmwMaxU *) rewrite Hz Hn /=.
+      have Hz_in := val_to_Z_in_range _ _ _ Hz.
+      have Hn_in := val_to_Z_in_range _ _ _ Hn.
+      destruct (n_arg `mod` int_modulus it <=? z `mod` int_modulus it)%Z.
+      + have [v Hv] := val_of_Z_is_Some _ _ Hz_in.
+        exists v, z. rewrite Hv. split; [done|]. by apply val_to_of_Z.
+      + have [v Hv] := val_of_Z_is_Some _ _ Hn_in.
+        exists v, n_arg. rewrite Hv. split; [done|]. by apply val_to_of_Z.
+    - (* RmwMinU *) rewrite Hz Hn /=.
+      have Hz_in := val_to_Z_in_range _ _ _ Hz.
+      have Hn_in := val_to_Z_in_range _ _ _ Hn.
+      destruct (z `mod` int_modulus it <=? n_arg `mod` int_modulus it)%Z.
+      + have [v Hv] := val_of_Z_is_Some _ _ Hz_in.
+        exists v, z. rewrite Hv. split; [done|]. by apply val_to_of_Z.
+      + have [v Hv] := val_of_Z_is_Some _ _ Hn_in.
+        exists v, n_arg. rewrite Hv. split; [done|]. by apply val_to_of_Z.
+  Qed.
+
+  (** Atomic RMW through a shared reference to [at_ex_plain_t]-wrapped integer.
+      Accepts [shr_ref κ (∃at; P, int it)] directly.
+      One instance covers all [atomic_rmw_op] constructors.
+
+      Phase 1: unfold [shr_ref] value ownership → extract location [l] and
+               persistent [ty_shr] of [at_ex_plain_t].
+      Phase 2: open atomic invariant via [shr_ref_at_ex_acc] under reduced mask.
+      Phase 3: [wp_atomic_rmw] — atomically read-modify-write.
+      Phase 4: close invariant with new value, restore lifetime, pass old
+               value to continuation. *)
   Lemma typed_atomic_rmw_atomic_int E L f (it : int_type)
-      (v1 : val) (l1 : loc) (v2 : val) (n_arg : Z)
+      (v1 : val) (v2 : val) (n_arg : Z)
       (op : atomic_rmw_op)
-      (κ : lft) (x : Y)
+      (κ : lft) (r : place_rfn Y)
       (T : typed_val_expr_cont_t) :
     ⌜lctx_lft_alive E L κ⌝ ∗
-    l1 ◁ₗ[f.1, Shared κ] (#x) @ (◁ (∃at; P, int it)) ∗
+    ⌜((ot_layout (IntOp it)).(ly_size) ≤ bytes_per_addr)%nat⌝ ∗
     find_in_context FindCreditStore (λ '(c, a),
       ⌜fast_lia_hint (1 ≤ c)⌝ ∗
       (credit_store (c - 1) a -∗
-        ∀ (r : Z) (v_old : val) (r_new : Z) (v_new : val),
-          ⌜val_to_Z v_old it = Some r⌝ -∗
+        ∃ x, ⌜r = #x⌝ ∗
+        (∀ (z : Z) (v_old : val) (r_new : Z) (v_new : val),
+          ⌜val_to_Z v_old it = Some z⌝ -∗
           ⌜atomic_rmw_eval op (IntOp it) v_old v2 = Some v_new⌝ -∗
           ⌜val_to_Z v_new it = Some r_new⌝ -∗
-          P.(at_inv_P) f.1 r x -∗
+          P.(at_inv_P) f.1 z x -∗
           P.(at_inv_P) f.1 r_new x ∗
-          T L v_old MetaNone Z (int it) r))
-    ⊢ typed_atomic_rmw E L f v1 (v1 ◁ᵥ{f.1, MetaNone} l1 @ alias_ptr_t)
+          T L v_old MetaNone Z (int it) z)))
+    ⊢ typed_atomic_rmw E L f v1 (v1 ◁ᵥ{f.1, MetaNone} r @ shr_ref κ (∃at; P, int it))
                                 v2 (v2 ◁ᵥ{f.1, MetaNone} n_arg @ int it)
                                 op (IntOp it) T.
   Proof.
-  Admitted.
+    (** Phase 1 — Setup: unfold [shr_ref], extract location and [ty_shr] *)
+    rewrite /typed_atomic_rmw /FindCreditStore /fast_lia_hint.
+    iIntros "(%Halive & %Hbpa & Ha) Hv1 Hv2".
+    iDestruct "Ha" as ([c a]) "(Hstore & %Hn & HT)". simpl.
+    iIntros (Φ) "#(LFT & LLCTX) #HE HL Hf HΦ".
+    (* Unfold shr_ref value ownership for v1 *)
+    iEval (rewrite /ty_own_val /=) in "Hv1".
+    iDestruct "Hv1" as "(%l & %ly & %r' & %Hm & %Hv_eq & %Halg & %Hly_loc & #Hlb & #Hsc & #Hrfn & #Hshr)".
+    subst v1.
+    (* Unfold int value ownership for v2 *)
+    iEval (rewrite /ty_own_val /=) in "Hv2".
+    iDestruct "Hv2" as "(%Hmeta_val & %Hval_z_val)".
+    iPoseProof (credit_store_scrounge 1 with "Hstore") as "(Hcred & Hstore)"; first lia.
+    iPoseProof ("HT" with "Hstore") as "(%x & %Hr_eq & HT)".
+    iPoseProof (llctx_interp_acc_noend with "HL") as "(HL & HL_cl)".
+    iMod (lctx_lft_alive_tok_noend κ with "HE HL") as (q') "(Hκ & HL & Hclose_lft)";
+      [solve_ndisj | done | ].
+    (* Link r' to x via place_rfn_interp_shared *)
+    subst r.
+    iDestruct "Hrfn" as "%Hrfn_eq". subst r'.
 
-  Global Program Instance typed_atomic_rmw_val_atomic_int_inst E L f it v1 l1 v2 n_arg op κ x :
-    TypedAtomicRmwVal E L f v1 alias_ptr_t l1 v2 (int it) n_arg op (IntOp it) :=
-    λ T, i2p (typed_atomic_rmw_atomic_int E L f it v1 l1 v2 n_arg op κ x T).
+    (** Phase 2 — Open: open atomic invariant via [wpe_atomic] + [shr_ref_at_ex_acc] *)
+    iApply (wpe_atomic ⊤ (⊤ ∖ ↑shrN.@l)).
+    iMod (shr_ref_at_ex_acc ⊤ with "LFT Hcred Hκ Hshr") as
+      (z) "(Hinv & Hpoints & Hclose)"; [solve_ndisj | solve_ndisj | ].
+    iDestruct "Hpoints" as (v_old) "(Hmapsto & #Hown)".
+    iEval (rewrite /ty_own_val /=) in "Hown".
+    iDestruct "Hown" as "(%Hmeta & %Hval_z)".
+    (* has_layout_loc: from shr_ref unfolding *)
+    apply syn_type_has_layout_int_inv in Halg. subst ly.
+    (* Compute v_new via atomic_rmw_eval_int_total *)
+    have [v_new [r_new [Heval Hval_z_new]]] :=
+      atomic_rmw_eval_int_total op it v_old v2 z n_arg Hval_z Hval_z_val.
+    (* Establish layout facts BEFORE entering iApply — destruct it in pure Coq
+       context avoids breaking Iris hypothesis structure *)
+    have Hly_old : has_layout_val v_old (ot_layout (IntOp it))
+      by (apply val_to_Z_length in Hval_z;
+          rewrite /has_layout_val /ot_layout /it_layout /ly_size; lia).
+    have Hly_arg : has_layout_val v2 (ot_layout (IntOp it))
+      by (apply val_to_Z_length in Hval_z_val;
+          rewrite /has_layout_val /ot_layout /it_layout /ly_size; lia).
+    have Hly_new : has_layout_val v_new (ot_layout (IntOp it))
+      by (apply val_to_Z_length in Hval_z_new;
+          rewrite /has_layout_val /ot_layout /it_layout /ly_size; lia).
+    (* Hbpa: atomic size constraint — from precondition *)
+    iModIntro.
+
+    (** Phase 3 — Operate: [wp_atomic_rmw] *)
+    iApply (wp_atomic_rmw op _ _ v_old v_new with "Hmapsto").
+    { apply val_to_of_loc. }
+    { rewrite /ot_layout. done. }
+    { exact Hly_old. }
+    { exact Hly_arg. }
+    { exact Hbpa. }
+    { exact Heval. }
+    { exact Hly_new. }
+
+    (** Phase 4 — Physical step, close invariant *)
+    iApply physical_step_intro. iNext. iIntros "Hmapsto".
+    (* Specialize continuation with concrete values *)
+    iSpecialize ("HT" $! z v_old r_new v_new with "[//] [//] [//] Hinv").
+    iDestruct "HT" as "(Hinv_new & HT)".
+    (* Close invariant with new value r_new: ⊤∖↑N → ⊤ *)
+    iMod ("Hclose" $! r_new with "[Hmapsto Hinv_new]") as "Hκ".
+    { iFrame "Hinv_new". iExists v_new. iFrame "Hmapsto".
+      rewrite /ty_own_val /=. iPureIntro. split; done. }
+    iMod ("Hclose_lft" with "Hκ HL") as "HL".
+    iPoseProof ("HL_cl" with "HL") as "HL".
+    (* Return old value v_old with type (int it) at refinement z *)
+    iAssert (v_old ◁ᵥ{f.1, MetaNone} z @ (int it))%I as "Hv_ret".
+    { rewrite /ty_own_val /=. iPureIntro. exact (conj Hmeta Hval_z). }
+    iModIntro. iApply ("HΦ" with "HL Hf Hv_ret [HT]").
+    iExact "HT".
+  Qed.
+
+  Global Program Instance typed_atomic_rmw_val_atomic_int_inst E L f it v1 v2 n_arg op κ r :
+    TypedAtomicRmwVal E L f v1 (shr_ref κ (∃at; P, int it)) r v2 (int it) n_arg op (IntOp it) :=
+    λ T, i2p (typed_atomic_rmw_atomic_int E L f it v1 v2 n_arg op κ r T).
 End atomic_rmw.
 
 (** * Compare-and-swap *)
