@@ -115,7 +115,7 @@ Section union.
         ⌜l `has_layout_loc` ul⌝ ∗
         l ◁ₗ{π, MetaNone, κ} r @ ty ∗
         (l +ₗ ly.(ly_size)) ◁ₗ{π, MetaNone, κ} () @ uninit (UntypedSynType $ active_union_rest_ly ul ly))%I;
-    ty_ghost_drop π r :=
+    _ty_ghost_drop π r :=
       ty_ghost_drop ty π r;
     _ty_lfts := ty_lfts ty;
     _ty_wf_E := ty_wf_E ty;
@@ -340,7 +340,7 @@ Section enum.
     _ty_has_op_type ot mt :=
       is_enum_ot e ot mt;
     ty_sidecond := True%I;
-    ty_ghost_drop π r :=
+    _ty_ghost_drop π r :=
       (* TODO *)
       True%I;
     _ty_lfts := e.(enum_lfts);
@@ -705,7 +705,7 @@ Section ne.
       generalize (enum_ne_rt_consistent ty ty' r); intros Heq.
       destruct Heq.
       done.
-    - solve_type_proper.
+    - rewrite ty_ghost_drop_unfold. solve_type_proper.
   Qed.
 
   Global Instance enum_t_contr {rt1 rt2} (F : type rt1 → enum rt2) :
@@ -792,7 +792,7 @@ Section ne.
       generalize (enum_contr_rt_consistent ty ty' r); intros Heq.
       destruct Heq.
       done.
-    - solve_type_proper.
+    - rewrite ty_ghost_drop_unfold. solve_type_proper.
   Qed.
 
 End ne.

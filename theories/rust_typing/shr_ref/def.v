@@ -37,7 +37,7 @@ Section shr_ref.
         inner.(ty_sidecond) ∗
         place_rfn_interp_shared r ri ∗
         &frac{κ'} (λ q, l ↦{q} li) ∗ ▷ □ |={lftE}=> inner.(ty_shr) (κ) π ri MetaNone li)%I;
-    ty_ghost_drop _ _ := True%I;
+    _ty_ghost_drop _ _ := True%I;
     _ty_lfts := [κ] ++ ty_lfts inner;
     _ty_wf_E := ty_wf_E inner ++ ty_outlives_E inner κ;
   |}.
@@ -152,7 +152,7 @@ Section shr_ref.
     - done.
     - solve_type_proper.
     - solve_type_proper.
-    - solve_type_proper.
+    - rewrite ty_ghost_drop_unfold. solve_type_proper.
   Qed.
 
   Global Instance shr_ref_type_ne {rt : RT} κ : TypeNonExpansive (shr_ref (rt:=rt) κ).

@@ -25,7 +25,7 @@ Section ex.
     _ty_has_op_type ot mt := ty_has_op_type ty ot mt;
     ty_sidecond :=
       ty.(ty_sidecond);
-    ty_ghost_drop π r :=
+    _ty_ghost_drop π r :=
       (* TODO generalize ghost_drop in the type def *)
       (∃ x, P.(inv_P) π x r ∗ ty_ghost_drop ty π x)%I;
     _ty_lfts := P.(inv_P_lfts) ++ ty_lfts ty;
@@ -164,7 +164,7 @@ Section contr.
       { apply HP. done. }
       apply HF; done.
     - intros n ty ty' ?.
-      intros ??. rewrite /ty_ghost_drop/=.
+      intros ??. rewrite ty_ghost_drop_unfold /_ty_ghost_drop/=.
       do 3 f_equiv.
       { apply HP; done. }
       apply HF; done.
@@ -206,7 +206,7 @@ Section contr.
       { apply HP; done. }
       apply HF; done.
     - intros n ty ty' ?.
-      intros ??. rewrite /ty_ghost_drop/=.
+      intros ??. rewrite ty_ghost_drop_unfold /_ty_ghost_drop/=.
       do 3 f_equiv.
       { apply HP; done. }
       apply HF; done.

@@ -222,7 +222,7 @@ Section structs.
         loc_in_bounds l 0 (ly_size sl) ∗
         [∗ list] i ↦ ty ∈ pad_struct sl.(sl_members) (hpzipl rts tys r) struct_make_uninit_type,
           struct_own_el_shr π κ i sl.(sl_members) l (projT2 ty).2 (projT2 ty).1)%I;
-    ty_ghost_drop π r :=
+    _ty_ghost_drop π r :=
       ([∗ list] x ∈ hpzipl rts tys r,
         ∃ r' : RT_rt (projT1 x), place_rfn_interp_owned ((projT2 x).2) r' ∗
         ty_ghost_drop (projT2 x).1 π r')%I;
@@ -404,7 +404,7 @@ Section structs.
     iModIntro. iIntros (? [rt [lt r1]] ?).
     iIntros "(%j & % & % & % & % & % & Hv)".
     iDestruct "Hv" as "(% & % & Hrfn & % & % & Hv)".
-    simpl. iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv") as "Hv"; first done.
+    simpl. iPoseProof (ty_own_ghost_drop _ _ _ _ _ F with "Hv") as "Hv"; first done.
     iApply (logical_step_wand with "Hv").
     iIntros "$". done.
   Qed.
@@ -656,7 +656,7 @@ Section structs.
       + f_equiv. setoid_rewrite <-shift_loc_assoc_nat. apply IH; done.
     - intros n ty ty' Hd.
       destruct HT as [Ts' Hne ->].
-      iIntros (π r). rewrite /ty_ghost_drop/=.
+      iIntros (π r). rewrite ty_ghost_drop_unfold /_ty_ghost_drop/=.
       elim: rts Ts' Hne r => //.
       { simpl. intros Ts'. inv_hlist Ts'. simpl. done. }
       intros rt' rts IH Ts' Hne r.
@@ -754,7 +754,7 @@ Section structs.
       + f_equiv. setoid_rewrite <-shift_loc_assoc_nat. apply IH; done.
     - intros n ty ty' Hd.
       destruct HT as [Ts' Hne ->].
-      iIntros (π r). rewrite /ty_ghost_drop/=.
+      iIntros (π r). rewrite ty_ghost_drop_unfold /_ty_ghost_drop/=.
       elim: rts Ts' Hne r => //.
       { simpl. intros Ts'. inv_hlist Ts'. simpl. done. }
       intros rt' rts IH Ts' Hne r.

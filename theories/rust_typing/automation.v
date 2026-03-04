@@ -713,6 +713,7 @@ Tactic Notation "start_function" constr(fnname) ident(ϝ) "(" simple_intropatter
   init_jcache;
   inv_layout_alg;
   iStartProof;
+  set_function_types;
   repeat (liEnsureInvariant || liWand || liSimpl || liForall || liPersistent || liImpl);
   li_unfold_lets_in_context;
   lazymatch goal with
@@ -793,6 +794,23 @@ Class RelationIsIdentity {A} (R : A → A → Prop) := {
 Global Hint Extern 100 (RelationIsIdentity _) =>
     simpl; econstructor; solve_goal : typeclass_instances.
 Global Hint Mode RelationIsIdentity + + : typeclass_instances.
+
+(** Unfold [ty_ghost_drop] if necessary *)
+Class TyIsNotVar `{!typeGS Σ} {rt} (ty : type rt) := {}.
+Global Hint Mode TyIsNotVar + + + + : typeclass_instances.
+Global Hint Extern 10 (TyIsNotVar ?ty) =>
+  ty_is_not_var ty; constructor : typeclass_instances.
+
+Lemma simplify_hyp_ty_ghost_drop `{!typeGS Σ} {rt} (ty : type rt) `{!TyIsNotVar ty} π r T :
+  (_ty_ghost_drop ty π r -∗ T) ⊢ simplify_hyp (ty_ghost_drop ty π r) T.
+Proof.
+  rewrite ty_ghost_drop_unfold. done.
+Qed.
+Definition simplify_hyp_ty_ghost_drop_inst := [instance @simplify_hyp_ty_ghost_drop with 0%N].
+Global Existing Instance simplify_hyp_ty_ghost_drop_inst.
+
+
+
 
 (* In my experience, this has led to more problems with [normalize_autorewrite] rewriting below definitions too eagerly. *)
 #[export] Unset Keyed Unification.

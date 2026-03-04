@@ -38,7 +38,7 @@ Section mut_ref.
           ▷ □ (|={lftE}=> inner.(ty_shr) (κ⊓κ') π r' MetaNone li))%I;
     (* NOTE: we cannot descend below the borrow here to get more information recursively.
        But this is fine, since the observation about γ here already contains all the information we need. *)
-    ty_ghost_drop π '(r, γ) :=
+    _ty_ghost_drop π '(r, γ) :=
       (*place_rfn_interp_mut r γ;*)
       match r with
       | #r' => gvar_pobs γ r'
@@ -238,7 +238,7 @@ Section mut_ref.
       intros κ' π [] l. rewrite /ty_shr/=.
       solve_type_proper.
     - intros n ty ty' ?.
-      intros. done.
+      intros. rewrite ty_ghost_drop_unfold. done.
   Qed.
 
   Global Instance mut_ref_type_ne {rt : RT} κ : TypeNonExpansive (mut_ref (rt:=rt) κ).

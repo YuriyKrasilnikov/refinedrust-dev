@@ -172,6 +172,24 @@ Proof.
   rep liRStep.
 Qed.
 
+(** Ghost drop unfolding *)
+Lemma test_ghost_drop `{!typeGS Σ} π :
+  ⊢ ty_ghost_drop (int I32) π 5 -∗ True.
+Proof.
+  iStartProof.
+  liRStep.
+  liRStep.
+  liRStep.
+  done.
+Abort.
+Lemma test_ghost_drop `{!typeGS Σ} {rt} (ty : type rt) r π :
+  ⊢ ty_ghost_drop ty π r -∗ True.
+Proof.
+  iStartProof.
+  liRStep.
+  done.
+Abort.
+
 Section test.
   Context `{!typeGS Σ}.
 

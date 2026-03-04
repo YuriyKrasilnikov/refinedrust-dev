@@ -270,7 +270,7 @@ Record type `{!typeGS Σ} (rt : RT) := {
     ty_own_val π r m v -∗
     ∃ ly : layout, ⌜syn_type_has_layout (ty_syn_type m) ly⌝ ∗ ⌜v `has_layout_val` ly⌝;
 
-  ty_ghost_drop : thread_id → rt → iProp Σ;
+  _ty_ghost_drop : thread_id → rt → iProp Σ;
 
   (** If we specify a particular op_type, its layout needs to be compatible with the underlying syntactic type.
     In particular, this needs to be independent of the metadata -- forcing [ty_has_op_type] for unsized types to be [False].
@@ -311,8 +311,8 @@ Record type `{!typeGS Σ} (rt : RT) := {
   ty_shr_mono κ κ' tid r m l :
     κ' ⊑ κ -∗ ty_shr κ tid r m l -∗ ty_shr κ' tid r m l;
 
-  ty_own_ghost_drop π r m v F :
-    lftE ⊆ F → ty_own_val π r m v -∗ logical_step F (ty_ghost_drop π r);
+  _ty_own_ghost_drop π r m v F :
+    lftE ⊆ F → ty_own_val π r m v -∗ logical_step F (_ty_ghost_drop π r);
 
   (** We can transport value ownership over memcasts according to the specification by [ty_has_op_type] *)
   _ty_memcast_compat ot mt st π r m v :
@@ -342,7 +342,6 @@ Record type `{!typeGS Σ} (rt : RT) := {
 }.
 Arguments ty_own_val : simpl never.
 Arguments ty_shr : simpl never.
-(*Arguments ty_ghost_drop : simpl never.*)
 #[export] Existing Instance ty_sidecond_timeless.
 #[export] Existing Instance ty_sidecond_persistent.
 #[export] Existing Instance ty_xt_inhabited.
@@ -356,7 +355,7 @@ Arguments ty_syn_type {_ _ _}.
 Arguments ty_shr {_ _ _}.
 Arguments ty_share {_ _ _}.
 Arguments ty_metadata_kind {_ _ _}.
-Arguments ty_ghost_drop {_ _ _}.
+Arguments _ty_ghost_drop {_ _ _}.
 
 #[export] Instance ty_shr_persistent `{!typeGS Σ} {rt : RT} (ty : type rt) κ π l r m :
   Persistent (ty_shr ty κ π r m l).
@@ -401,6 +400,18 @@ Lemma ty_memcast_compat `{!typeGS Σ} rt (ty : type rt) ot mt st π r m v :
   | MCId => ⌜mem_cast_id v ot⌝
   end.
 Proof. rewrite ty_has_op_type_unfold. apply _ty_memcast_compat. Qed.
+
+(** We seal [ty_ghost_drop] in order to avoid performance issues with Qed times. *)
+Definition ty_ghost_drop_aux `{!typeGS Σ} : seal (@_ty_ghost_drop _ _). Proof. by eexists. Qed.
+Definition ty_ghost_drop `{!typeGS Σ} := ty_ghost_drop_aux.(unseal).
+Definition ty_ghost_drop_unfold `{!typeGS Σ} : @ty_ghost_drop _ _ = @_ty_ghost_drop _ _ := ty_ghost_drop_aux.(seal_eq).
+Arguments ty_ghost_drop {_ _ _}.
+
+Lemma ty_own_ghost_drop `{!typeGS Σ} {rt} (ty : type rt) π r m v F :
+  lftE ⊆ F → ty_own_val ty π r m v -∗ logical_step F (ty_ghost_drop ty π r).
+Proof.
+  rewrite ty_ghost_drop_unfold. apply _ty_own_ghost_drop.
+Qed.
 
 (** We seal [ty_wf_E] in order to avoid performance issues with Qed time. *)
 Definition ty_wf_E_aux `{!typeGS Σ} : seal (@_ty_wf_E _ _). Proof. by eexists. Qed.
@@ -564,7 +575,7 @@ Program Definition ty_of_st `{!typeGS Σ} rt (st : simple_type rt) : type rt :=
         ▷ st.(st_own) tid r vl ∗
         ⌜syn_type_has_layout st.(st_syn_type) ly⌝ ∗
         ⌜l `has_layout_loc` ly⌝)%I;
-    ty_ghost_drop π r := True%I;
+    _ty_ghost_drop π r := True%I;
      _ty_lfts := [];
      _ty_wf_E := [];
   |}.
@@ -684,7 +695,7 @@ Section ofe.
       (∀ ot mt, ty_has_op_type ty1 ot mt ↔ ty_has_op_type ty2 ot mt) →
       (∀ π r m v, ty1.(ty_own_val) π r m v ≡ ty2.(ty_own_val) π r m v) →
       (∀ κ π r m l, ty1.(ty_shr) κ π r m l ≡ ty2.(ty_shr) κ π r m l) →
-      (∀ π r, ty1.(ty_ghost_drop) π r ≡ ty2.(ty_ghost_drop) π r) →
+      (∀ π r, ty_ghost_drop ty1 π r ≡ ty_ghost_drop ty2 π r) →
       (∀ m, ty1.(ty_syn_type) m = ty2.(ty_syn_type) m) →
       (ty1.(ty_sidecond) ≡ ty2.(ty_sidecond)) →
       (ty_lfts ty1) = (ty_lfts ty2) →
@@ -697,7 +708,7 @@ Section ofe.
       (∀ ot mt, ty_has_op_type ty1 ot mt ↔ ty_has_op_type ty2 ot mt) →
       (∀ π r m v, ty1.(ty_own_val) π r m v ≡{n}≡ ty2.(ty_own_val) π r m v) →
       (∀ κ π r m v, ty1.(ty_shr) κ π r m v ≡{n}≡ ty2.(ty_shr) κ π r m v) →
-      (∀ π r, ty1.(ty_ghost_drop) π r ≡{n}≡ ty2.(ty_ghost_drop) π r) →
+      (∀ π r, ty_ghost_drop ty1 π r ≡{n}≡ ty_ghost_drop ty2 π r) →
       (∀ m, ty1.(ty_syn_type) m = ty2.(ty_syn_type) m) →
       (ty1.(ty_sidecond) ≡{n}≡ ty2.(ty_sidecond)) →
       (ty_lfts ty1) = (ty_lfts ty2) →
@@ -764,34 +775,13 @@ Section ofe.
   Definition type_unpack (ty : type rt) : T :=
     (ty.(ty_own_val),
      ty.(ty_shr),
-     ty.(ty_ghost_drop),
+     ty_ghost_drop ty,
      ty.(ty_metadata_kind),
      ty.(ty_syn_type),
      ty_has_op_type ty,
      ty.(ty_sidecond),
      ty_lfts ty,
      ty_wf_E ty).
-  (*
-  Program Definition type_pack (x : T) (H : P x) : type rt :=
-    let '(existT xt (xrt, xinh), T_own_val, T_shr, T_syn_type, T_ot, T_sidecond, T_lfts, T_wf_E) := x in
-    {|
-      ty_xt_inhabited := populate xinh;
-      ty_xt := xt;
-      ty_xrt := xrt;
-      ty_own_val := T_own_val;
-      _ty_has_op_type := T_ot;
-      ty_syn_type := T_syn_type;
-      ty_shr := T_shr;
-      ty_sidecond := T_sidecond;
-      ty_lfts := T_lfts;
-      _ty_wf_E := T_wf_E;
-    |}.
-  Solve Obligations with
-    intros [[[[[[[[] T_own_val] T_shr] T_syn_type] T_ot] T_sidecond] T_lfts] T_wf_E];
-    intros (? & ? & ? & ? & ? & ? & ? & ? & ? & ? & ?);
-    intros ?????????? Heq; injection Heq; intros -> -> -> -> -> -> ->;
-    done.
-   *)
 
   Definition type_ofe_mixin : OfeMixin (type rt).
   Proof.
@@ -867,78 +857,6 @@ Section ofe.
   Proof. intros ?? EQ. apply EQ. Qed.
   Instance ty_lfts_proper : Proper ((≡) ==> eq) ty_lfts.
   Proof. intros ?? EQ. apply EQ. Qed.
-
-
-  (*
-  Local Ltac intro_T :=
-        intros [[[[[[[[T_inh T_own_val] T_shr ] T_syn_type] T_ot] T_sidecond] T_drop] T_lfts] T_wf_E].
-  Global Instance type_cofe : Cofe typeO.
-  Proof.
-    apply (iso_cofe_subtype' P type_pack type_unpack).
-    - intros []; simpl; rewrite /type_unpack/=. rewrite ty_has_op_type_unfold. done.
-    - intros ? t1 t2. split.
-      + destruct 1 as [[Heq1 [Heq2 Heq3]] ? ? ? ? ? ? ? ?].
-        repeat split_and!; simpl; try done.
-        clear -Heq1 Heq2 Heq3.
-        unfold dist, ofe_dist, discrete_dist.
-        unfold equiv, ofe_equiv, equivL.
-        destruct t1 as [ ? ? [inh1]], t2 as [ ? ? [inh2]]; simpl in *; clear -Heq1 Heq2 Heq3.
-        subst. done.
-      + intros [[[[[[[[Heq1]]]]]]]]; simpl in *.
-        constructor; try done.
-        specialize (eq_sigT_fst Heq1) as Heq2.
-        exists Heq2.
-        destruct t1 as [ ? ? [inh1]], t2 as [ ? ? [inh2]]; simpl in *; clear -Heq1 Heq2.
-        subst.
-        apply existT_inj in Heq1. simplify_eq. done.
-    - intros [[[[[[[[[? [xt xrt]]]]]]]]]] Hx; rewrite /type_unpack/=.
-      rewrite ty_has_op_type_unfold; done.
-    - repeat apply limit_preserving_and; repeat (apply limit_preserving_forall; intros ?).
-      + apply bi.limit_preserving_emp_valid => n ty1 ty2. intro_T; f_equiv;
-        [ apply T_own_val | f_equiv; rewrite T_syn_type; done].
-      + apply limit_preserving_impl.
-        { intros ty1 ty2; intro_T. intros ?. by apply T_ot. }
-        { apply limit_preserving_discrete. intros ty1 ty2; intro_T. by rewrite T_syn_type. }
-      + apply bi.limit_preserving_emp_valid => n ty1 ty2; intro_T; f_equiv; last done. apply T_own_val.
-      + apply bi.limit_preserving_emp_valid => n ty1 ty2; intro_T; f_equiv; last done. apply T_shr.
-      + apply bi.limit_preserving_Persistent => n ty1 ty2; intro_T. apply T_shr.
-      + apply bi.limit_preserving_emp_valid => n ty1 ty2; intro_T; f_equiv.
-        { apply T_shr. }
-        { f_equiv. by rewrite T_syn_type. }
-      + apply bi.limit_preserving_emp_valid => n ty1 ty2.
-        intro_T. f_equiv. simpl. f_equiv. { rewrite T_lfts. done. }
-        f_equiv. { by rewrite T_syn_type. }
-        f_equiv. f_equiv. f_equiv. { repeat f_equiv; apply T_own_val. }
-
-        apply logical_step_ne.
-        f_equiv; first apply T_shr.
-        rewrite T_lfts. done.
-      + apply bi.limit_preserving_emp_valid => n ty1 ty2; simpl.
-        intro_T. f_equiv. f_equiv; apply T_shr.
-      + apply bi.limit_preserving_emp_valid => n ty1 ty2; intro_T; f_equiv.
-        { apply T_own_val. }
-        apply logical_step_ne. apply T_drop.
-      + apply limit_preserving_impl.
-        { intros ty1 ty2. intro_T. intros ?. by apply T_ot. }
-        destruct y0.
-        * apply bi.limit_preserving_emp_valid => n ty1 ty2. intro_T. f_equiv.
-          apply T_own_val.
-        * apply bi.limit_preserving_emp_valid => n ty1 ty2; intro_T; f_equiv;
-          apply T_own_val.
-        * apply bi.limit_preserving_emp_valid => n ty1 ty2; intro_T; f_equiv;
-          apply T_own_val.
-    (*
-      + apply limit_preserving_impl.
-        { intros ty1 ty2; intro_T. intros ?. by rewrite -T_syn_type. }
-        apply limit_preserving_impl.
-        { intros ? ?; intro_T. done. }
-        apply limit_preserving_discrete. intros ty1 ty2; intro_T.
-        intros ?. by apply T_ot.
-        *)
-      + apply bi.limit_preserving_entails => n ty1 ty2; intro_T; f_equiv; done.
-      + apply bi.limit_preserving_Persistent => n ty1 ty2; intro_T. apply T_sidecond.
-  Qed.
-   *)
 End ofe.
 Section st_ofe.
   Context `{!typeGS Σ}.
@@ -984,19 +902,6 @@ Section st_ofe.
     ( ty.(st_own),
      ty.(st_syn_type),
      ty_has_op_type ty).
-  (*Program Definition simple_type_pack (x : T) (H : P x) : simple_type rt :=*)
-    (*let '(T_inh, T_own_val, T_syn_type, T_ot) := x in*)
-    (*{|*)
-      (*st_rt_inhabited := populate T_inh;*)
-      (*st_own := T_own_val;*)
-      (*st_has_op_type := T_ot;*)
-      (*st_syn_type := T_syn_type;*)
-    (*|}.*)
-  (*Solve Obligations with*)
-    (*intros [[[T_inh T_own_val] T_syn_type] T_ot];*)
-    (*intros (? & ? & ? & ?);*)
-    (*intros ???? Heq; injection Heq; intros -> -> -> ->;*)
-    (*done.*)
 
   Definition simple_type_ofe_mixin : OfeMixin (simple_type rt).
   Proof.
@@ -1032,6 +937,7 @@ Section st_ofe.
       do 7 f_equiv.
       { f_equiv. apply EQ. }
       do 3 f_equiv. apply EQ.
+    - rewrite ty_ghost_drop_unfold. try done.
     - intros. unfold ty_syn_type; simpl. apply EQ.
     - rewrite ty_lfts_unfold. done.
     - rewrite ty_wf_E_unfold. done.

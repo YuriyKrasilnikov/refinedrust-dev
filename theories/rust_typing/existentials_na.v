@@ -156,7 +156,7 @@ Section na_ex.
     ty_syn_type := ty.(ty_syn_type);
     _ty_has_op_type ot mt := ty_has_op_type ty ot mt;
     ty_sidecond := ty.(ty_sidecond);
-    ty_ghost_drop _ _ := True%I;
+    _ty_ghost_drop _ _ := True%I;
 
     _ty_lfts := P.(na_inv_P_lfts) ++ ty_lfts ty;
     _ty_wf_E := P.(na_inv_P_wf_E) ++ ty_wf_E ty;
@@ -300,6 +300,7 @@ Section contr.
       do 5 f_equiv.
       apply HF.
     - intros n ty ty' Hd.
+      rewrite ty_ghost_drop_unfold.
       intros. done.
   Qed.
 
@@ -349,6 +350,7 @@ Section contr.
       do 5 f_equiv.
       apply HF. apply Hd.
     - intros n ty ty' Hd.
+      rewrite ty_ghost_drop_unfold.
       intros. done.
   Qed.
 End contr.

@@ -146,7 +146,7 @@ Section array.
     ty_syn_type _ := ArraySynType (ty.(ty_syn_type) MetaNone) len;
     _ty_has_op_type := is_array_ot ty len;
     ty_sidecond := True;
-    ty_ghost_drop π r := ([∗ list] r' ∈ r, ∃ r'', place_rfn_interp_owned r' r'' ∗ ty_ghost_drop ty π r'')%I;
+    _ty_ghost_drop π r := ([∗ list] r' ∈ r, ∃ r'', place_rfn_interp_owned r' r'' ∗ ty_ghost_drop ty π r'')%I;
     _ty_lfts := ty_lfts ty;
     _ty_wf_E := ty_wf_E ty;
   |}%I.
@@ -340,7 +340,7 @@ Section ne.
       rewrite /ty_shr/=.
       unfold array_own_el_shr.
       solve_type_proper.
-    - intros. solve_type_proper.
+    - intros. rewrite ty_ghost_drop_unfold. solve_type_proper.
   Qed.
 End ne.
 

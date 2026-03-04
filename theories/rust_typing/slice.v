@@ -37,7 +37,7 @@ Section def.
     _ty_has_op_type ot mt :=
       (* no copies supported since this is unsized *)
       False;
-    ty_ghost_drop π r :=
+    _ty_ghost_drop π r :=
       (* TODO *)
       True%I;
     ty_sidecond := True;

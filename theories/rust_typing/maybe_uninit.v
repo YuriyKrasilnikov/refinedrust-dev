@@ -32,7 +32,7 @@ Section type.
       | Some r' => ∃ r'', place_rfn_interp_shared r' r'' ∗ T.(ty_shr) κ π r'' m l
       | None => (uninit (T.(ty_syn_type) m)).(ty_shr) κ π () m l
       end%I;
-    ty_ghost_drop π r :=
+    _ty_ghost_drop π r :=
       match r with
       | None => True
       | Some r =>
@@ -166,7 +166,7 @@ Section ne.
     - done.
     - solve_type_proper.
     - solve_type_proper.
-    - solve_type_proper.
+    - rewrite ty_ghost_drop_unfold. solve_type_proper.
   Qed.
 End ne.
 

@@ -170,7 +170,7 @@ Section fixpoint_def.
 
   (* [3+] because that's what we need to apply the above lemma proving that the chain is Cauchy *)
   Program Definition F_ty_own_val_ty_shr_chain : chain ty_own_shrO := {|
-    chain_car n := ((Fn (3 + n)).(ty_own_val), ((Fn (3+n)).(ty_shr), (Fn (3 + n)).(ty_ghost_drop)))
+    chain_car n := ((Fn (3 + n)).(ty_own_val), ((Fn (3+n)).(ty_shr), ty_ghost_drop (Fn (3 + n))))
   |}.
   Next Obligation.
     simpl. intros n i Hle.
@@ -193,7 +193,7 @@ Section fixpoint_def.
     _ty_has_op_type := (Fn 0).(_ty_has_op_type _);
     ty_own_val := F_ty_own_val_ty_shr_fixpoint.1;
     ty_shr := F_ty_own_val_ty_shr_fixpoint.2.1;
-    ty_ghost_drop := F_ty_own_val_ty_shr_fixpoint.2.2;
+    _ty_ghost_drop := F_ty_own_val_ty_shr_fixpoint.2.2;
     ty_sidecond := (Fn 1).(ty_sidecond);
     _ty_lfts := ty_lfts (Fn 0);
     _ty_wf_E := ty_wf_E (Fn 1);
@@ -317,7 +317,7 @@ Section fixpoint_def.
   Lemma type_fixpoint_ghost_drop_unfold_n n π r :
     (ty_ghost_drop type_fixpoint π r)%I ≡{n}≡ (ty_ghost_drop (Fn (3+n)) π r)%I.
   Proof.
-    rewrite {1}/ty_ghost_drop/=/F_ty_own_val_ty_shr_fixpoint/=.
+    rewrite {1}ty_ghost_drop_unfold {1}/_ty_ghost_drop/=/F_ty_own_val_ty_shr_fixpoint/=.
     etrans. { apply (conv_compl n _). }
     simpl. done.
   Qed.

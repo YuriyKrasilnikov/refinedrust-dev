@@ -3438,7 +3438,7 @@ Section subsume.
     iModIntro. iSplitR; first done.
     iSplitL "Hl0".
     { iExists v0. iFrame. iSplitR; first done. done. }
-    iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
+    iPoseProof (ty_own_ghost_drop _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
     iApply (logical_step_compose with "Hcl").
     iApply (logical_step_compose with "Hgdrop").
     iApply logical_step_intro.
@@ -3485,7 +3485,7 @@ Section subsume.
       assert (ly = ot_layout ot) as ->. { eapply syn_type_has_layout_inj; first done. by rewrite -Hst_eq. }
       iModIntro. iSplitR; first done. iSplitL "Hl".
       { iExists v0. iFrame. done. }
-      iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
+      iPoseProof (ty_own_ghost_drop _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
       iApply (logical_step_compose with "Hcl").
       iApply (logical_step_compose with "Hgdrop").
       iApply logical_step_intro. iIntros "Hgdrop Hcl Hl".
@@ -3514,7 +3514,7 @@ Section subsume.
       assert (ly = ot_layout ot) as ->. { eapply syn_type_has_layout_inj; first done. by rewrite -Hst_eq. }
       iModIntro. iSplitR; first done. iSplitL "Hl".
       { iExists v0. iFrame. done. }
-      iPoseProof (ty_own_ghost_drop _ _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
+      iPoseProof (ty_own_ghost_drop _ _ _ _ _ F with "Hv0") as "Hgdrop"; first done.
       iApply (logical_step_compose with "Hgdrop").
       iApply (logical_step_mask_mono lftE); first done.
       iApply (logical_step_compose with "Hcl").
