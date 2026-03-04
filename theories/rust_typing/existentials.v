@@ -24,7 +24,10 @@ Section ex.
     ty_syn_type := ty.(ty_syn_type);
     _ty_has_op_type ot mt := ty_has_op_type ty ot mt;
     ty_sidecond :=
-    ty.(ty_sidecond);
+      ty.(ty_sidecond);
+    _ty_ghost_drop π r :=
+      (* TODO generalize ghost_drop in the type def *)
+      (∃ x, P.(inv_P) π x r ∗ ty_ghost_drop ty π x)%I;
     _ty_lfts := P.(inv_P_lfts) ++ ty_lfts ty;
     _ty_wf_E := P.(inv_P_wf_E) ++ ty_wf_E ty;
   |}.
@@ -79,6 +82,13 @@ Section ex.
     iApply (ty_shr_mono with "Hincl Hshr").
   Qed.
   Next Obligation.
+    iIntros (ty π r m v F ?) "(%x & HP & Ha)".
+    iPoseProof (ty_own_ghost_drop with "Ha") as "Ha"; first done.
+    iApply (logical_step_compose with "Ha").
+    iApply logical_step_intro.
+    iIntros "Hdrop". eauto with iFrame.
+  Qed.
+  Next Obligation.
     iIntros (ty ot mt st π r m v Hot) "(%x & HP & Hv)".
     iPoseProof (ty_memcast_compat with "Hv") as "Hm"; first done.
     destruct mt; eauto with iFrame.
@@ -88,33 +98,28 @@ Section ex.
     rewrite ty_has_op_type_unfold.
     by apply _ty_has_op_type_untyped.
   Qed.
-
-  (* TODO generalize ghost_drop in the type def *)
-  (* Instance has low priority to allow overrides *)
-  Global Program Instance ex_plain_t_ghost_drop ty `{Hg : !TyGhostDrop ty} : TyGhostDrop (ex_plain_t ty) | 100 :=
-    mk_ty_ghost_drop _ (λ π r, (∃ x, P.(inv_P) π x r ∗ ty_ghost_drop_for ty Hg π x)%I) _.
-  Next Obligation.
-    iIntros (ty Hg π r m v F ?) "(%x & HP & Ha)".
-    iPoseProof (ty_own_ghost_drop with "Ha") as "Ha"; first done.
-    iApply (logical_step_compose with "Ha").
-    iApply logical_step_intro.
-    iIntros "Hdrop". eauto with iFrame.
-  Qed.
-
 End ex.
+
+(* Use a smarter solver for persistence here *)
+Class ExInvPersistent {Σ} (P : iProp Σ) := ex_inv_pers_proof : Persistent P.
+Global Hint Mode ExInvPersistent + + : typeclass_instances.
+
+Ltac ex_t_solve_persistent := fail "implement ex_t_solve_persistent".
+Global Hint Extern 10 (ExInvPersistent _) =>
+  unfold ExInvPersistent; ex_t_solve_persistent : typeclass_instances.
 
 Section copy.
   Context `{!typeGS Σ}.
 
   Global Instance ex_plain_t_pers_copy {X Y : RT} ty (P : ex_inv_def X Y)  :
     Copyable ty →
-    (∀ π a b, Persistent (P.(inv_P) π a b)) →
+    (∀ π a b, (ExInvPersistent (P.(inv_P) π a b))) →
     (* Alternative: I could also require invariants to have a sharing accessor *)
     TCDone (∀ π κ a b, P.(inv_P) π a b = P.(inv_P_shr) π κ a b) →
     Copyable (ex_plain_t X Y P ty).
   Proof.
     intros Hcopy Hpers Heq. econstructor.
-    { apply _. }
+    { unfold ExInvPersistent in *. apply _. }
     iIntros (???? r m q ?).
     iIntros "CTX Hs Htok".
     iDestruct "Hs" as "(%x & Hshr & Hl)".
@@ -158,6 +163,11 @@ Section contr.
       do 3 f_equiv.
       { apply HP. done. }
       apply HF; done.
+    - intros n ty ty' ?.
+      intros ??. rewrite ty_ghost_drop_unfold /_ty_ghost_drop/=.
+      do 3 f_equiv.
+      { apply HP; done. }
+      apply HF; done.
   Qed.
   (* This should also work if only one of them is actually using the recursive argument. The other argument is trivially contractive, as it is constant. *)
 
@@ -192,6 +202,11 @@ Section contr.
       apply HF; done.
     - intros n ty ty' ?.
       intros ?????. rewrite /ty_shr/=.
+      do 3 f_equiv.
+      { apply HP; done. }
+      apply HF; done.
+    - intros n ty ty' ?.
+      intros ??. rewrite ty_ghost_drop_unfold /_ty_ghost_drop/=.
       do 3 f_equiv.
       { apply HP; done. }
       apply HF; done.

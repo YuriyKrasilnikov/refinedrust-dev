@@ -117,21 +117,45 @@ Proof. solve_inG. Qed.
 Definition elctx_elt : Type := lft * lft.
 Notation elctx := (list elctx_elt).
 
-(* nicer version for the singleton case *)
-Fixpoint lft_intersect_list' (κs : list lft) : lft :=
-    match κs with
-    | [] => static
-    | [κ] => κ
-    | κ :: κs => κ ⊓ lft_intersect_list' κs
-    end.
-Lemma lft_intersect_list'_iff κs :
-  lft_intersect_list' κs = lft_intersect_list κs.
-Proof.
-  induction κs as [ | κ κs IH]; simpl; first done.
-  destruct κs as [ | κ' κs]; simpl.
-  { rewrite right_id //. }
-  simpl in IH. rewrite IH //.
-Qed.
+Section intersect.
+  Context `{!invGS Σ, !lftGS Σ lft_userE, !lctxGS Σ}.
+  Implicit Type (κ : lft).
+
+  (* nicer version for the singleton case *)
+  Fixpoint lft_intersect_list' (κs : list lft) : lft :=
+      match κs with
+      | [] => static
+      | [κ] => κ
+      | κ :: κs => κ ⊓ lft_intersect_list' κs
+      end.
+  Lemma lft_intersect_list'_iff κs :
+    lft_intersect_list' κs = lft_intersect_list κs.
+  Proof.
+    induction κs as [ | κ κs IH]; simpl; first done.
+    destruct κs as [ | κ' κs]; simpl.
+    { rewrite right_id //. }
+    simpl in IH. rewrite IH //.
+  Qed.
+
+  Lemma lft_dead_lft_intersect_list κs :
+    [† lft_intersect_list κs] ⊣⊢ ∃ κ, ⌜κ ∈ κs⌝ ∗ [† κ].
+  Proof.
+    induction κs as [ | κ κs IH]; simpl.
+    { iSplit.
+      + iIntros "Ha". iPoseProof (lft_dead_static with "Ha") as "[]".
+      + iIntros "(% & %Hel & _)". apply elem_of_nil in Hel. done. }
+    rewrite -lft_dead_or.
+    iSplit.
+    - iIntros "[Hdead | Hdead]".
+      + iFrame. iPureIntro. set_solver.
+      + iPoseProof (IH with "Hdead") as "(% & %Hel & Htok)".
+        iFrame. iPureIntro. set_solver.
+    - iIntros "(% & %Hel & Htok)".
+      apply elem_of_cons in Hel as [-> | Hel].
+      + by iLeft.
+      + iRight. iApply IH. iFrame. done.
+  Qed.
+End intersect.
 
 Declare Scope rrust_elctx_scope.
 Delimit Scope rrust_elctx_scope with EL.
@@ -1363,35 +1387,45 @@ Section lft_contexts.
     iModIntro. iSplit; done.
   Qed.
 
-  (** Inheritance of timeless propositions *)
-  (* The [key : K] helps automation *)
-  Definition Inherit {K} (κ : lft) (key : K) (P : iProp Σ) : iProp Σ :=
-    ∀ F, ⌜lftE ⊆ F⌝ -∗ [† κ] ={F}=∗ P.
+  (** (Prepaid) inheritance of propositions *)
+  (* We get the inheritance once *one* of the lifetimes is dead (in contrast to [lft_dead_list]) *)
+  Definition Inherit (κs : list lft) (P : iProp Σ) : iProp Σ :=
+    ∀ F, ⌜lftE ⊆ F⌝ -∗ [† lft_intersect_list κs] ={F}=∗ P.
   Global Arguments Inherit : simpl never.
   Global Typeclasses Opaque Inherit.
 
-  Lemma Inherit_update Q P κ {K} (k : K) :
+  Lemma Inherit_update Q P κ :
     (∀ F, P ={F}=∗ Q) -∗
-    Inherit κ k P -∗
-    Inherit κ k Q.
+    Inherit κ P -∗
+    Inherit κ Q.
   Proof.
     iIntros "HP Hinh".
     rewrite /Inherit. iIntros (??) "Hdead". iMod ("Hinh" with "[//] Hdead") as "Ha".
     by iApply "HP".
   Qed.
+  Lemma Inherit_mono κs κs' P :
+    (lft_intersect_list κs ⊑ lft_intersect_list κs') -∗
+    Inherit κs P -∗
+    Inherit κs' P.
+  Proof.
+    iIntros "Hincl Hinh".
+    rewrite /Inherit. iIntros (??) "Hdead".
+    iMod (lft_incl_dead with "Hincl Hdead") as "Hdead"; first done.
+    iApply ("Hinh" with "[//] Hdead").
+  Qed.
 
-  Definition MaybeInherit {K} (κm : option lft) (k : K) (P : iProp Σ) : iProp Σ :=
+  Definition MaybeInherit (κm : option (list lft)) (P : iProp Σ) : iProp Σ :=
     if κm is Some κ
-    then Inherit κ k P
+    then Inherit κ P
     else (∀ F, ⌜lftE ⊆ F⌝ -∗ |={F}=> P).
   (* basically, should now use introduce_with_hooks to simplify it to one of the options *)
   Global Typeclasses Opaque MaybeInherit.
   Global Arguments MaybeInherit : simpl never.
 
-  Lemma MaybeInherit_update Q P κm {K} (k : K) :
+  Lemma MaybeInherit_update Q P κm :
     (∀ F, P ={F}=∗ Q) -∗
-    MaybeInherit κm k P -∗
-    MaybeInherit κm k Q.
+    MaybeInherit κm P -∗
+    MaybeInherit κm Q.
   Proof.
     iIntros "HP Hinh".
     rewrite /MaybeInherit.
@@ -1400,27 +1434,14 @@ Section lft_contexts.
     - iIntros (??). iMod ("Hinh" with "[//]") as "HP'". by iApply "HP".
   Qed.
 
-  Lemma Inherit_mono {K} (k : K) κ κ' P :
-    κ ⊑ κ' -∗
-    Inherit κ k P -∗
-    Inherit κ' k P.
-  Proof.
-    iIntros "Hincl Hinh".
-    rewrite /Inherit. iIntros (??) "Hdead".
-    iMod (lft_incl_dead with "Hincl Hdead") as "Hdead"; first done.
-    iApply ("Hinh" with "[//] Hdead").
-  Qed.
-
-
   (** Establishing dynamic inclusion of lifetimes *)
-  Inductive inherit_dyn_incl := InheritDynIncl.
   Lemma lctx_include_lft_sem E L L' F κs κ1 κ2 `{!frac_borG Σ} :
     lftE ⊆ F →
     lctx_lft_alive_count E L κ2 κs L' →
     lft_ctx -∗
     elctx_interp E -∗
     llctx_interp L ={F}=∗
-    llctx_interp L' ∗ κ1 ⊑ κ2 ∗ Inherit κ1 InheritDynIncl (llft_elt_toks κs).
+    llctx_interp L' ∗ κ1 ⊑ κ2 ∗ Inherit [κ1] (llft_elt_toks κs).
   Proof.
     iIntros (? Hal) "#LFT #HE HL".
     iMod (fupd_mask_subseteq lftE) as "HclF"; first done.
@@ -1433,6 +1454,7 @@ Section lft_contexts.
     iPoseProof (frac_bor_lft_incl with "LFT Hfrac") as "Hincl". iFrame "#∗".
     iModIntro. rewrite /Inherit. iIntros (F' ?) "Hdead".
     iMod (fupd_mask_subseteq lftE) as "HclF"; first done.
+    simpl. rewrite right_id.
     iMod ("Hinh" with "Hdead") as ">Htok".
     iMod ("Hcl" with "Htok") as "?".
     by iMod "HclF" as "_".

@@ -850,7 +850,7 @@ Section ltype_def.
     match k with
     | Owned =>
         ([† κ] ={lftE}=∗
-          ∃ (r' : rt), place_rfn_interp_owned_blocked r r' ∗ |={lftE}=> l ↦: (ty.(ty_own_val) π r' MetaNone))
+          ∃ (r' : rt), place_rfn_interp_owned r r' ∗ |={lftE}=> l ↦: (ty.(ty_own_val) π r' MetaNone))
     | Shared κ' =>
         (* sharing of inheritances is weird, they are of no use like that,
           and there's no reason to create inheritances directly below
@@ -859,7 +859,7 @@ Section ltype_def.
     | Uniq κ' γ' =>
         (* borrow needs to be synced up with OfTy *)
         ([† κ] ={lftE}=∗
-          place_rfn_interp_mut_blocked r γ' ∗
+          place_rfn_interp_mut r γ' ∗
           &pin{κ'} (∃ r' : rt, gvar_auth γ' r' ∗ |={lftE}=> l ↦: ty.(ty_own_val) π r' MetaNone)) ∗
         (* and the original credits *)
         have_creds
@@ -3511,9 +3511,9 @@ Section ltype_def.
     destruct lt; subst; eauto.
   Qed.
 
-  Definition lty_uniq_extractable (lt : lty) : option (option lft) :=
+  Definition lty_uniq_extractable (lt : lty) : option (option (list lft)) :=
     match lt with
-    | BlockedLty _ κ  => Some (Some κ)
+    | BlockedLty _ κ  => Some (Some [κ])
     | ShrBlockedLty _ _ => Some None
     | OfTyLty _ => Some (None)
     | AliasLty _ _ _ => None
@@ -3531,16 +3531,15 @@ Section ltype_def.
         None
     | OpenedNaLty _ _ _ _ => None
     end.
-  Definition ltype_uniq_extractable {rt} (lt : ltype rt) : option (option lft) :=
+  Definition ltype_uniq_extractable {rt} (lt : ltype rt) : option (option (list lft)) :=
     lty_uniq_extractable lt.(ltype_lty).
 
 
-  Inductive inherit_ghost := InheritGhost.
   Lemma lty_own_extract_ghost_drop_uniq π F (lt : lty) κ κm γ r l :
     lftE ⊆ F →
     lty_uniq_extractable lt = Some κm →
     lty_own lt (Uniq κ γ) π r l ={F}=∗
-    (MaybeInherit (κm) InheritGhost (place_rfn_interp_mut r γ)).
+    (MaybeInherit κm (place_rfn_interp_mut r γ)).
   Proof.
     intros ? Hdeinit.
     rewrite /MaybeInherit/Inherit.
@@ -3548,6 +3547,7 @@ Section ltype_def.
     - rewrite /lty_own. simp lty_own_pre. injection Hdeinit as <-. simpl.
       iIntros "(%ly & %Halg & %Hly & ? & ? & Hinh & Hcred & Hl)".
       iModIntro. iIntros (??) "Ha".
+      rewrite right_id.
       iMod (fupd_mask_mono with "(Hinh Ha)") as "($ & _)"; first done.
       done.
     - rewrite /lty_own. simp lty_own_pre.
@@ -3579,7 +3579,7 @@ Section ltype_def.
     lftE ⊆ F →
     ltype_uniq_extractable lt = Some κm →
     ltype_own lt (Uniq κ γ) π r l ={F}=∗
-    MaybeInherit κm InheritGhost (place_rfn_interp_mut r γ).
+    MaybeInherit κm (place_rfn_interp_mut r γ).
   Proof.
     iIntros (??) "Hown".
     iPoseProof (lty_own_extract_ghost_drop_uniq _ _ (lt.(ltype_lty)) with "[Hown]") as "Ha";
@@ -4337,36 +4337,6 @@ Section eqltype.
   Qed.
 End eqltype.
 
-Section ghost_variables.
-  Context `{typeGS Σ}.
-  Context {T : RT}.
-  Implicit Types (γ : gname) (t : T).
-
-  Definition GRel2 κ (γ1 γ2 : gname) (R : T → T → Prop) : iProp Σ :=
-    [† κ] ={lftE}=∗ Rel2 γ1 γ2 R.
-
-  Lemma GRel2_use_pobs κ γ1 γ2 R v1 :
-    [†κ] -∗ gvar_pobs γ1 v1 -∗ GRel2 κ γ1 γ2 R ={lftE}=∗ ∃ v2, gvar_obs γ2 v2 ∗ ⌜R v1 v2⌝.
-  Proof.
-    iIntros "Hdead Hobs Hr". iMod ("Hr" with "Hdead") as "Hr".
-    iModIntro. iApply (Rel2_use_pobs with "Hobs Hr").
-  Qed.
-
-  Lemma GRel2_use_obs κ γ1 γ2 R v1 :
-    [† κ] -∗ gvar_obs γ1 v1 -∗ GRel2 κ γ1 γ2 R ={lftE}=∗ ∃ v2, gvar_obs γ2 v2 ∗ gvar_obs γ1 v1 ∗ gvar_pobs γ1 v1 ∗ ⌜R v1 v2⌝.
-  Proof.
-    iIntros "Hdead Hobs Hr". iMod ("Hr" with "Hdead") as "Hr".
-    iModIntro. iApply (Rel2_use_obs with "Hobs Hr").
-  Qed.
-
-  Lemma GRel2_use_trivial κ γ1 γ2 R :
-    [† κ] -∗ GRel2 κ γ1 γ2 R ={lftE}=∗ ∃ v2 : T, gvar_obs γ2 v2.
-  Proof.
-    iIntros "Hdead Hr". iMod ("Hr" with "Hdead") as "Hr".
-    iModIntro. iApply (Rel2_use_trivial with "Hr").
-  Qed.
-End ghost_variables.
-
 Section blocked.
   Context `{typeGS Σ}.
 
@@ -4452,7 +4422,6 @@ Section blocked.
       iIntros "(%ly & %Hst & %Hly & Hsc & Hlb & Hinh)".
       iMod ("Hinh" with "Hdead") as "Hv".
       iDestruct "Hv" as "(%r' & Hrfn & >(%v & Hl & Hv))".
-      iMod (place_rfn_interp_owned_blocked_unblock with "Hrfn") as "Hrfn".
       iModIntro. iExists ly. iSplitR; first done. iSplitR; first done. iFrame "Hsc Hlb".
       iExists r'. iFrame "Hrfn". iModIntro. iExists v. iFrame.
   Qed.

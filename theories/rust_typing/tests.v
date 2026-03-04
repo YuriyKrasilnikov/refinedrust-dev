@@ -180,6 +180,19 @@ Section test.
   Qed.
 End test.
 
+(** find_implied_dying_lifetimes *)
+Lemma test `{!typeGS Σ} ϝ ulft_4 ulft1 κ3 κ4 L :
+  L = [κ4 ≡ₗ [κ3; ulft1]; κ3 ⊑ₗ{ 1} [ulft_4]; ϝ ⊑ₗ{ 2} []] →
+  ∃ ks, find_implied_dying_lifetimes_pure_goal L κ3 ks ∧ ks = [κ4].
+Proof.
+  intros ->.
+  eexists. split.
+  { solve_find_implied_dying_lifetimes. }
+  done.
+Abort.
+
+
+
 (** inv_layout_alg *)
 Section test.
   Context `{!typeGS Σ}.

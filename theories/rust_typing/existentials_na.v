@@ -156,6 +156,7 @@ Section na_ex.
     ty_syn_type := ty.(ty_syn_type);
     _ty_has_op_type ot mt := ty_has_op_type ty ot mt;
     ty_sidecond := ty.(ty_sidecond);
+    _ty_ghost_drop _ _ := True%I;
 
     _ty_lfts := P.(na_inv_P_lfts) ++ ty_lfts ty;
     _ty_wf_E := P.(na_inv_P_wf_E) ++ ty_wf_E ty;
@@ -231,6 +232,12 @@ Qed.
     iFrame. iApply (na_bor_shorten with "Hincl Hbor").
   Qed.
 
+  (* ty_own_ghost_drop *)
+  Next Obligation.
+    iIntros (???????) "Hv".
+    by iApply logical_step_intro.
+  Qed.
+
   (* _ty_memcast_compat *)
   Next Obligation.
     iIntros (ty ot mt st π r m v Hot) "(%x & ? & Hv)".
@@ -292,6 +299,9 @@ Section contr.
           unfold CanSolve. lia. }
       do 5 f_equiv.
       apply HF.
+    - intros n ty ty' Hd.
+      rewrite ty_ghost_drop_unfold.
+      intros. done.
   Qed.
 
   Global Instance na_ex_inv_def_ne {rt X Y : RT}
@@ -339,6 +349,9 @@ Section contr.
           unfold CanSolve. lia. }
       do 5 f_equiv.
       apply HF. apply Hd.
+    - intros n ty ty' Hd.
+      rewrite ty_ghost_drop_unfold.
+      intros. done.
   Qed.
 End contr.
 
@@ -662,77 +675,5 @@ Section na_subtype.
   Qed.
   Definition typed_place_na_ex_plain_t_shared_inst := [instance @typed_place_na_ex_plain_t_shared].
   Global Existing Instance typed_place_na_ex_plain_t_shared_inst | 15.
-
-  (* TODO move *)
-  Lemma stratify_ltype_opened_na_Owned {rt_cur rt_inner} π E L mu mdu ma {M} (ml : M) l
-      (lt_cur : ltype rt_cur) (lt_inner : ltype rt_inner)
-      (Cpre Cpost : rt_inner → iProp Σ) r (T : stratify_ltype_cont_t) :
-    stratify_ltype π E L mu mdu ma ml l lt_cur r (Owned)
-      (λ L' R rt_cur' lt_cur' (r' : place_rfn rt_cur'),
-        if decide (ma = StratNoRefold)
-        then (* keep it open *)
-          T L' R _ (OpenedNaLtype lt_cur' lt_inner Cpre Cpost) r'
-        else (* fold the invariant *)
-          ∃ ri,
-            (* show that the core of lt_cur' is a subtype of lt_inner *)
-            weak_subltype E L' (Owned) (r') (#ri) lt_cur' lt_inner (
-              (* re-establish the invariant *)
-              prove_with_subtype E L' true ProveDirect (Cpre ri)
-                (λ L'' _ R2, T L'' (Cpost ri ∗ R2 ∗ R) unit (AliasLtype unit (ltype_st lt_inner) l) #tt)))
-    ⊢ stratify_ltype π E L mu mdu ma ml l (OpenedNaLtype lt_cur lt_inner Cpre Cpost) r (Owned) T.
-  Proof.
-    rewrite /stratify_ltype /weak_subltype /prove_with_subtype.
-
-    iIntros "Hstrat" (F ???) "#CTX #HE HL Hl".
-    rewrite ltype_own_opened_na_unfold /opened_na_ltype_own.
-
-    iDestruct "Hl" as "(%ly & %Halg & %Hly & #Hlb & %Hst & Hl & Hcl)".
-    iMod ("Hstrat" with "[//] [//] [//] CTX HE HL Hl") as "(%L2 & %R & %rt_cur' & %lt_cur' & %r' & HL & %Hst' & Hstep & HT)".
-
-    destruct (decide (ma = StratNoRefold)) as [-> | ].
-    - (* don't fold *)
-      iModIntro.
-      iExists _, _, _, _, _; iFrame; iR.
-
-      iApply (logical_step_compose with "Hstep").
-      iApply logical_step_intro.
-      iIntros "(Hl & $)".
-
-      rewrite ltype_own_opened_na_unfold /opened_na_ltype_own.
-      iExists ly; iFrame.
-      rewrite -Hst'; do 3 iR.
-      done.
-
-    - (* fold it again *)
-      iDestruct "HT" as "(%ri & HT)".
-      iMod ("HT" with "[//] CTX HE HL") as "(Hincl & HL & HT)".
-      iMod ("HT" with "[//] [//] [//] CTX HE HL") as "(%L3 & %κs & %R2 & Hstep' & HL & HT)".
-
-      iExists L3, _, _, _, _; iFrame.
-      iSplitR.
-      { by simp_ltypes. }
-
-      iApply logical_step_fupd.
-      iApply (logical_step_compose with "Hstep").
-      iPoseProof (logical_step_mask_mono with "Hcl") as "Hcl"; first done.
-      iApply (logical_step_compose with "Hcl").
-      iApply (logical_step_compose with "Hstep'").
-      iApply logical_step_intro.
-
-      iIntros "!> (Hpre & $) Hcl (Hl & $)".
-      iMod (ltype_incl_use with "Hincl Hl") as "Hl"; first done.
-
-      iPoseProof ("Hcl" with "Hpre Hl") as "Hvs".
-      iSplitL "".
-      { rewrite ltype_own_alias_unfold /alias_lty_own.
-        rewrite -Hst.
-
-        by iExists ly; repeat iR. }
-
-      iMod (fupd_mask_mono with "Hvs") as "Hvs"; first set_solver.
-      done.
-  Qed.
-  Definition stratify_ltype_opened_na_Owned_inst := [instance @stratify_ltype_opened_na_Owned].
-  Global Existing Instance stratify_ltype_opened_na_Owned_inst.
 
 End na_subtype.

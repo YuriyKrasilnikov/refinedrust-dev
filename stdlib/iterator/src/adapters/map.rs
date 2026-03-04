@@ -35,12 +35,13 @@ impl<I, F> Map<I, F>
 }
 
 /// Spec: We have the pure parts of the inner Next and the pre- and postconditions.
-#[rr::instantiate("Next" := "(λ π s1 e s2, 
-        if_iNone e ({MI::Next} π s1.(map_it) None s2.(map_it)) ∗
+#[rr::instantiate("Params" := "{MI::Params}")]
+#[rr::instantiate("Next" := "(λ π p s1 e s2, 
+        if_iNone e ({MI::Next} π p s1.(map_it) None s2.(map_it)) ∗
         if_iSome e (λ e, ∃ e_inner,
-            ({MI::Next} π s1.(map_it) (Some e_inner) s2.(map_it)) ∗
-            boringly ({MF::Pre} π s1.(map_clos) *[e_inner]) ∗
-            boringly ({MF::PostMut} π s1.(map_clos) *[e_inner] s2.(map_clos) e)
+            ({MI::Next} π p s1.(map_it) (Some e_inner) s2.(map_it)) ∗
+            ∃ cp, boringly ({MF::Pre} π cp s1.(map_clos) *[e_inner]) ∗
+            ({MF::PostMut} π cp s1.(map_clos) *[e_inner] s2.(map_clos) e)
             ))%I")]
 #[rr::instantiate("Inv" := "MapInv traits_iterator_Iterator_MI_spec_attrs {MF::Pre} {MF::PostMut}")]
 impl<MB, MI: Iterator, MF> Iterator for Map<MI, MF>
@@ -49,13 +50,10 @@ where
 {
     type Item = MB;
 
-    #[rr::trust_me]
     #[rr::default_spec]
     fn next(&mut self) -> Option<MB> {
         self.iter
-            // Calling next is possible without preconditions.
             .next()
-            // Calling the closure requires us to prove its precondition.
             .map(&mut self.f)
     }
 }

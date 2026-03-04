@@ -28,6 +28,12 @@ Section resolve_ghost.
   Definition resolve_ghost_iter_id_fmap_xin_inst := [instance @resolve_ghost_iter_id_fmap_xin].
   Global Existing Instance resolve_ghost_iter_id_fmap_xin_inst.
 
+  Lemma resolve_ghost_iter_id_fmap_in' {rt} π E L m b l st (lts : list (ltype rt)) bk {A} (rs : list A) idx n (f : A → _) (T : resolve_ghost_iter_cont_t rt) :
+    T L ((λ x, # (f x)) <$> rs) True false ⊢ resolve_ghost_iter π E L m b l st lts bk ((λ x, # (f x)) <$> rs) idx n T.
+  Proof. apply resolve_ghost_iter_id. Qed.
+  Definition resolve_ghost_iter_id_fmap_in'_inst := [instance @resolve_ghost_iter_id_fmap_in'].
+  Global Existing Instance resolve_ghost_iter_id_fmap_in'_inst.
+
   Lemma resolve_ghost_iter_cons_not_ignored π E L rm lb l st {rt} (lts : list (ltype rt)) b (r : place_rfn rt) (rs : list (place_rfn rt)) ig (i0 : nat) `{!CanSolve(i0 ∉ ig)} T :
     (∃ lt lts', ⌜lts = lt :: lts'⌝ ∗
       resolve_ghost π E L rm lb (l offsetst{st}ₗ i0) lt b r (λ L2 r' R progress,

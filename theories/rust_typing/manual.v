@@ -365,15 +365,15 @@ Section updateable_rules.
   Qed.
 
   Lemma updateable_strip_guards :
-    iterate_with_hooks updateable_E updateable_L strip_guarded (λ L,
+    iterate_with_hooks updateable_E updateable_L StripGuarded (λ L _,
       updateable_core updateable_E L)
     ⊢ P.
   Proof.
     iIntros "HT". unshelve iApply add_updateable; first apply _.
     iIntros "#CTX HE HL".
     unfold iterate_with_hooks.
-    iMod ("HT" with "[] HE HL") as "Ha"; first done.
-    done.
+    iMod ("HT" with "[] HE HL") as "(%L2 & % & HL & Ha)"; first done.
+    by iFrame.
   Qed.
 
   (** Discard the opened invariant on an owned location, removing the obligation to re-establish the invariant *)
@@ -386,37 +386,6 @@ Section updateable_rules.
     done.
   Qed.
 
-  (* TODO: ideally, we could do this anytime, not just at prove_with_subtype, by using logical_step receipts. *)
-  Lemma prove_with_subtype_stratify l E L pm Q T :
-    find_in_context (FindLoc l) (λ '(existT rt (lt, r, bk, π)),
-      stratify_ltype π E L StratMutNone StratNoUnfold StratRefoldFull StratifyUnblockOp l lt r bk (λ L2 R rt' lt' r',
-      cast_ltype_to_type E L2 lt' (λ ty,
-        prove_with_subtype E L2 true pm (l ◁ₗ[π, bk] r' @ (◁ ty) -∗ R -∗ Q) T)))
-    ⊢ prove_with_subtype E L true pm Q T.
-  Proof.
-    unfold find_in_context,FindLoc. simpl.
-    iIntros "(%x & Ha)".
-    destruct x as [rt (((lt & r) & bk) & π)].
-    iDestruct "Ha" as "(Hl & HT)".
-    rewrite /prove_with_subtype.
-    iIntros (????) "#CTX #HE HL".
-    rewrite /stratify_ltype.
-    iMod ("HT" with "[//] [//] [//] CTX HE HL Hl") as "(%L2 & %R & %rt' & %lt' & %r' & HL & %Hst' & Hstep & HT)".
-    rewrite /cast_ltype_to_type.
-    iDestruct "HT" as "(%ty & %Heqt & HT)".
-    iPoseProof (full_eqltype_use F with "CTX HE HL") as "(Hincl & HL)"; first done; first apply Heqt.
-    iMod ("HT" with "[//] [//] [//] CTX HE HL") as "(%L3 & %κs2 & %R' & Hstep' & HL & HT)".
-    simpl. iFrame.
-    iApply logical_step_fupd.
-    iApply (logical_step_compose with "Hstep").
-    iApply (logical_step_wand with "Hstep'").
-    iModIntro. iIntros "(Ha & $) (Hl & HR)".
-    destruct pm.
-    - iMod ("Hincl" with "Hl") as "Hl". iApply ("Ha" with "[$] [$]").
-    - iMod ("Hincl" with "Hl") as "Hl". iModIntro.
-      iIntros "Hdead". iMod ("Ha" with "Hdead") as "Ha".
-      iModIntro. iApply ("Ha" with "[$] [$]").
-  Qed.
 End updateable_rules.
 
 Ltac add_updateable :=
@@ -449,6 +418,61 @@ Section test.
     idtac.
   Abort.
 End test.
+
+Section extra_rules.
+  Context `{!typeGS Σ}.
+
+  (* TODO: ideally, we could do this anytime, not just at prove_with_subtype, by using logical_step receipts. *)
+  Lemma prove_with_subtype_stratify l E L pm Q T :
+    find_in_context (FindLoc l) (λ '(existT rt (lt, r, bk, π)),
+      stratify_ltype π E L StratMutNone StratNoUnfold StratRefoldFull StratifyUnblockOp l lt r bk (λ L2 R rt' lt' r',
+      cast_ltype_to_type E L2 lt' (λ ty,
+        prove_with_subtype E L2 true pm (l ◁ₗ[π, bk] r' @ (◁ ty) -∗ R -∗ Q) T)))
+    ⊢ prove_with_subtype E L true pm Q T.
+  Proof.
+    unfold find_in_context,FindLoc. simpl.
+    iIntros "(%x & Ha)".
+    destruct x as [rt (((lt & r) & bk) & π)].
+    iDestruct "Ha" as "(Hl & HT)".
+    rewrite /prove_with_subtype.
+    iIntros (????) "#CTX #HE HL".
+    rewrite /stratify_ltype.
+    iMod ("HT" with "[//] [//] [//] CTX HE HL Hl") as "(%L2 & %R & %rt' & %lt' & %r' & HL & %Hst' & Hstep & HT)".
+    rewrite /cast_ltype_to_type.
+    iDestruct "HT" as "(%ty & %Heqt & HT)".
+    iPoseProof (full_eqltype_use F with "CTX HE HL") as "(Hincl & HL)"; first done; first apply Heqt.
+    iMod ("HT" with "[//] [//] [//] CTX HE HL") as "(%L3 & %κs2 & %R' & Hstep' & HL & HT)".
+    simpl. iFrame.
+    iApply logical_step_fupd.
+    iApply (logical_step_compose with "Hstep").
+    iApply (logical_step_wand with "Hstep'").
+    iModIntro. iIntros "(Ha & $) (Hl & HR)".
+    destruct pm.
+    - iMod ("Hincl" with "Hl") as "Hl". iApply ("Ha" with "[$] [$]").
+    - iMod ("Hincl" with "Hl") as "Hl". iModIntro.
+      iIntros "Hdead". iMod ("Ha" with "Hdead") as "Ha".
+      iModIntro. iApply ("Ha" with "[$] [$]").
+  Qed.
+
+  Lemma prove_with_subtype_inherit_manual E L step pm κ κ' P Q T :
+    lctx_lft_incl E L (lft_intersect_list κ') (lft_intersect_list κ) →
+    Inherit κ' Q -∗
+    (Q -∗ P) -∗
+    T L [] True%I -∗
+    prove_with_subtype E L step pm (Inherit κ P) T.
+  Proof.
+    iIntros (Hi1) "Hinh HQP HT".
+    rewrite /prove_with_subtype.
+    iIntros (????) "#CTX #HE HL".
+    iPoseProof (lctx_lft_incl_incl with "HL HE") as "#Hincl1"; first apply Hi1.
+    (*iPoseProof (lctx_lft_incl_incl with "HL HE") as "#Hincl2"; first apply Hi2. *)
+    iPoseProof (Inherit_mono with "Hincl1 Hinh") as "Hinh".
+    iPoseProof (Inherit_update with "[HQP] Hinh") as "Hinh".
+    { iIntros (?) "HQ". iApply ("HQP" with "HQ"). }
+    iExists _, _, _. iFrame. iApply maybe_logical_step_intro.
+    iModIntro. iL. destruct pm; iFrame. eauto.
+  Qed.
+End extra_rules.
 
 Section credits.
   Context `{!typeGS Σ}.

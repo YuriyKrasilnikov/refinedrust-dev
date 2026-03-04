@@ -13,7 +13,7 @@ Section resolve_ghost.
     find_observation ((plist place_rfnRT rts)) γ FindObsModeDirect (λ or,
         match or with
         | None => ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
-        | Some r => T L (PlaceIn $ r) True true
+        | Some r => T L r True true
         end)
     ⊢ resolve_ghost π E L rm lb l (StructLtype lts sls) (Owned) (PlaceGhost γ) T.
   Proof.
@@ -21,7 +21,7 @@ Section resolve_ghost.
     iMod ("Ha" with "[//]") as "[(%r' & HObs & Ha) | (_ & Ha)]".
     - rewrite ltype_own_struct_unfold /struct_ltype_own.
       iDestruct "Hl" as "(%sl & ? & ? & ? & ? & %rs & Hinterp & ?)".
-      simpl. iPoseProof (gvar_pobs_agree_2 with "Hinterp HObs") as "#<-".
+      iPoseProof (place_rfn_interp_owned_find_observation with "Hinterp HObs") as "Hrfn".
       iExists _, _, _, _. iFrame. iApply maybe_logical_step_intro.
       iL. rewrite ltype_own_struct_unfold /struct_ltype_own.
       iExists _. by iFrame.
@@ -34,7 +34,7 @@ Section resolve_ghost.
     find_observation ((plist place_rfnRT rts)) γ FindObsModeDirect (λ or,
         match or with
         | None => ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
-        | Some r => T L (PlaceIn $ r) True true
+        | Some r => T L r True true
         end)
     ⊢ resolve_ghost π E L rm lb l (StructLtype lts sls) (Uniq κ γ') (PlaceGhost γ) T.
   Proof.
@@ -42,8 +42,7 @@ Section resolve_ghost.
     iMod ("Ha" with "[//]") as "[(%r' & HObs & Ha) | (_ & Ha)]".
     - rewrite ltype_own_struct_unfold /struct_ltype_own.
       iDestruct "Hl" as "(%ly & ? & ? & ? & ? & ? & Hinterp & ?)".
-      simpl.
-      iPoseProof (Rel2_use_pobs with "HObs Hinterp") as "(%r2 & Hobs & ->)".
+      iPoseProof (place_rfn_interp_mut_find_observation with "Hinterp HObs") as "Hrfn".
       iExists _, _, _, _. iFrame. iApply maybe_logical_step_intro.
       iL. rewrite ltype_own_struct_unfold /struct_ltype_own.
       iExists _. iFrame. done.
@@ -56,7 +55,7 @@ Section resolve_ghost.
     find_observation (plist place_rfnRT rts) γ FindObsModeDirect (λ or,
         match or with
         | None => ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
-        | Some r => T L (#r) True true
+        | Some r => T L r True true
         end)
     ⊢ resolve_ghost π E L rm lb l (StructLtype lts sls) (Shared κ) (PlaceGhost γ) T.
   Proof.
@@ -64,7 +63,7 @@ Section resolve_ghost.
     iMod ("Ha" with "[//]") as "[(%r' & HObs & Ha) | (_ & Ha)]".
     - rewrite ltype_own_struct_unfold /struct_ltype_own.
       iDestruct "Hl" as "(%sl & ? & ? & ? & ? & %rs & Hinterp & ?)".
-      simpl. iPoseProof (gvar_pobs_agree_2 with "Hinterp HObs") as "#<-".
+      iPoseProof (place_rfn_interp_shared_find_observation with "Hinterp HObs") as "Hrfn".
       iExists _, _, _, _. iFrame. iApply maybe_logical_step_intro.
       iL. rewrite ltype_own_struct_unfold /struct_ltype_own.
       iExists _. by iFrame.
@@ -72,5 +71,4 @@ Section resolve_ghost.
   Qed.
   Definition resolve_ghost_struct_Shared_inst := [instance @resolve_ghost_struct_Shared].
   Global Existing Instance resolve_ghost_struct_Shared_inst.
-
 End resolve_ghost.

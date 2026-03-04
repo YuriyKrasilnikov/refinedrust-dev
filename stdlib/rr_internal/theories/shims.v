@@ -34,7 +34,7 @@ Program Definition alloc_realloc_def `{!LayoutAlg} (alloc_alloc_loc : loc) (copy
       local_live{IntSynType USize} "min_size";
       "new_ptr" <-{PtrOp} CallE alloc_alloc_loc [] [] [@{expr} copy{IntOp USize} "new_size"; copy{IntOp USize} "align"];
       "min_size" <-{IntOp USize} (IfE BoolOp (copy{IntOp USize} "new_size" <{IntOp USize, IntOp USize, U8} copy{IntOp USize} "old_size") (copy{IntOp USize} "new_size") (copy{IntOp USize} "old_size"));
-      annot: StopAnnot;
+      annot{0}: StopAnnot;
       expr: CallE copy_nonoverlapping_loc [] [RSTInt U8] [@{expr} copy{PtrOp} "ptr"; copy{PtrOp} "new_ptr"; copy{IntOp USize} "min_size"];
       expr: CallE alloc_dealloc_loc [] [] [@{expr} copy{IntOp USize} "old_size"; copy{IntOp USize} "align"; copy{PtrOp} "ptr"];
       return (move{PtrOp} "new_ptr")

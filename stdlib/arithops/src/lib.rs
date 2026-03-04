@@ -333,3 +333,52 @@ mul_assign_impl! { i16, "λ a b, (a * b) ∈ i16" }
 mul_assign_impl! { i32, "λ a b, (a * b) ∈ i32" }
 mul_assign_impl! { i64, "λ a b, (a * b) ∈ i64" }
 mul_assign_impl! { i128, "λ a b, (a * b) ∈ i128" }
+
+
+#[rr::export_as(core::ops::Deref)]
+#[rr::exists("DerefInto" : "{xt_of Self} → {xt_of Target}")]
+pub trait Deref {
+    /// The resulting type after dereferencing.
+    type Target: ?Sized;
+
+    /// Dereferences the value.
+    #[rr::returns("{DerefInto} self")]
+    fn deref(&self) -> &Self::Target;
+}
+
+#[rr::instantiate("DerefInto" := "id")]
+impl<T: ?Sized> Deref for &T {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self
+    }
+}
+
+#[rr::instantiate("DerefInto" := "λ x, x.cur")]
+impl<T: ?Sized> Deref for &mut T {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self
+    }
+}
+
+#[rr::export_as(core::ops::DerefMut)]
+#[rr::exists("DerefMutInject" : "{xt_of Self} → gname → {rt_of Self}")]
+pub trait DerefMut: Deref {
+    #[rr::exists("γi")]
+    #[rr::observe("self.ghost": "{DerefMutInject} self.cur γi")]
+    #[rr::returns("({Self::DerefInto} self.cur, γi)")]
+    fn deref_mut<'a>(&'a mut self) -> &'a mut Self::Target;
+}
+
+// now I get a T. need to produce the new (i,γ) of Self = &mut T. 
+// TODO: generate extendlft instructions.
+#[rr::only_spec]
+#[rr::instantiate("DerefMutInject" := "λ old x, (👻 x, old.ghost)")]
+impl<T: ?Sized> DerefMut for &mut T {
+    fn deref_mut(&mut self) -> &mut T {
+        self
+    }
+}

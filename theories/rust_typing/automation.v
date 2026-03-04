@@ -60,24 +60,27 @@ Ltac rep_check_backtrack_point_hook ::=
   end.
 
 Global Arguments RT_xt : simpl nomatch.
-(*
-Ltac liForall_hook ::=
-  (* simpl RT_xt *)
+Ltac hooks.liForall_hook ::=
   lazymatch goal with
   | |- forall e : ?A, @?P e =>
       match A with
+      (* This doesn't work well with instances *)
+      | plist _ [] =>
+          intros []
+      | prod_vec _ 0 =>
+          intros []
+          (*
       | RT_xt ?rt =>
-          assert_fails (is_var rt);
-          lazymatch rt with
+  assert_fails (is_var rt);
+lazymatch rt with
           | RT_of ?ty =>
               assert_fails (is_var ty)
               (* TODO: maybe unfold the RT_of? *)
           | _ => idtac
           end
-          (*simpl*)
+           *)
       end
   end.
- *)
 
 Ltac liDestruct_hook term ::=
   (** Revert branching hypotheses that are affected by the term.
@@ -172,6 +175,8 @@ Ltac liExtensible_to_i2p_hook P bind cont ::=
       cont uconstr:(((_ : TypedAddrOfMutEnd π E L l lt r b2 bmin) T))
   | cast_ltype_to_type ?E ?L ?lt ?T =>
       cont uconstr:(((_ : CastLtypeToType E L lt) T))
+  | typed_pre_context_fold ?π ?E ?L ?m ?T =>
+      cont uconstr:(((_ : TypedPreContextFold π E L m) T))
   | typed_context_fold ?AI ?E ?L ?m ?tctx ?acc ?T =>
       cont uconstr:(((_ : TypedContextFold AI E L m tctx acc) T))
   | typed_context_fold_step ?AI ?π ?E ?L ?m ?l ?lt ?r ?tctx ?acc ?T =>
@@ -206,6 +211,8 @@ Ltac liExtensible_to_i2p_hook P bind cont ::=
       cont uconstr:(((_ : StratifyLtype π E L _ _ _ (StratifyExtractOp κ) l lt r b) T))
   | stratify_ltype_resolve ?π ?E ?L ?Ma ?l ?lt ?r ?b ?T =>
       cont uconstr:(((_ : StratifyLtype π E L _ _ _ (StratifyResolveOp) l lt r b) T))
+  | stratify_ltype_close_inv ?κs ?π ?E ?L ?l ?lt ?r ?b ?T =>
+      cont uconstr:(((_ : StratifyLtype π E L _ _ _ (StratifyCloseOp κs) l lt r b) T))
   | stratify_ltype_post_hook ?π ?E ?L ?ml ?l ?lt ?r ?b ?T =>
       cont uconstr:(((_ : StratifyLtypePostHook π E L ml l lt r b) T))
   | resolve_ghost ?π ?E ?L ?m ?lb ?l ?lt ?b ?r ?T =>
@@ -214,10 +221,8 @@ Ltac liExtensible_to_i2p_hook P bind cont ::=
       cont uconstr:(((_ : ResolveGhostADT π E L m r ty) T))
   | find_observation ?rt ?γ ?mode ?T =>
       cont uconstr:(((_ : FindObservation rt γ mode) T))
-  | typed_on_endlft ?E ?L ?κ ?worklist ?T =>
-      cont uconstr:(((_ : TypedOnEndlft E L κ worklist) T))
-  | typed_on_endlft_trigger ?E ?L ?key ?P ?T =>
-      cont uconstr:(((_ : TypedOnEndlftTrigger E L key P) T))
+  | find_delayed_observation ?E ?L ?rt ?γ ?mode ?κ ?T =>
+      cont uconstr:(((_ : FindDelayedObservation E L rt γ mode κ) T))
   | introduce_with_hooks ?E ?L ?P ?T =>
       cont uconstr:(((_ : IntroduceWithHooks E L P) T))
   | iterate_with_hooks ?E ?L ?m ?T =>
@@ -440,79 +445,6 @@ Ltac liRExpr :=
     end
   end.
 
-(* Initialize context folding by gathering up the type context. *)
-Ltac gather_location_list env :=
-  match env with
-  | Enil => uconstr:([])
-  | Esnoc ?env' _ ?p =>
-      let rs := gather_location_list env' in
-      lazymatch p with
-      | (?l ◁ₗ[?π, Owned] ?r @ ?lty)%I =>
-          uconstr:(l :: rs)
-      | _ => uconstr:(rs)
-      end
-  end.
-Ltac liRContextStratifyInit :=
-  lazymatch goal with
-  | |- envs_entails ?envs (typed_pre_context_fold ?E ?L (CtxFoldStratifyAllInit ?ma) ?T) =>
-      let envs := eval hnf in envs in
-      match envs with
-      | Envs _ ?spatial _ =>
-          let tctx := gather_location_list spatial in
-          notypeclasses refine (tac_fast_apply (typed_context_fold_stratify_init tctx _ E L ma T) _)
-      | _ => fail 1000 "gather_tctx: cannot determine Iris context"
-      end
-  end.
-
-Ltac liRContextExtractInit :=
-  lazymatch goal with
-  | |- envs_entails ?envs (typed_pre_context_fold ?E ?L (CtxFoldExtractAllInit ?κ) ?T) =>
-      let envs := eval hnf in envs in
-      match envs with
-      | Envs _ ?spatial _ =>
-          let tctx := gather_location_list spatial in
-          notypeclasses refine (tac_fast_apply (typed_context_fold_extract_init tctx _ E L κ T) _)
-      | _ => fail 1000 "gather_tctx: cannot determine Iris context"
-      end
-  end.
-Ltac liRContextResolveInit :=
-  lazymatch goal with
-  | |- envs_entails ?envs (typed_pre_context_fold ?E ?L (CtxFoldResolveAllInit) ?T) =>
-      let envs := eval hnf in envs in
-      match envs with
-      | Envs _ ?spatial _ =>
-          let tctx := gather_location_list spatial in
-          notypeclasses refine (tac_fast_apply (typed_context_fold_resolve_init tctx _ E L T) _)
-      | _ => fail 1000 "gather_tctx: cannot determine Iris context"
-      end
-  end.
-
-
-
-(** Endlft trigger automation for [Inherit] context items *)
-Ltac gather_on_endlft_worklist κ env :=
-  match env with
-  | Enil => uconstr:([])
-  | Esnoc ?env' _ ?p =>
-      let rs := gather_on_endlft_worklist κ env' in
-      lazymatch p with
-      | (Inherit κ ?key ?P)%I =>
-          uconstr:(((existT _ key : sigT (@id Type)), P) :: rs)
-      | _ => uconstr:(rs)
-      end
-  end.
-Ltac liROnEndlftTriggerInit :=
-  lazymatch goal with
-  | |- envs_entails ?envs (typed_on_endlft_pre ?E ?L ?κ ?T) =>
-      let envs := eval hnf in envs in
-      match envs with
-      | Envs _ ?spatial _ =>
-          let worklist := gather_on_endlft_worklist κ spatial in
-          notypeclasses refine (tac_fast_apply (typed_on_endlft_pre_init worklist E L κ T) _)
-      | _ => fail 1000 "liROnEndlftTriggerInit: cannot determine Iris context"
-      end
-  end.
-
 Ltac liRJudgement :=
   lazymatch goal with
     (* place finish *)
@@ -538,18 +470,6 @@ Ltac liRJudgement :=
     (* end context folding *)
     | |- envs_entails _ (typed_context_fold_end ?AI ?E ?L ?acc ?T) =>
         notypeclasses refine (tac_fast_apply (type_context_fold_end AI E L acc T) _)
-    (* initialize context folding *)
-    | |- envs_entails _ (typed_pre_context_fold ?E ?L (CtxFoldStratifyAllInit _) ?T) =>
-        liRContextStratifyInit
-    (* initialize context folding *)
-    | |- envs_entails _ (typed_pre_context_fold ?E ?L (CtxFoldExtractAllInit ?κ) ?T) =>
-        liRContextExtractInit
-    (* initialize context folding *)
-    | |- envs_entails _ (typed_pre_context_fold ?E ?L (CtxFoldResolveAllInit) ?T) =>
-        liRContextResolveInit
-    (* initialize OnEndlft triggers *)
-    | |- envs_entails _ (typed_on_endlft_pre ?E ?L ?κ ?T) =>
-        liROnEndlftTriggerInit
     (* trigger tc search *)
     | |- envs_entails _ (trigger_tc ?H ?T) =>
         notypeclasses refine (tac_fast_apply (tac_trigger_tc _ _ _ _) _); [solve [refine _] | ]
@@ -752,8 +672,8 @@ Section tac.
       (credit_store 0 0 -∗ na_own π ⊤ -∗ allocated_locals (π, f) (f_args fn).*1 -∗ introduce_with_hooks E' L (Qinit) (λ L2,
         introduce_typed_stmt E' L2 (π, f) ϝ fn (
         λ v L2,
-            prove_with_subtype E L2 false ProveDirect (fn_ret_prop π ((fp.2 κs tys).(fn_p) x).(fp_fr) v) (λ L3 _ R3,
-            introduce_with_hooks E L3 R3 (λ L4,
+            prove_with_subtype E' L2 false ProveDirect (fn_ret_prop π ((fp.2 κs tys).(fn_p) x).(fp_fr) v) (λ L3 _ R3,
+            introduce_with_hooks E' L3 R3 (λ L4,
             (* we don't really kill it here, but just need to find it in the context *)
             li_tactic (llctx_find_llft_goal L4 ϝ LlctxFindLftFull) (λ _,
             find_in_context FindCreditStore (λ _,
@@ -776,7 +696,17 @@ Section tac.
     iMod ("HT" with "Hstore Hna Halloc [] HE' HL [Hinit]") as "(%L2 & HL & HT)"; first done.
     { iDestruct "Hinit" as "($ & $ & $)". }
     iApply ("HT" with "CTX HE' HL Hf").
-    iModIntro. done.
+    iModIntro. unfold typed_stmt_post_cond.
+    iIntros (???) "HL Hf Halloc Hb".
+    iSpecialize ("Hcont" with "HL Hf Halloc Hb").
+    unfold prove_with_subtype.
+    iIntros "Hcont2".
+    iApply "Hcont".
+    iIntros (????) "_ _ HL".
+    iMod ("Hcont2" with "[] [] [] [//] [//] HL") as "Hx"; [done.. | ].
+    iDestruct "Hx" as "(% &  % & % & ? & ? & HT)". iFrame.
+    iExists []. iModIntro. iIntros (??) "_ HL".
+    iApply ("HT" with "[] [] HL"); done.
   Qed.
 End tac.
 
@@ -803,6 +733,7 @@ Tactic Notation "start_function" constr(fnname) ident(ϝ) "(" simple_intropatter
   init_jcache;
   inv_layout_alg;
   iStartProof;
+  set_function_types;
   repeat (liEnsureInvariant || liWand || liSimpl || liForall || liPersistent || liImpl);
   li_unfold_lets_in_context;
   lazymatch goal with
@@ -842,6 +773,9 @@ Global Hint Extern 0 (LayoutSizeLe _ _) => rewrite /LayoutSizeLe; solve_layout_s
 
 (* This should instead be solved by [solve_ty_has_op_type]. *)
 Global Arguments ty_has_op_type : simpl never.
+Global Typeclasses Opaque ty_has_op_type.
+(* Even though we seal it, we should still make this opaque so it doesn't simplify. *)
+Global Opaque ty_has_op_type.
 
 (* Simplifying this can lead to problems in some cases when used in specifications. *)
 Global Arguments replicate : simpl nomatch.
@@ -851,10 +785,6 @@ Global Arguments freeable_nz : simpl never.
 (* should not be visible for automation *)
 Global Typeclasses Opaque ty_shr.
 Global Typeclasses Opaque ty_own_val.
-Global Typeclasses Opaque ty_has_op_type.
-
-(* Even though we seal it, we should still make this opaque so it doesn't simplify. *)
-Global Opaque ty_has_op_type.
 
 Global Typeclasses Opaque find_in_context.
 
@@ -862,14 +792,10 @@ Global Arguments ty_lfts : simpl nomatch.
 Global Arguments ty_wf_E : simpl nomatch.
 
 Global Arguments layout_of : simpl never.
-(*Global Arguments ly_size : simpl never.*)
 
 Global Arguments plist : simpl never.
 
 Global Arguments lft_intersect_list : simpl never.
-
-Global Typeclasses Opaque Rel2.
-Global Arguments Rel2 : simpl never.
 
 Hint Unfold els_lookup_tag : lithium_rewrite.
 
@@ -888,6 +814,23 @@ Class RelationIsIdentity {A} (R : A → A → Prop) := {
 Global Hint Extern 100 (RelationIsIdentity _) =>
     simpl; econstructor; solve_goal : typeclass_instances.
 Global Hint Mode RelationIsIdentity + + : typeclass_instances.
+
+(** Unfold [ty_ghost_drop] if necessary *)
+Class TyIsNotVar `{!typeGS Σ} {rt} (ty : type rt) := {}.
+Global Hint Mode TyIsNotVar + + + + : typeclass_instances.
+Global Hint Extern 10 (TyIsNotVar ?ty) =>
+  ty_is_not_var ty; constructor : typeclass_instances.
+
+Lemma simplify_hyp_ty_ghost_drop `{!typeGS Σ} {rt} (ty : type rt) `{!TyIsNotVar ty} π r T :
+  (_ty_ghost_drop ty π r -∗ T) ⊢ simplify_hyp (ty_ghost_drop ty π r) T.
+Proof.
+  rewrite ty_ghost_drop_unfold. done.
+Qed.
+Definition simplify_hyp_ty_ghost_drop_inst := [instance @simplify_hyp_ty_ghost_drop with 0%N].
+Global Existing Instance simplify_hyp_ty_ghost_drop_inst.
+
+
+
 
 (* In my experience, this has led to more problems with [normalize_autorewrite] rewriting below definitions too eagerly. *)
 #[export] Unset Keyed Unification.
@@ -1207,6 +1150,7 @@ lazymatch P with
       (* terms here are huge, and normalizing is very expensive *)
       split; [shelve_sidecond |]
   | fast_lia_hint _ => split; [clear; unfold fast_lia_hint, num_cred; simpl; lia | ]
+  | fast_set_hint _ => split; [clear; unfold fast_set_hint; simpl; set_solver | ]
   | fast_eq_hint _ =>
       split; [
         first [unfold spec_instantiate_typaram_fst, spec_instantiate_lft_fst, spec_instantiated; simpl; reflexivity | fail 10] | ]
@@ -1228,6 +1172,9 @@ Ltac sidecond_solver :=
 Lemma unfold_int_elem_of_it (z : Z) (it : int_type) :
   z ∈ it = (MinInt it ≤ z ∧ z ≤ MaxInt it)%Z.
 Proof. done. Qed.
+Lemma unfold_nat_elem_of_it (n : nat) (it : int_type) :
+  n ∈ it = (MinInt it ≤ n ∧ n ≤ MaxInt it)%Z.
+Proof. done. Qed.
 
 (** Another rewrite DB that we use to normalize more aggressively *)
 Create HintDb solve_goal_unfold discriminated.
@@ -1239,6 +1186,7 @@ Ltac sidecond_hammer_normalize :=
   autounfold with lithium_rewrite;
   autounfold with lithium_rewrite in *;
   try rewrite -> unfold_int_elem_of_it in *;
+  try rewrite -> unfold_nat_elem_of_it in *;
   simpl in *;
   normalize_and_simpl_goal.
 

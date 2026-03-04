@@ -14,9 +14,13 @@
 #![rr::include("closures")]
 #![rr::include("cmp")]
 #![rr::include("index")]
+#![rr::include("ptr")]
+#![rr::include("ptr_advanced")]
+#![rr::include("clone")]
 
 use std::alloc::{Allocator, Global};
 use std::marker::PhantomData;
+use core::ptr::NonNull;
 
 
 #[rr::refined_by("xs" : "list (place_rfn {rt_of T})")]
@@ -129,6 +133,15 @@ impl<T, A: Allocator> Vec<T, A> {
 
 }
 
+#[rr::only_spec]
+#[rr::export_as(alloc::vec::from_elem)]
+#[rr::requires("(size_of_array_in_bytes {st_of T} (2 * (Z.to_nat n)) ≤ MaxInt ISize)%Z")]
+#[rr::returns("replicate (Z.to_nat n) elem")]
+pub fn vec_from_elem<T: Clone>(elem: T, n: usize) -> Vec<T> {
+    unimplemented!();
+    //<T as SpecFromElem>::from_elem(elem, n, Global)
+}
+
 #[rr::export_as(alloc::vec::Vec)]
 impl<T, A: Allocator> Vec<T, A> {
     #[rr::returns("bool_decide (self = [])")]
@@ -173,10 +186,11 @@ impl<T, A: Allocator> IntoIterator for Vec<T, A> {
     }
 }
 
-#[rr::instantiate("Next" := "λ π l e l2, 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ π _ l e l2, 
     (⌜if_None e (l = [] ∧ l2 = [])⌝∗
     ⌜if_Some e (λ e, l = e :: l2)⌝)%I")]
-#[rr::instantiate("Inv" := "λ π self, True%I")]
+#[rr::instantiate("Inv" := "λ π _ self, True%I")]
 impl<T, A: Allocator> Iterator for IntoIter<T, A> {
     type Item = T;
 
@@ -445,10 +459,11 @@ pub struct Iter<'a, T: 'a> {
     _marker: PhantomData<&'a T>,
 }
 
-#[rr::instantiate("Next" := "λ π l e l2, 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ π _ l e l2, 
     (⌜if_None e (l = [] ∧ l2 = [])⌝∗
     ⌜if_Some e (λ e, l = e :: l2)⌝)%I")]
-#[rr::instantiate("Inv" := "λ π self, True%I")]
+#[rr::instantiate("Inv" := "λ π _ self, True%I")]
 impl<'a, T: 'a> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
@@ -465,6 +480,78 @@ impl<'a, T: 'a> Iterator for Iter<'a, T> {
     {
         unimplemented!();
     }
+
+    #[rr::only_spec]
+    fn all<F>(&mut self, f: F) -> bool
+    where
+        Self: Sized,
+        F: FnMut(Self::Item) -> bool,
+    {
+        unimplemented!();
+    }
 }
 
+// Slice IterMut
+#[rr::export_as(core::slice::iter::IterMut)]
+#[rr::refined_by("xs" : "(list ({rt_of T} * gname))%type")]
+// Ownership: Uniq 'a xs.1 ownership of the array elements (big sep)
+#[rr::exists("x" : "loc", "y" : "loc")]
+pub struct IterMut<'a, T: 'a> {
+    /// The pointer to the next element to return, or the past-the-end location
+    /// if the iterator is empty.
+    ///
+    /// This address will be used for all ZST elements, never changed.
+    #[rr::field("x")]
+    ptr: NonNull<T>,
+    /// For non-ZSTs, the non-null pointer to the past-the-end element.
+    ///
+    /// For ZSTs, this is `ptr::without_provenance_mut(len)`.
+    #[rr::field("y")]
+    end_or_len: *mut T,
+    #[rr::field("tt")]
+    _marker: PhantomData<&'a mut T>,
+}
 
+#[rr::instantiate("Params" := "unit")]
+#[rr::instantiate("Next" := "λ π _ l1 e l2, 
+    (⌜if_None e (l1 = [] ∧ l2 = [])⌝ ∗
+    ⌜if_Some e (λ e, l1 = e :: l2)⌝)%I")]
+#[rr::instantiate("Inv" := "λ π _ self, True%I")]
+impl<'a, T: 'a> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
+
+    // when verifying this, we need to make sure to use the right ghost var.
+    // otherwise, close Next under RelEq
+    #[rr::only_spec]
+    fn next(&mut self) -> Option<&'a mut T> {
+        unimplemented!();
+    }
+
+    //#[rr::only_spec]
+    //fn position<F>(&mut self, f: F) -> Option<usize>
+    //where
+        //Self: Sized,
+        //F: FnMut(Self::Item) -> bool,
+    //{
+        //unimplemented!();
+    //}
+}
+
+#[rr::only_spec]
+#[rr::exists("γs")]
+#[rr::ensures("length γs = length x.cur")]
+#[rr::observe("x.ghost": "(PlaceGhost <$> γs) : list (place_rfn {rt_of T})")]
+#[rr::returns("zip x.cur γs")]
+fn vec_iter_mut<T>(x: &mut Vec<T>) -> IterMut<'_, T> {
+    unimplemented!();
+}
+
+// TODO: add ghost drop instance to get remaining observations
+
+
+// To make this useful, we need to gather up the observations, maybe into a bigsep.
+// Obs list or so? 
+// Easier to resolve at resolve_ghost using the vector instance or to have a Rel? 
+// I guess for resolve_ghost_iter we can just check for the ObsList in the context and have an easy
+// time.
+//

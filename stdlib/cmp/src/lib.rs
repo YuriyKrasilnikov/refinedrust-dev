@@ -52,7 +52,7 @@ pub trait Eq: PartialEq<Self> {
     //
     // This should never be implemented by hand.
     #[rr::verify]
-    fn assert_receiver_is_total_eq(&self) {}
+    fn assert_fields_are_eq(&self) {}
 }
 
 #[rr::export_as(core::cmp::PartialOrd)]
@@ -141,9 +141,10 @@ pub fn max<T: Ord>(v1: T, v2: T) -> T {
 
 #[rr::export_as(core::cmp::max_by)]
 #[rr::only_spec]
-#[rr::requires(#iris "{F::Pre} π compare *[v2; v1]")]
+#[rr::params("p")]
+#[rr::requires(#iris "{F::Pre} π p compare *[v2; v1]")]
 #[rr::exists("ord")]
-#[rr::ensures(#iris "{F::Post} π compare *[v2; v1] ord")]
+#[rr::ensures(#iris "{F::Post} π p compare *[v2; v1] ord")]
 #[rr::returns("if bool_decide(ord = Less) then v1 else v2")]
 pub fn max_by<T, F: FnOnce(&T, &T) -> Ordering>(v1: T, v2: T, compare: F) -> T {
     unimplemented!();
@@ -158,9 +159,10 @@ pub fn min<T: Ord>(v1: T, v2: T) -> T {
 
 #[rr::export_as(core::cmp::min_by)]
 #[rr::only_spec]
-#[rr::requires(#iris "{F::Pre} π compare *[v2; v1]")]
+#[rr::params("p")]
+#[rr::requires(#iris "{F::Pre} π p compare *[v2; v1]")]
 #[rr::exists("ord")]
-#[rr::ensures(#iris "{F::Post} π compare *[v2; v1] ord")]
+#[rr::ensures(#iris "{F::Post} π p compare *[v2; v1] ord")]
 #[rr::returns("if bool_decide(ord = Less) then v2 else v1")]
 pub fn min_by<T, F: FnOnce(&T, &T) -> Ordering>(v1: T, v2: T, compare: F) -> T {
     unimplemented!();

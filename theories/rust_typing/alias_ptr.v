@@ -80,6 +80,17 @@ Section rules.
   Definition alias_ptr_simplify_goal_inst := [instance @alias_ptr_simplify_goal with 1%N].
   Global Existing Instance alias_ptr_simplify_goal_inst.
 
+  Global Program Instance learn_from_hyp_val_alias_ptr l :
+    LearnFromHypVal (alias_ptr_t) l | 10 :=
+    {| learn_from_hyp_val_Q := ⌜l.(loc_a) ∈ USize⌝ |}.
+  Next Obligation.
+    iIntros (??????) "Hv".
+    rewrite /ty_own_val/=.
+    iDestruct "Hv" as "(-> & -> & %)".
+    iModIntro. iPureIntro. split_and!; done.
+  Qed.
+
+  (* In case we introduce a value, override and get something stronger *)
   Global Program Instance learn_from_hyp_alias_ptr v π m l :
     LearnFromHyp (v ◁ᵥ{π, m} l @ alias_ptr_t) | 10 :=
     {| learn_from_hyp_Q := ⌜m = MetaNone⌝ ∗ ⌜v = val_of_loc l⌝ ∗ ⌜l.(loc_a) ∈ USize⌝ |}.

@@ -72,6 +72,23 @@ Global Existing Instance TCTForall_nil.
 Global Existing Instance TCTForall_cons.
 Global Hint Mode TCTForall ! ! ! : typeclass_instances.
 
+(** Solve a goal with [set_solver] *)
+Class TCSetSolver (P : Prop) : Prop := set_solver_proof : P.
+Global Hint Extern 1 (TCSetSolver ?P) => (change P; set_solver) : typeclass_instances.
+
+Class TCFastListElemOf (P : Prop) : Prop := simple_list_elem_of_proof : P.
+
+(* Very simple list containment solver. *)
+Ltac simple_list_elem_solver :=
+  repeat lazymatch goal with
+  | |- ?a ∈ ?a :: ?L =>
+      apply elem_of_cons; by left
+  | |- ?a ∈ _ :: ?L =>
+      apply elem_of_cons; right
+  | |- ?a ∈ _ ++ ?L =>
+      apply elem_of_app; right
+  end.
+Global Hint Extern 1 (TCFastListElemOf ?P) => (change P; simple_list_elem_solver) : typeclass_instances.
 
 Declare Scope printing_sugar.
 
@@ -188,6 +205,8 @@ Definition if_iNone {A} (x : option A) (ϕ : iProp Σ) : iProp Σ :=
   | _ => True
   end.
 End iris.
+Global Typeclasses Opaque if_iSome.
+Global Typeclasses Opaque if_iNone.
 
 (* TODO: upstream: overwritten to allow for more parameters *)
 Ltac my_f_equiv :=

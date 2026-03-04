@@ -336,11 +336,12 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         let mut code_file = io::BufWriter::new(File::create(code_path).unwrap());
 
         {
-            let mut spec_exports = vec![
+            let mut spec_exports = Vec::new();
+            spec_exports.append(&mut self.extra_exports.iter().map(|(export, _)| export.clone()).collect());
+            spec_exports.push(
                 coq::module::Export::new(vec![format!("generated_code_{stem}")])
                     .from(vec![&self.coq_path_prefix, stem]),
-            ];
-            spec_exports.append(&mut self.extra_exports.iter().map(|(export, _)| export.clone()).collect());
+            );
 
             write!(spec_file, "{}", coq::module::ImportList(&common_imports)).unwrap();
             write!(spec_file, "{}", coq::module::ExportList(&spec_exports)).unwrap();
@@ -589,39 +590,39 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         ];
 
         // This closure does the core part of writing the template
-        let write_template =
-            |file: &mut io::BufWriter<File>, fun: &code::Function<'_>, is_trait_default: bool| {
-                let mut imports = common_imports.clone();
+        let write_template = |file: &mut io::BufWriter<File>,
+                              fun: &code::Function<'_>,
+                              is_trait_default: bool| {
+            let imports = common_imports.clone();
 
-                imports.append(&mut vec![
-                    coq::module::Import::new(vec![
-                        &format!("generated_code_{stem}"),
-                        &format!("generated_specs_{stem}"),
-                    ])
-                    .from(vec![&self.coq_path_prefix, stem]),
-                ]);
+            let mut exports: Vec<_> = self.extra_exports.iter().map(|(export, _)| export.clone()).collect();
+            exports.push(
+                coq::module::Export::new(vec![
+                    &format!("generated_code_{stem}"),
+                    &format!("generated_specs_{stem}"),
+                ])
+                .from(vec![&self.coq_path_prefix, stem]),
+            );
 
-                let exports: Vec<_> = self.extra_exports.iter().map(|(export, _)| export.clone()).collect();
+            write!(file, "{}", coq::module::ImportList(&imports)).unwrap();
+            write!(file, "{}", coq::module::ExportList(&exports)).unwrap();
+            write!(file, "\n").unwrap();
 
-                write!(file, "{}", coq::module::ImportList(&imports)).unwrap();
-                write!(file, "{}", coq::module::ExportList(&exports)).unwrap();
-                write!(file, "\n").unwrap();
-
-                write!(file, "Set Default Proof Using \"Type\".\n\n").unwrap();
-                write!(
-                    file,
-                    "\
+            write!(file, "Set Default Proof Using \"Type\".\n\n").unwrap();
+            write!(
+                file,
+                "\
                 Section proof.\n\
                 Context `{{RRGS : !refinedrustGS Σ}}.\n"
-                )
-                .unwrap();
+            )
+            .unwrap();
 
-                fun.generate_lemma_statement(file, is_trait_default).unwrap();
+            fun.generate_lemma_statement(file, is_trait_default).unwrap();
 
-                write!(file, "End proof.\n\n").unwrap();
+            write!(file, "End proof.\n\n").unwrap();
 
-                fun.generate_proof_prelude(file, is_trait_default).unwrap();
-            };
+            fun.generate_proof_prelude(file, is_trait_default).unwrap();
+        };
 
         // write templates
         // each function gets a separate file in order to parallelize
@@ -2187,11 +2188,12 @@ where
 
     register_traits(&mut vcx)?;
 
-    register_consts(&mut vcx)?;
-
     register_trait_impls(&vcx)?;
 
     register_closure_impls(&vcx)?;
+
+    // after trait impls, as type translation may depend on trait impls
+    register_consts(&mut vcx)?;
 
     translate_functions(&mut vcx);
 

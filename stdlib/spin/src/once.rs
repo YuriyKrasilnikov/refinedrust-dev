@@ -11,7 +11,7 @@ use crate::relax::*;
 // Then we could also include this in the interface definition
 
 #[rr::refined_by("η" : "gname")]
-#[rr::context("onceG Σ ({rt_of T})")]
+#[rr::context("onceG Σ ({xt_of T})")]
 #[rr::export_as(spin::once::Once)]
 #[rr::exists("x", "y")]
 //#[rr::exists("o" : "option {rt_of T}")]
@@ -25,16 +25,15 @@ pub struct Once<T = (), R = Spin> {
 
 #[rr::only_spec]
 #[rr::export_as(spin::once::Once)]
-#[rr::context("onceG Σ ({rt_of T})")]
+#[rr::context("onceG Σ ({xt_of T})")]
 impl<T, R: RelaxStrategy> Once<T, R> {
-    #[rr::skip]
-    #[rr::params("η", "f")]
-    #[rr::args("#η", "f")]
-    #[rr::requires("once_status_tok η None")]
-    // TODO: specify that the closure has a particular spec
+    #[rr::params("p")]
+    #[rr::requires(#iris "{F::Pre} π p f ()")]
+    #[rr::requires(#iris "once_status_tok self None")]
     #[rr::exists("x")]
-    #[rr::ensures("once_status_tok η (Some x)")]
-    #[rr::returns("#x")]
+    #[rr::ensures(#iris "{F::Post} π p f () x")]
+    #[rr::ensures(#iris "once_status_tok self (Some x)")]
+    #[rr::returns("x")]
     pub fn call_once<F: FnOnce() -> T>(&self, f: F) -> &T {
         unimplemented!();
     }
@@ -42,61 +41,50 @@ impl<T, R: RelaxStrategy> Once<T, R> {
 
 #[rr::only_spec]
 #[rr::export_as(spin::once::Once)]
-#[rr::context("onceG Σ ({rt_of T})")]
+#[rr::context("onceG Σ ({xt_of T})")]
 impl<T, R> Once<T, R> {
     /// Creates a new [`Once`].
-    #[rr::exists("η")]
-    #[rr::ensures(#iris "once_status_tok η None")]
-    #[rr::returns("η")]
+    #[rr::ensures(#iris "once_status_tok ret None")]
     pub const fn new() -> Self {
         unimplemented!();
     }
 
     /// Creates a new initialized [`Once`].
-    #[rr::params("x")]
-    #[rr::args("x")]
     #[rr::exists("η")]
-    #[rr::ensures(#iris "once_status_tok η (Some ($# x))")]
+    #[rr::ensures(#iris "once_status_tok η (Some data)")]
     #[rr::returns("η")]
     pub const fn initialized(data: T) -> Self {
         unimplemented!();
     }
 
     /// Returns a reference to the inner value if the [`Once`] has been initialized.
-    #[rr::params("η", "o")]
-    #[rr::args("η")]
-    #[rr::requires(#iris "once_status_tok η o")]
-    #[rr::requires("if_Some o (ty_is_xrfn {T})")]
-    #[rr::ensures(#iris "once_status_tok η o")]
-    #[rr::exists("o'" : "option {xt_of T}")]
-    #[rr::ensures("o = fmap (RT_xrt {rt_of T}) o'")]
-    #[rr::returns("o'")]
+    #[rr::params("o")]
+    #[rr::requires(#iris "once_status_tok self o")]
+    #[rr::ensures(#iris "once_status_tok self o")]
+    #[rr::returns("o")]
     pub fn get(&self) -> Option<&T> {
         unimplemented!();
     }
 
-    #[rr::params("η", "o")]
-    #[rr::args("η")]
-    #[rr::requires(#iris "once_status_tok η o")]
-    #[rr::ensures(#iris "once_status_tok η o")]
+    #[rr::params("o")]
+    #[rr::requires(#iris "once_status_tok self o")]
+    #[rr::ensures(#iris "once_status_tok self o")]
     #[rr::returns("bool_decide (is_Some o)")]
     pub fn is_completed(&self) -> bool {
         unimplemented!();
     }
 
-    #[rr::params("γ", "η", "o")]
-    #[rr::args("(η, γ)")]
-    #[rr::requires(#iris "once_status_tok η o")]
-    #[rr::requires("if_Some o (ty_is_xrfn {T})")]
-    #[rr::exists("o'" : "option ({xt_of T} * gname)%type")]
-    #[rr::observe("γ": "η")]
-    #[rr::returns("o'")]
+    #[rr::skip]
+    #[rr::params("o")]
+    #[rr::requires(#iris "once_status_tok self.cur o")]
+    #[rr::observe("self.ghost": "self.cur")]
+    #[rr::exists("γ'")]
+    #[rr::returns("fmap (λ o, (o, γ')) o")]
+    // NB The returned mutable reference needs to be able to update the contained value and update
+    // the status tok.
     #[rr::ensures(#iris "if bool_decide (is_Some o)
-                    then
-                        ∃ (x : {xt_of T}) γ2, 
-                            ⌜o' = Some (x, γ2)⌝ ∗ ⌜o = Some ($# x)⌝ ∗
-                            Inherit {'a} InheritGhost (∃ x' : {rt_of T}, gvar_obs γ2 x' ∗ once_status_tok η (Some x'))
-                    else ⌜o' = None⌝ ∗ once_status_tok η o")]
+                    then Inherit [{'a}] (∃ x' : {xt_of T}, gvar_obs γ' ($# x') ∗ once_status_tok self.cur (Some x'))
+                    else once_status_tok self.cur o")]
     pub fn get_mut<'a>(&'a mut self) -> Option<&'a mut T> {
         unimplemented!();
     }

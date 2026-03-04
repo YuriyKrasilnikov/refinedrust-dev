@@ -398,5 +398,23 @@ Proof.
   intros Ha. eauto.
 Qed.
 
+
+Global Instance simpl_and_fmap {A B} (f1 f2 : A → B) (l1 : list A) l2 :
+  SimplAndUnsafe (fmap f1 l1 = fmap f2 l2) (λ T, l1 = l2 ∧ (∀ x : A, x ∈ l1 → f1 x = f2 x) ∧ T).
+Proof.
+  unfold SimplAndUnsafe. intros T.
+  intros (-> & Hext & ?). split; last done.
+  apply list_fmap_ext'; done.
+Qed.
+
 (** Extra normalization *)
 Hint Rewrite -> @sum_list_Z_with_app : lithium_rewrite.
+
+Lemma list_fmap_fmap_id {A} (l : list (list A)) :
+  fmap (fmap (M:=list) id) l = l.
+Proof.
+  induction l as [ | x l]; simpl; first done.
+  rewrite list_fmap_id. f_equiv. done.
+Qed.
+Hint Rewrite @list_fmap_fmap_id : lithium_rewrite.
+

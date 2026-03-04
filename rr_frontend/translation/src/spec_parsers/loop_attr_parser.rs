@@ -298,11 +298,8 @@ impl<'def, T: ParamLookup<'def>> LoopAttrParser for VerboseLoopAttrParser<'def, 
         let mut declare_iterator_var = None;
 
         // insert params at the front
-        let param_binders = coq::binder::BinderList::new(params);
-        let (param_pat, param_ty) = param_binders.uncurry();
         let param_name = "_params";
         let param_ident = coq::Ident::new(param_name);
-        rfn_binders.push(coq::binder::Binder::new(Some(param_name.to_owned()), param_ty));
 
         // get locals
         for (local, name, kind, initialized, ty) in &self.locals {
@@ -374,6 +371,7 @@ impl<'def, T: ParamLookup<'def>> LoopAttrParser for VerboseLoopAttrParser<'def, 
 
         // also add a constraint on the iterator variable
         let mut iterator_init_var = None;
+        let mut param_binder_pos = 0;
         if let Some(iterator_info) = &self.info.iterator_info
             && let Some((name, _, rfn_ty)) = declare_iterator_var
             && let Some(binder_name) = rfn_binder_names.get(&name)
@@ -388,15 +386,21 @@ impl<'def, T: ParamLookup<'def>> LoopAttrParser for VerboseLoopAttrParser<'def, 
             let init_value_ty = coq::term::RocqType::UserDefined(model::Type::RTXT(Box::new(rfn_ty)));
 
             rfn_binders.insert(0, coq::binder::Binder::new(Some(init_value_binder.clone()), init_value_ty));
+            param_binder_pos = 1;
             iterator_init_var = Some(name.clone());
+
+            let iterator_param_name = "_iterator_param";
 
             // history
             existentials.push(coq::binder::Binder::new(
                 Some(iterator_info.history_name.clone()),
                 coq::term::RocqType::Infer,
             ));
+            params
+                .push(coq::binder::Binder::new(Some(iterator_param_name.to_owned()), coq::term::Type::Infer));
+
             var_invariants.push(coq::iris::IProp::Atom(format!(
-                "IteratorNextFusedTrans ({}) π {init_value_binder} {} {}",
+                "IteratorNextFusedTrans ({}) π {iterator_param_name} {init_value_binder} {} {}",
                 iterator_info.iter_spec.get_attr_term(),
                 iterator_info.history_name,
                 iterator_info.binder_name
@@ -406,10 +410,15 @@ impl<'def, T: ParamLookup<'def>> LoopAttrParser for VerboseLoopAttrParser<'def, 
             let attr_term = iterator_info.iter_spec.get_attr_term();
             let inv_name = iterator_info.iter_spec.of_trait.make_spec_attr_name("Inv");
             var_invariants.push(coq::iris::IProp::Atom(format!(
-                "({attr_term}).({inv_name}) π {}",
+                "({attr_term}).({inv_name}) π {iterator_param_name} {}",
                 iterator_info.binder_name
             )));
         }
+
+        // prepare params and insert at the front, but after the optional initial iterator state
+        let param_binders = coq::binder::BinderList::new(params);
+        let (param_pat, param_ty) = param_binders.uncurry();
+        rfn_binders.insert(param_binder_pos, coq::binder::Binder::new(Some(param_name.to_owned()), param_ty));
 
         var_invariants.extend(invariant);
         //var_invariants.extend(uninit_locals_prop);

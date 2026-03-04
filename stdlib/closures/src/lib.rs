@@ -9,59 +9,32 @@
 #[rr::export_as(core::marker::Tuple)]
 pub trait Tuple { }
 
-/*
-#[rr::export_as(core::ops::Fn)]
-pub trait Fn<Args: Tuple>: FnMut<Args> {
-
-    /// Performs the call operation.
-    fn call(&self, args: Args) -> Self::Output;
-}
-
-#[rr::export_as(core::ops::FnMut)]
-pub trait FnMut<Args: Tuple>: FnOnce<Args> {
-    /// Performs the call operation.
-    fn call_mut(&mut self, args: Args) -> Self::Output;
-}
-*/
-
-/*
 #[rr::export_as(core::ops::FnOnce)]
-pub trait FnOnce<Args> {
-    /// The returned type after the call operator is used.
-    type Output;
-
-    /// Performs the call operation.
-    #[rr::params("m", "x")]
-    #[rr::args("m", "x")]
-    #[rr::exists("y")]
-    #[rr::returns("y")]
-    fn call_once(self, args: Args) -> Self::Output;
-}
-*/
-
-#[rr::export_as(core::ops::FnOnce)]
-#[rr::exists("Pre" : "thread_id → {xt_of Self} → {xt_of Args} → iProp Σ")]
-#[rr::exists("Post" : "thread_id → {xt_of Self} → {xt_of Args} → {xt_of Output} → iProp Σ")]
+#[rr::exists("Params" : "Type")]
+#[rr::exists("Pre" : "thread_id → {Params} → {xt_of Self} → {xt_of Args} → iProp Σ")]
+#[rr::exists("Post" : "thread_id → {Params} → {xt_of Self} → {xt_of Args} → {xt_of Output} → iProp Σ")]
+// Note: the relation gets both the current and the next state
+#[rr::exists("PostMut" : "thread_id → {Params} → {xt_of Self} → {xt_of Args} → {xt_of Self} → {xt_of Output} → iProp Σ")]
 #[rr::nondependent]
 pub trait FnOnce<Args> {
     /// The returned type after the call operator is used.
     type Output;
 
     /// Performs the call operation.
-    #[rr::requires(#iris "{Pre} π self args")]
-    #[rr::ensures(#iris "{Post} π self args ret")]
+    #[rr::params("p")]
+    #[rr::requires(#iris "{Pre} π p self args")]
+    #[rr::ensures(#iris "{Post} π p self args ret")]
     fn call_once(self, args: Args) -> Self::Output;
 }
 
 #[rr::export_as(core::ops::FnMut)]
-// Note: the relation gets both the current and the next state
-#[rr::exists("PostMut" : "thread_id → {xt_of Self} → {xt_of Args} → {xt_of Self} → {xt_of Self::Output} → iProp Σ")]
 #[rr::nondependent]
 pub trait FnMut<Args>: FnOnce<Args> {
     /// Performs the call operation.
-    #[rr::requires(#iris "{Self::Pre} π self.cur args")]
+    #[rr::params("p")]
+    #[rr::requires(#iris "{Self::Pre} π p self.cur args")]
     #[rr::exists("m'")]
-    #[rr::ensures(#iris "{PostMut} π self.cur args m' ret")]
+    #[rr::ensures(#iris "{Self::PostMut} π p self.cur args m' ret")]
     #[rr::observe("self.ghost": "$# m'")]
     fn call_mut(&mut self, args: Args) -> Self::Output;
 }
@@ -70,8 +43,9 @@ pub trait FnMut<Args>: FnOnce<Args> {
 #[rr::nondependent]
 pub trait Fn<Args>: FnMut<Args> {
     /// Performs the call operation.
-    #[rr::requires(#iris "{Self::Pre} π self args")]
-    #[rr::ensures(#iris "{Self::Post} π self args ret")]
+    #[rr::params("p")]
+    #[rr::requires(#iris "{Self::Pre} π p self args")]
+    #[rr::ensures(#iris "{Self::Post} π p self args ret")]
     fn call(&self, args: Args) -> Self::Output;
 }
 
@@ -87,7 +61,6 @@ where
     }
 }
 
-#[rr::instantiate("PostMut" := "λ π s args s2 ret, (⌜s2 = s⌝ ∗ {F::Post} π s args ret)%I")]
 impl<A, F: ?Sized> FnMut<A> for &F
 where
     F: Fn<A>,
@@ -99,8 +72,10 @@ where
     }
 }
 
+#[rr::instantiate("Params" := "{F::Params}")]
 #[rr::instantiate("Pre" := "{F::Pre}")]
 #[rr::instantiate("Post" := "{F::Post}")]
+#[rr::instantiate("PostMut" := "λ π p s args s2 ret, (⌜s2 = s⌝ ∗ {F::Post} π p s args ret)%I")]
 impl<A, F: ?Sized> FnOnce<A> for &F
 where
     F: Fn<A>,
@@ -114,7 +89,6 @@ where
     }
 }
 
-#[rr::instantiate("PostMut" := "λ π s args s2 ret, ({F::PostMut} π s.cur args s2.cur ret ∗ ⌜s.ghost = s2.ghost⌝)%I")]
 impl<A, F: ?Sized> FnMut<A> for &mut F
 where
     F: FnMut<A>,
@@ -126,8 +100,10 @@ where
     }
 }
 
-#[rr::instantiate("Pre" := "λ π s args, {F::Pre} π s.cur args")]
-#[rr::instantiate("Post" := "λ π s args ret, (∃ s2, {F::PostMut} π s.cur args s2 ret ∗ gvar_pobs s.ghost ($# s2))%I")]
+#[rr::instantiate("Params" := "{F::Params}")]
+#[rr::instantiate("Pre" := "λ π p s args, {F::Pre} π p s.cur args")]
+#[rr::instantiate("Post" := "λ π p s args ret, (∃ s2, {F::PostMut} π p s.cur args s2 ret ∗ gvar_pobs s.ghost ($# s2))%I")]
+#[rr::instantiate("PostMut" := "λ π p s args s2 ret, ({F::PostMut} π p s.cur args s2.cur ret ∗ ⌜s.ghost = s2.ghost⌝)%I")]
 impl<A, F: ?Sized> FnOnce<A> for &mut F
 where
     F: FnMut<A>,

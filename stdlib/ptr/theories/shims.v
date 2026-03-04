@@ -73,7 +73,7 @@ Program Definition ptr_copy_nonoverlapping `{!LayoutAlg} (T_st : syn_type) : fun
       local_live{IntSynType USize} "count";
       "count" <-{IntOp USize} i2v 0 USize;
       (* TODO: add safety checks *)
-      annot: StopAnnot;
+      annot{0}: StopAnnot;
       Goto "_bb_loop_head"
     ]>%E $
     <["_bb_loop_head" :=
@@ -94,7 +94,7 @@ Program Definition ptr_copy_nonoverlapping `{!LayoutAlg} (T_st : syn_type) : fun
       Goto "_bb_loop_head"
     ]>%E $
     <["_bb_loop_exit" :=
-      annot: StopAnnot;
+      annot{0}: StopAnnot;
       return zst_val
     ]>%E $
     ∅;

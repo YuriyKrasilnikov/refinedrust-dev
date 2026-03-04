@@ -1,2 +1,3 @@
 generate_dune_project = false
-lib_load_paths = ["../option"]
+lib_load_paths = ["../option", "../closures", "../arithops"]
+output_dir = "output"

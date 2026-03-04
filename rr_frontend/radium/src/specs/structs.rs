@@ -87,11 +87,10 @@ impl<'def> AbstractVariant<'def> {
         let indent = "  ";
 
         // intro to main def
-        write!(out, "{indent}Definition {} {typarams} : struct_layout_spec :=\n", self.sls_def_name,)
-            .unwrap();
+        write!(out, "{indent}Definition {} {typarams} : struct_layout_spec :=\n", self.sls_def_name).unwrap();
 
         // for recursive uses
-        write!(out, "{indent}{indent}let {} {typarams} := UnitSynType in\n", self.st_def_name,).unwrap();
+        write!(out, "{indent}{indent}let {} {typarams} := UnitSynType in\n", self.st_def_name).unwrap();
         if let Some(enum_name) = opt_enum_name {
             write!(out, "{indent}{indent}let {enum_name} {typarams} := UnitSynType in\n").unwrap();
         }

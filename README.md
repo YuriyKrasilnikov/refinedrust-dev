@@ -80,6 +80,15 @@ make typesystem
 ```
 4. Run `./refinedrust build` in `rr_frontend` to build the frontend.
 5. Run `./refinedrust install` in `rr_frontend` to install the frontend into your Rust path.
+6. Optionally: compile the standard library with `make stdlib.proof`
+
+##### Upgrading RefinedRust
+Run the following steps again:
+- Run `make builddep`
+- Run `./refinedrust install` in `rr_frontend`
+- Optional: run `make clean_stdlib && make stdlib.proof` to upgrade the standard library
+
+You will also need to run `cargo clean && cargo refinedrust` in your project to re-generate the Rocq translation.
 
 #### Setup instructions for installing RefinedRust on your system
 We provide scripts to install RefinedRust.
@@ -103,6 +112,15 @@ REFINEDRUST_ROOT=. ./scripts/install-stdlib.sh
 
 This will install the RefinedRust frontend, as well as the Rocq type system and the specifications and proofs for the Rust standard library components that RefinedRust comes with.
 
+##### Upgrading RefinedRust
+Run the following steps again:
+```
+REFINEDRUST_ROOT=. ./scripts/install-frontend.sh
+REFINEDRUST_ROOT=. ./scripts/install-typesystem.sh
+REFINEDRUST_ROOT=. ./scripts/install-stdlib.sh
+```
+
+You will also need to run `cargo clean && cargo refinedrust` in your project to re-generate the Rocq translation.
 
 ## Frontend usage
 After installing RefinedRust, it can be invoked through `cargo`, Rust's build system and package manager, by running `cargo refinedrust`.

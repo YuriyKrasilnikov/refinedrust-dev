@@ -556,9 +556,8 @@ pub enum Annotation {
 }
 
 impl Annotation {
-    #[expect(clippy::unused_self)]
     const fn needs_laters(&self) -> u32 {
-        0
+        if matches!(self, Self::EndLft(_)) { 2 } else { 1 }
     }
 }
 
@@ -586,7 +585,7 @@ pub enum PrimStmt {
     #[display("local_dead \"{}\";\n", _0)]
     LocalDead(String),
 
-    #[display("{}", fmt_list!(a, "", |x| { format!("annot: {x};{}\n", fmt_comment(why.as_ref()))}))]
+    #[display("{}", fmt_list!(a, "", |x| { format!("annot{{ {} }}: {x};{}\n", x.needs_laters(), fmt_comment(why.as_ref()))}))]
     Annot {
         a: Vec<Annotation>,
         why: Option<String>,
@@ -1064,13 +1063,13 @@ impl Function<'_> {
         // add arguments for the code definition
         let mut code_params: Vec<_> =
             self.other_functions.iter().map(|proc_use| proc_use.loc_name.clone()).collect();
+        for s in &self.used_statics {
+            code_params.push(s.loc_name.clone());
+        }
 
         let ty_params = self.spec.generics.get_all_ty_params_with_assocs();
         for names in ty_params.get_coq_ty_st_params().make_using_terms() {
             code_params.push(format!("{names}"));
-        }
-        for s in &self.used_statics {
-            code_params.push(s.loc_name.clone());
         }
         for x in &code_params {
             write!(f, "{}  ", x)?;

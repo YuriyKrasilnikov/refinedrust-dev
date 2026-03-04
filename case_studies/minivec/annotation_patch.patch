@@ -1,19 +1,15 @@
 515a516,518
 >       (* TODO manually added *)
->       annot: ExtendLftAnnot "llft4";
->       annot: ExtendLftAnnot "llft5";
+>       annot{1}: ExtendLftAnnot "llft4";
+>       annot{1}: ExtendLftAnnot "llft5";
 587a591
->       annot: ExtendLftAnnot "plft6"; (* TODO manual *)
-643c647
-<       "ret" <-{ PtrOp } &ref{ Mut, Some (RSTTyVar "T"), "vuclft4" } (!{ PtrOp } ( "p" ));
----
->       "__0" <-{ PtrOp } &ref{ Mut, Some (RSTTyVar "T"), "vuclft4" } (!{ PtrOp } ( "p" ));
-644a649
->       (*
-657a663,664
->        *)
->       annot: ExtendLftAnnot "plft13"; (* TODO *)
-1579c1586
+>       annot{1}: ExtendLftAnnot "plft6"; (* TODO manual *)
+657a662,665
+>       annot{1}: ExtendLftAnnot "llft7";
+>       annot{1}: ExtendLftAnnot "llft6";
+>       annot{1}: ExtendLftAnnot "llft5";
+>       annot{1}: ExtendLftAnnot "vuclft4"; (* TODO *)
+1579c1587
 < End code.
 \ No newline at end of file
 ---

@@ -315,6 +315,107 @@ Ltac solve_ensure_evars_instantiated ::=
   simpl;
   repeat solve_ensure_evars_instantiated_step.
 
+(** Find inheritances *)
+Ltac get_Σ :=
+  let tgs := constr:(_ : typeGS _) in
+  match type of tgs with
+  | typeGS ?Σ => Σ
+  end.
+Ltac gather_inheritances env :=
+  let Σ := get_Σ in
+  match env with
+  | Enil => constr:([] : list (list lft * iProp Σ))
+  | Esnoc ?env' _ ?p =>
+      let rs := gather_inheritances env' in
+      lazymatch p with
+      | (Inherit ?κs ?P)%I =>
+          constr:((κs, P) :: rs)
+      | _ => constr:(rs)
+      end
+  end.
+Ltac solve_find_inheritances ::=
+  match goal with
+  | H := Envs ?Δi ?Δs _ |- find_inheritances_pure_goal ?ks =>
+      let inheritances := gather_inheritances Δs in
+      let inheritances := constr:(inheritances) in
+      unify ks inheritances;
+      unfold find_inheritances_pure_goal;
+      done
+  end.
+
+(** Find spatial locs *)
+Ltac gather_location_list env :=
+  match env with
+  | Enil => uconstr:([])
+  | Esnoc ?env' _ ?p =>
+      let rs := gather_location_list env' in
+      lazymatch p with
+      | (?l ◁ₗ[?π, Owned] ?r @ ?lty)%I =>
+          uconstr:(l :: rs)
+      | _ => uconstr:(rs)
+      end
+  end.
+Ltac solve_find_spatial_locs ::=
+  match goal with
+  | H := Envs ?Δi ?Δs _ |- find_spatial_locs_pure_goal ?ks =>
+      let locs := gather_location_list Δs in
+      let locs := constr:(locs) in
+      unify ks locs;
+      unfold find_spatial_locs_pure_goal;
+      done
+  end.
+
+(** Discover which local lifetimes are dying implied by another local lifetime dying (due to inclusion / aliases) *)
+Ltac check_list_elem_of_lctx κ κs cont :=
+  lazymatch κs with
+  | [] =>
+      cont constr:(false)
+  | ?κ1 :: ?κs =>
+      first [unify κ κ1; cont constr:(true) | check_list_elem_of_lctx κ κs cont ]
+  end.
+Ltac find_dying_lifetimes L κ cont :=
+  match L with
+  | [] => cont constr:([] : list lft)
+  | (?κ1 ≡ₗ ?κs2) :: ?L =>
+      find_dying_lifetimes L κ ltac:(fun dying =>
+      once check_list_elem_of_lctx κ κs2 ltac:(fun el =>
+        match el with
+        | true =>
+            cont constr:(κ1 :: dying)
+        | false =>
+            cont constr:(dying)
+        end
+      ))
+  | (?κ1 ⊑ₗ{_} ?κs2) :: ?L =>
+      find_dying_lifetimes L κ ltac:(fun dying =>
+      once check_list_elem_of_lctx κ κs2 ltac:(fun el =>
+        match el with
+        | true =>
+            cont constr:(κ1 :: dying)
+        | false =>
+            cont constr:(dying)
+        end
+      ))
+  end.
+
+Ltac solve_find_implied_dying_lifetimes ::=
+  match goal with
+  | |- find_implied_dying_lifetimes_pure_goal ?L ?κ ?ks =>
+      find_dying_lifetimes L κ ltac:(fun res =>
+      let res := constr:(res) in
+      let res := eval simpl in res in
+      unify ks res;
+      unfold find_implied_dying_lifetimes_pure_goal; done)
+  end.
+
+(** Check if an element is contained in a list *)
+Ltac solve_check_list_elem_of ::=
+  match goal with
+  | |- check_list_elem_of_pure_goal ?x ?xs ?b =>
+      unfold check_list_elem_of_pure_goal;
+      first [unify b true; simpl; solve [simple_list_elem_solver] | unify b false; simpl; exact I]
+  end.
+
 (** ** lifetime inclusion solver *)
 (* Due to the structure of local inclusions (unique LHS), local inclusions are fairly easy to handle in the solver. *)
 (* External inclusions are harder, as they are less structured.
@@ -628,17 +729,6 @@ Ltac list_find_tac_app cont l :=
   end.
 
 
-(* Very simple list containment solver, tailored for the goals we usually get around external lifetime contexts. *)
-Ltac elctx_list_elem_solver :=
-  repeat lazymatch goal with
-  | |- ?a ∈ ?a :: ?L =>
-      apply elem_of_cons; by left
-  | |- ?a ∈ _ :: ?L =>
-      apply elem_of_cons; right
-  | |- ?a ∈ _ ++ ?L =>
-      apply elem_of_app; right
-  end.
-
 (* TODO: what about symbolic lifetimes like ty_lfts? *)
 
 (** Basic algorithm: Want to eliminate the RHS to [], so that the inclusion to [static] holds trivially.
@@ -752,7 +842,7 @@ Ltac solve_lft_incl_list_step cont :=
          match el with
          | e1 =>
             notypeclasses refine (tac_lctx_lft_incl_list_expand_ext_choose E L e1 c1 cs κs1 κs2 j _ _ _ _);
-            [elctx_list_elem_solver | reflexivity | simpl; cont]
+            [simple_list_elem_solver | reflexivity | simpl; cont]
          | _ => fail
          end
        in
@@ -793,6 +883,10 @@ Ltac solve_lft_incl_list := repeat solve_lft_incl_list_step idtac.
 Ltac solve_lft_incl_init :=
   match goal with
   | |- lctx_lft_incl ?E ?L ?κ1 ?κ2 =>
+      unfold lft_intersect_list; simpl
+  end;
+  match goal with
+  | |- lctx_lft_incl ?E ?L ?κ1 ?κ2 =>
       first [unify κ1 κ2; refine (lctx_lft_incl_refl E L κ1) |
             refine (tac_lctx_lft_incl_init_list E L κ1 κ2 _)
             ]
@@ -801,6 +895,17 @@ Ltac solve_lft_incl :=
   solve_lft_incl_init;
   solve_lft_incl_list.
 
+
+Ltac solve_check_lctx_lft_incl_goal ::=
+  match goal with
+  | |- check_lctx_lft_incl_pure_goal ?E ?L ?κ1 ?κ2 ?b =>
+      unfold check_lctx_lft_incl_pure_goal;
+      first [
+        unify b true; simpl;
+        solve [solve_lft_incl]
+      | unify b false;
+        exact I]
+  end.
 
 (** lifetime alive solver *)
 (*
@@ -1131,7 +1236,7 @@ Ltac solve_lft_alive_step :=
   (* Try a candidate for external lifetime expansion *)
   | |- lctx_lft_alive_list_expand_ext (?c1 :: ?cs) ?E ?L (?κ :: ?κs) ∨ _ =>
       notypeclasses refine (tac_lctx_lft_alive_list_expand_ext_choose E L c1 cs κ κs _ _ _);
-      [elctx_list_elem_solver | ]
+      [simple_list_elem_solver | ]
 
   (* The expansion candidates are exhausted *)
   | |- lctx_lft_alive_list_expand_ext [] ?E ?L ?κs1 ∨ _ =>
@@ -2777,6 +2882,7 @@ Ltac function_subtype_solve_trait :=
   lazymatch goal with
   | |- FunctionSubtype ?a ?b =>
       is_evar b;
+      unfold a;
       rewrite /FunctionSubtype;
 
       (* we lift out all the generics *)

@@ -156,8 +156,11 @@ impl<'def> Spec<'def, InnerSpec<'def>> {
     /// Get all Coq binders for the Coq trait incl definition.
     #[must_use]
     pub(crate) fn get_all_trait_req_coq_params(&self) -> coq::binder::BinderList {
+        let mut params = self.early_coq_params.clone();
+
         let typarams = self.generics.get_all_ty_params_with_assocs();
-        let mut params = typarams.get_coq_ty_params();
+        params.append(typarams.get_coq_ty_params().0);
+        params.append(self.late_coq_params.0.clone());
 
         // finally, the trait spec parameters
         let trait_params = self.generics.get_all_trait_parameters(IncludeSelfReq::AttrsSpec);

@@ -13,7 +13,7 @@ Section resolve_ghost.
     find_observation (place_rfn rt * gname)%type γ FindObsModeDirect (λ or,
         match or with
         | None => ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
-        | Some r => T L #r True true
+        | Some r => T L r True true
         end)
     ⊢ resolve_ghost π E L rm lb l (MutLtype lt κ) (Owned) (PlaceGhost γ) T.
   Proof.
@@ -22,11 +22,10 @@ Section resolve_ghost.
     iMod ("HT" with "[//]") as "HT". iDestruct "HT" as "[(%r & Hobs & HT) | (-> & HT)]".
     - rewrite ltype_own_mut_ref_unfold /mut_ltype_own.
       iDestruct "Hb" as "(%ly & %Hst & %Hly & ? & %γ0 & %r'& Hrfn & ?)".
-      simpl.
-      iPoseProof (gvar_pobs_agree_2 with "Hrfn Hobs") as "%Heq". subst r.
+      iPoseProof (place_rfn_interp_owned_find_observation with "Hrfn Hobs") as "Hrfn".
       iModIntro. iExists _, _, _, _. iFrame. iApply maybe_logical_step_intro.
       iL. rewrite ltype_own_mut_ref_unfold /mut_ltype_own.
-      iExists _. iFrame. do 2 iR. done.
+      iExists _. iFrame. done.
     - iExists _, _, _, _. iFrame. iApply maybe_logical_step_intro. by iFrame.
   Qed.
   Definition resolve_ghost_mut_Owned_inst := [instance @resolve_ghost_mut_Owned].
@@ -36,7 +35,7 @@ Section resolve_ghost.
     find_observation (place_rfn rt * gname)%type γ FindObsModeDirect (λ or,
         match or with
         | None => ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
-        | Some r => T L #r True true
+        | Some r => T L r True true
         end)
     ⊢ resolve_ghost π E L rm lb l (MutLtype lt κ) (Uniq κ' γ') (PlaceGhost γ) T.
   Proof.
@@ -45,8 +44,7 @@ Section resolve_ghost.
     iMod ("HT" with "[//]") as "HT". iDestruct "HT" as "[(%r & Hobs & HT) | (-> & HT)]".
     - rewrite ltype_own_mut_ref_unfold /mut_ltype_own.
       iDestruct "Hb" as "(%ly & %Hst & %Hly & ? & ? & Hrfn & ?)".
-      simpl.
-      iPoseProof (Rel2_use_pobs with "Hobs Hrfn") as "(%r2 & Hobs & ->)".
+      iPoseProof (place_rfn_interp_mut_find_observation with "Hrfn Hobs") as "Hrfn".
       iModIntro. iExists _, _, _,_. iFrame. iApply maybe_logical_step_intro.
       iL. rewrite ltype_own_mut_ref_unfold /mut_ltype_own.
       iExists _. iFrame. done.
@@ -59,7 +57,7 @@ Section resolve_ghost.
     find_observation (place_rfn rt * gname)%type γ FindObsModeDirect (λ or,
         match or with
         | None => ⌜rm = ResolveTry⌝ ∗ T L (PlaceGhost γ) True false
-        | Some r => T L #r True true
+        | Some r => T L r True true
         end)
     ⊢ resolve_ghost π E L rm lb l (MutLtype lt κ) (Shared κ') (PlaceGhost γ) T.
   Proof.
@@ -68,11 +66,10 @@ Section resolve_ghost.
     iMod ("HT" with "[//]") as "HT". iDestruct "HT" as "[(%r & Hobs & HT) | (-> & HT)]".
     - rewrite ltype_own_mut_ref_unfold /mut_ltype_own.
       iDestruct "Hb" as "(%ly & %Hst & %Hly & ? & %γ0 & %r'& Hrfn & ?)".
-      simpl.
-      iPoseProof (gvar_pobs_agree_2 with "Hrfn Hobs") as "%Heq". subst r.
+      iPoseProof (place_rfn_interp_shared_find_observation with "Hrfn Hobs") as "Hrfn".
       iModIntro. iExists _, _, _, _. iFrame. iApply maybe_logical_step_intro.
       iL. rewrite ltype_own_mut_ref_unfold /mut_ltype_own.
-      iExists _. iFrame. do 2 iR. by iExists _.
+      iExists _. iFrame. done.
     - iExists _, _, _, _. iFrame. iApply maybe_logical_step_intro. by iFrame.
   Qed.
   Definition resolve_ghost_mut_shared_inst := [instance @resolve_ghost_mut_shared].

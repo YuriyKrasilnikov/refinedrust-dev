@@ -1110,12 +1110,12 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         // get this from Info
         let mut attrs = BTreeMap::new();
         if kind == ty::ClosureKind::FnOnce {
+            attrs.insert("Params".to_owned(), specs::traits::SpecAttrInst::Term(info.params_encoded.clone()));
             attrs.insert("Pre".to_owned(), specs::traits::SpecAttrInst::Term(info.pre_encoded.clone()));
             attrs.insert("Post".to_owned(), specs::traits::SpecAttrInst::Term(info.post_encoded.clone()));
-        } else if kind == ty::ClosureKind::FnMut {
             attrs.insert(
                 "PostMut".to_owned(),
-                specs::traits::SpecAttrInst::Term(info.post_mut_encoded.clone().unwrap()),
+                specs::traits::SpecAttrInst::Term(info.post_mut_encoded.clone()),
             );
         }
 

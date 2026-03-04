@@ -1,6 +1,6 @@
 From refinedrust Require Export type ltypes.
 From refinedrust Require Import uninit int int_rules.
-From refinedrust Require Import struct.def struct.subtype.
+From refinedrust Require Import programs struct.def struct.subtype.
 From refinedrust.enum Require Import def.
 From refinedrust Require Import options.
 
@@ -169,19 +169,39 @@ Section unfold.
     (*- iApply enum_unfold_1_shared.*)
     (*- iApply enum_unfold_1_uniq.*)
   Abort.
+*)
 
+  (* NOTE: Probably this will require PlaceIn, in order to know which variant to unfold to.
   Lemma enum_unfold_1 {rt : Type} (en : enum rt) k r :
-    ⊢ ltype_incl k (#r) (#r) (◁ (enum_t en))%I (EnumLtype en (enum_tag' en r) (◁ enum_tag_type' en (enum_tag' en r))).
+    enum_tag_ty_inj en tag = Some sem →
+    ⊢ ltype_incl k r r (◁ enum_t en)%I (EnumLtype en tag (◁ sem.(enum_tag_sem_ty)) re).
   Proof.
     iSplitR; first done. iModIntro. iSplit.
     (*+ iApply enum_unfold_1'.*)
     (*+ simp_ltypes. by iApply enum_unfold_1'.*)
   Abort.
-   *)
+  *)
 
-
-
-  (* TODO *)
+  Lemma enum_unfold_2 {rt} (en : enum rt) sem tag re k r :
+    enum_tag_ty_inj en tag = Some sem →
+    ⊢ ltype_incl k r r (EnumLtype en tag (◁ sem.(enum_tag_sem_ty)) re) (◁ enum_t en)%I.
+  Proof.
+  Admitted.
 End unfold.
 
+Section cast.
+  Context `{!typeGS Σ}.
 
+  Import EqNotations.
+  Lemma cast_ltype_enum {rt} E L (en : enum rt) variant {rte} (lte : ltype rte) re T :
+    cast_ltype_to_type E L lte (λ tye,
+      ∃ sem,
+        ⌜enum_tag_ty_inj en variant = Some sem⌝ ∗
+        ∃ (Heq : sem.(enum_tag_sem_rt) = rte),
+        mut_eqtype E L (rew <- Heq in tye) (sem.(enum_tag_sem_ty)) (T (enum_t en)))
+    ⊢ cast_ltype_to_type E L (EnumLtype en variant lte re) T.
+  Proof.
+  Admitted.
+  Definition cast_ltype_enum_inst := [instance @cast_ltype_enum].
+  Global Existing Instance cast_ltype_enum_inst.
+End cast.

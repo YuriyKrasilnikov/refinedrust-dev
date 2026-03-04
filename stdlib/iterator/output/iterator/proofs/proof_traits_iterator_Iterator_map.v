@@ -12,7 +12,8 @@ Lemma traits_iterator_Iterator_map_proof (π : thread_id) :
 Proof.
   traits_iterator_Iterator_map_prelude.
 
-  repeat liRStep; liShow.
+  rep <- 1 liRStep; liShow.
+  iEval (rewrite /traits_iterator_Iterator_Inv/=).
   unfold MapInv.
   repeat liRStep; liShow.
   liInst Hevar_Inv Inv.
@@ -20,9 +21,15 @@ Proof.
   iFrame.
   rep liRStep. liShow.
   iApply prove_with_subtype_default.
-  iSplitR. { unfold li_sealed. done. }
+  iSplitR. { unfold li_sealed. 
+    setoid_rewrite bi.sep_True.
+    2-3: apply _.
+    done. }
   iApply prove_with_subtype_default.
-  iSplitR. { unfold li_sealed. done. }
+  iSplitR. { unfold li_sealed. 
+    setoid_rewrite bi.sep_True.
+    2-3: apply _.
+    done. }
   rep liRStep.
 
   all: print_remaining_goal.

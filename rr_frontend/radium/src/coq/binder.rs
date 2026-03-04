@@ -74,7 +74,7 @@ impl Binder {
     }
 
     #[must_use]
-    pub(crate) fn get_name(&self) -> String {
+    pub fn get_name(&self) -> String {
         match self {
             Self::Default(name, _) => name.clone().unwrap_or_else(|| "_".to_owned()),
             Self::Implicit(i) => i.name.clone().unwrap_or_else(|| "_".to_owned()),

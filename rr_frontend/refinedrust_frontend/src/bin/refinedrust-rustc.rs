@@ -112,6 +112,8 @@ fn main() {
         }
     }
 
+    rrconfig::register_stdlib_paths();
+
     debug!("rustc arguments: {:?}", rustc_args);
 
     driver::catch_with_exit_code(move || {

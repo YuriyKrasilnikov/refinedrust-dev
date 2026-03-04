@@ -3,4 +3,4 @@
 (package refinedrust-stdlib)
 (name rrstd.iterator.theories)
 (generate_project_file)
-(theories stdpp iris iris_contrib Ltac2 Equations lrust caesium lithium refinedrust Stdlib))
+(theories stdpp iris iris_contrib Ltac2 Equations lrust caesium lithium refinedrust Stdlib rrstd.closures.closures.generated))

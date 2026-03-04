@@ -89,7 +89,7 @@ pub struct InstanceSpec<'def> {
 #[derive(Constructor, Clone, Debug)]
 pub struct SpecAttrsDecl {
     /// a map of attributes and their types
-    attrs: Option<BTreeMap<String, coq::term::Type>>,
+    attrs: Option<Vec<(String, coq::term::Type)>>,
     /// optionally, a semantic interpretation (like `Copy`) of the trait in terms of semantic types
     semantic_interp: Option<String>,
 }
@@ -690,6 +690,7 @@ fn make_trait_instance<'def>(
     is_base_spec: bool,
     spec_record_name: &str,
     mut extra_context_items: coq::binder::BinderList,
+    extra_let_binders: Vec<(String, coq::term::Term)>,
 ) -> Result<coq::Document, fmt::Error> {
     let mut document = coq::Document::default();
 
@@ -841,17 +842,8 @@ fn make_trait_instance<'def>(
         let record_body = coq::term::RecordBody { items: components };
         let mut term = coq::term::Term::RecordBody(record_body);
 
-        // NOTE: HACK because we don't compute the correct direct scope for default fns for now:
-        // dependencies on other surrounding params/assocs are not instantiated correctly.
-        // Hence we manually introduce the binders necessary here.
-        let self_assoc_inst = spec.methods.iter().next().unwrap().1.self_assoc_types_inst(assoc_types);
-        for (name, inst) in of_trait.assoc_tys.iter().zip(self_assoc_inst) {
-            let assoc_param = LiteralTyParam::new(name);
-            term = coq::term::Term::LetIn(
-                assoc_param.refinement_type(),
-                Box::new(coq::term::Term::Type(Box::new(inst.get_rfn_type()))),
-                Box::new(term),
-            );
+        for (name, bind_term) in extra_let_binders {
+            term = coq::term::Term::LetIn(name, Box::new(bind_term), Box::new(term));
         }
         term
     };
@@ -1273,6 +1265,7 @@ impl fmt::Display for SpecDecl<'_> {
             true,
             &self.lit.base_spec(),
             coq::binder::BinderList::empty(),
+            vec![],
         )?;
         write!(f, "{base_decls}\n")?;
 
@@ -1498,7 +1491,10 @@ impl ImplSpec<'_> {
             coq::term::Term::Literal(of_trait.spec_record_attrs_constructor_name())
         } else {
             let mut components = Vec::new();
-            for (attr_name, inst) in &attrs.attrs {
+            // Important: do this in the same order as at declaration site.
+
+            for attr_name in &self.trait_ref.of_trait.declared_attrs {
+                let inst = &attrs.attrs[attr_name];
                 // create an item for every attr
                 let record_item_name = of_trait.make_spec_attr_name(attr_name);
 
@@ -1688,6 +1684,20 @@ impl fmt::Display for ImplSpec<'_> {
             // Instantiate with the parameter and associated types
             let params_inst = self.trait_ref.get_ordered_params_inst();
 
+            // NOTE: HACK because we don't compute the correct direct scope for default fns for now:
+            // dependencies on other surrounding params/assocs are not instantiated correctly.
+            // Hence we manually introduce the binders necessary here as let binders.
+            let mut extra_let_binders = Vec::new();
+            for (name, inst) in
+                self.trait_ref.of_trait.assoc_tys.iter().zip(self.trait_ref.assoc_types_inst.iter())
+            {
+                let assoc_param = LiteralTyParam::new(name);
+                extra_let_binders.push((
+                    assoc_param.refinement_type(),
+                    coq::term::Term::Type(Box::new(inst.get_rfn_type())),
+                ));
+            }
+
             // This relies on all the impl's functions already having been printed
             let mut instance = make_trait_instance(
                 &self.trait_ref.generics,
@@ -1698,6 +1708,7 @@ impl fmt::Display for ImplSpec<'_> {
                 false,
                 &self.trait_ref.impl_ref.spec_record(),
                 self.extra_context_items.clone(),
+                extra_let_binders,
             )
             .unwrap();
 

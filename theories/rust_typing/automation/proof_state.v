@@ -58,13 +58,28 @@ Arguments RETURN_MARKER _ _ /.
 (* Function name marker *)
 Definition FUNCTION_NAME (s : string) := s.
 Arguments FUNCTION_NAME : simpl never.
-Notation "'HIDDEN'" := (FUNCTION_NAME _) (only printing).
+Notation "'HIDDEN'" := (FUNCTION_NAME _) (only printing) : rr_hidden.
 
 (* Function ptr type assignments *)
-Notation "'HIDDEN_FUNCTION_PTR_T' v" := (ty_own_val (function_ptr _ _) _ _ _ v) (only printing, at level 100).
+Notation "'HIDDEN_FUNCTION_PTR_T' v" := (ty_own_val (function_ptr _ _) _ _ _ v) (only printing, at level 100) : rr_hidden.
+
+Definition function_ty_wrapper {T : Type} (t : T) := t.
+Notation "'HIDDEN_FUNCTION_TY'" := (function_ty_wrapper _) (only printing, at level 100) : rr_hidden.
+
+Ltac set_function_types :=
+  repeat match goal with
+  | |- context [function_ptr _ (_, ?ty)] =>
+      match ty with
+      | λ _, _ =>
+        let H := fresh in
+        set (H := ty);
+        change ty with (function_ty_wrapper ty) in H;
+        unfold spec_instantiate_lft_fst, spec_instantiate_typaram_fst, spec_instantiated in H
+      end
+  end.
 
 (* Trait incl assumptions *)
-Notation "'HIDDEN_TRAIT_INCL'" := (trait_incl_marker _) (only printing, at level 100).
+Notation "'HIDDEN_TRAIT_INCL'" := (trait_incl_marker _) (only printing, at level 100) : rr_hidden.
 
 (** marker for tactics that have already exploited a particular fact *)
 Definition NO_ENRICH {A} (a : A) := a.

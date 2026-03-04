@@ -32,6 +32,12 @@ Section type.
       | Some r' => ∃ r'', place_rfn_interp_shared r' r'' ∗ T.(ty_shr) κ π r'' m l
       | None => (uninit (T.(ty_syn_type) m)).(ty_shr) κ π () m l
       end%I;
+    _ty_ghost_drop π r :=
+      match r with
+      | None => True
+      | Some r =>
+          ∃ r', place_rfn_interp_owned r r' ∗ ty_ghost_drop T π r'
+      end%I;
     ty_sidecond := True;
     _ty_lfts := ty_lfts T;
     _ty_wf_E := ty_wf_E T;
@@ -97,6 +103,17 @@ Section type.
     iExists _. iFrame. by iApply ty_shr_mono.
   Qed.
   Next Obligation.
+    iIntros (rt ty π r m v F ?) "Hv".
+    rewrite /ty_own_val/=.
+    destruct r as [r' | ]; first last.
+    { by iApply logical_step_intro. }
+    iDestruct "Hv" as "(%r'' & Hinterp & Hv)".
+    iApply (logical_step_wand with "[Hv]").
+    { iApply (ty_own_ghost_drop with "Hv"); done. }
+    iIntros "Ha".
+    iExists _. iFrame.
+  Qed.
+  Next Obligation.
     iIntros (rt T ot mt st π r m v (ly & Hst & <- & Hmt)) "Ha".
     destruct mt; [done | | ].
     - (* copy *)
@@ -126,25 +143,6 @@ Section type.
     - apply Hsz.
     - apply Hsz.
   Qed.
-
-  Global Program Instance maybe_uninit_ghost_drop {rt} (ty : type rt) `{Hg : !TyGhostDrop ty}: TyGhostDrop (maybe_uninit ty) :=
-    mk_ty_ghost_drop _ (λ π r,
-      match r with
-      | None => True
-      | Some r =>
-          ∃ r', place_rfn_interp_owned r r' ∗ ty_ghost_drop_for ty Hg π r'
-      end)%I _.
-  Next Obligation.
-    iIntros (rt ty Hg π r m v F ?) "Hv".
-    rewrite /ty_own_val/=.
-    destruct r as [r' | ]; first last.
-    { by iApply logical_step_intro. }
-    iDestruct "Hv" as "(%r'' & Hinterp & Hv)".
-    iApply (logical_step_wand with "[Hv]").
-    { iApply (ty_own_ghost_drop with "Hv"); done. }
-    iIntros "Ha".
-    iExists _. iFrame.
-  Qed.
 End type.
 
 Section ne.
@@ -168,6 +166,7 @@ Section ne.
     - done.
     - solve_type_proper.
     - solve_type_proper.
+    - rewrite ty_ghost_drop_unfold. solve_type_proper.
   Qed.
 End ne.
 

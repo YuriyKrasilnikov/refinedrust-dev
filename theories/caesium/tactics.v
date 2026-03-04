@@ -42,7 +42,6 @@ Inductive expr :=
 | StructInit (sls : struct_layout_spec) (fs : list (string * expr))
 | EnumInit (els : enum_layout_spec) (variant : var_name) (ty : rust_enum_def) (e : expr)
 | Borrow (m : mutability) (κn : string) (ty : option rust_type) (e : expr)
-| Box (st : syn_type)
 (* for opaque expressions*)
 | Expr (e : lang.expr)
 .
@@ -83,11 +82,10 @@ Lemma expr_ind (P : expr → Prop) :
   (∀ (ly : struct_layout_spec) (fs : list (string * expr)), Forall P fs.*2 → P (StructInit ly fs)) →
   (∀ (els : enum_layout_spec) (variant : var_name) (ty : rust_enum_def) (e : expr), P e → P (EnumInit els variant ty e)) →
   (∀ (m : mutability) (ty : option rust_type) (κn : string) (e : expr), P e → P (Borrow m κn ty e)) →
-  (∀ (st : syn_type), P (Box st)) →
   (∀ (e : lang.expr), P (Expr e)) → ∀ (e : expr), P e.
 Proof.
   move => *. generalize dependent P => P. match goal with | e : expr |- _ => revert e end.
-  fix FIX 1. move => [ ^e] => ??????????? Hcall Hconcat ?????????????????? Hstruct Henum Hbor ??.
+  fix FIX 1. move => [ ^e] => ??????????? Hcall Hconcat ?????????????????? Hstruct Henum Hbor ?.
   12: {
     apply Hcall; [ |apply Forall_true => ?]; by apply: FIX.
   }
@@ -136,7 +134,6 @@ Fixpoint to_expr `{!LayoutAlg} (e : expr) : lang.expr :=
   | OffsetOf s m => notation.OffsetOf s m
   | OffsetOfUnion ul m => notation.OffsetOfUnion ul m
   | Borrow m κn ty e => notation.Ref m κn ty (to_expr e)
-  | Box st => notation.Box st
   | Expr e => e
   end.
 
@@ -217,7 +214,6 @@ Ltac of_expr e :=
     let e_size := of_expr e_size in
     let e_align := of_expr e_align in
     constr:(Alloc e_size e_align)
-  | notation.Box ?st => constr:(Box st)
   | lang.SkipE ?e =>
     let e := of_expr e in constr:(SkipE e)
   | lang.StuckE => constr:(StuckE e)
@@ -360,7 +356,7 @@ Fixpoint find_expr_fill (e : expr) (bind_val : bool) : option (list ectx_item * 
     if find_expr_fill f bind_val is Some (Ks, e') then
       Some (Ks ++ [CallLCtx eκs etys args], e') else
       (* TODO: handle arguments? *) None
-  | Concat _ | OffsetOf _ _ | OffsetOfUnion _ _ | LogicalAnd _ _ _ _ _ | LogicalOr _ _ _ _ _ | Box _ => None
+  | Concat _ | OffsetOf _ _ | OffsetOfUnion _ _ | LogicalAnd _ _ _ _ _ | LogicalOr _ _ _ _ _ => None
   | IfE ot e1 e2 e3 =>
     if find_expr_fill e1 bind_val is Some (Ks, e') then
       Some (Ks ++ [IfECtx ot e2 e3], e') else Some ([], e)

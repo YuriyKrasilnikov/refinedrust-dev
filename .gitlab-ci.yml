@@ -174,9 +174,9 @@ nix-shell:
    - source "$HOME/.cargo/env"
    - ci/buildjob
 
-  cache:
-    key: "$CI_JOB_NAME"
-    paths: [ "_opam/" ]
+  #cache:
+    #key: "$CI_JOB_NAME"
+    #paths: [ "_opam/" ]
 
 build-opam-rocq.9.1.0:
   <<: *forks_only

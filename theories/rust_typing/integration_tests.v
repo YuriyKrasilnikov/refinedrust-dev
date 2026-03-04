@@ -172,6 +172,24 @@ Proof.
   rep liRStep.
 Qed.
 
+(** Ghost drop unfolding *)
+Lemma test_ghost_drop `{!typeGS Σ} π :
+  ⊢ ty_ghost_drop (int I32) π 5 -∗ True.
+Proof.
+  iStartProof.
+  liRStep.
+  liRStep.
+  liRStep.
+  done.
+Abort.
+Lemma test_ghost_drop `{!typeGS Σ} {rt} (ty : type rt) r π :
+  ⊢ ty_ghost_drop ty π r -∗ True.
+Proof.
+  iStartProof.
+  liRStep.
+  done.
+Abort.
+
 Section test.
   Context `{!typeGS Σ}.
 
@@ -181,6 +199,9 @@ Section test.
   Next Obligation. ex_t_solve_persistent. Qed.
   Next Obligation. ex_t_solve_timeless. Qed.
   Local Definition Pty := (∃; Pdef, int I32)%I.
+
+  Local Lemma Pty_copy : Copyable Pty.
+  Proof. apply _. Qed.
 
   Local Definition P_b := λ (π : thread_id) (x : Z) (y : Z), (∃ (z : Z) (l : loc), ⌜x = (y + z)%Z⌝ ∗ ⌜(0 < x)%Z⌝ ∗ guarded true (l ◁ₗ[π, Owned] #42%Z @ (◁ int I32)))%I : iProp Σ.
   Local Definition S_b := λ (π : thread_id) (κ : lft) (x : Z) (y : Z), (∃ (z : Z) (l : loc), ⌜x = (y + z)%Z⌝ ∗ ⌜(0 < x)%Z⌝ ∗ guarded false (l ◁ₗ[π, Shared κ] #42%Z @ (◁ int I32)))%I : iProp Σ.

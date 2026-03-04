@@ -76,7 +76,7 @@ Section deinit.
     ltype_uniq_extractable lt = Some κm →
     syn_type_compat PtrSynType st →
     (l ◁ₗ[π, Owned] #(r, γ) @ (MutLtype lt κ)) ={F}=∗
-    l ◁ₗ[π, Owned] #() @ (◁ uninit st) ∗ MaybeInherit κm InheritGhost (place_rfn_interp_mut r γ).
+    l ◁ₗ[π, Owned] #() @ (◁ uninit st) ∗ MaybeInherit κm (place_rfn_interp_mut r γ).
   Proof.
     iIntros (? Hdeinit Hcompat).
     iIntros "Hl".
@@ -107,7 +107,7 @@ Section deinit.
     ltype_uniq_extractable lt = Some κm →
     syn_type_compat PtrSynType st →
     (l ◁ₗ[π, Owned] #(r, γ) @ (MutLtype lt κ)) ={F}=∗
-    l ◁ₗ[π, Owned] #() @ (◁ uninit st) ∗ MaybeInherit κm InheritGhost (place_rfn_interp_mut r γ).
+    l ◁ₗ[π, Owned] #() @ (◁ uninit st) ∗ MaybeInherit κm (place_rfn_interp_mut r γ).
   Proof.
     iIntros (? Hdeinit Hcompat).
     iIntros "Hl".
@@ -168,7 +168,7 @@ Section extract.
     | None =>
         T L True%I _ (MutLtype lt κ) (#(r, γ))
     | Some κm =>
-        T L (MaybeInherit κm InheritGhost (place_rfn_interp_mut_extracted r γ)) _ (◁ uninit PtrSynType)%I (#())
+        T L (MaybeInherit κm (place_rfn_interp_mut_extracted r γ)) _ (◁ uninit PtrSynType)%I (#())
     end
     ⊢ stratify_ltype_post_hook π E L (StratifyExtractOp κ) l (MutLtype lt κ) (#(r, γ)) (Owned) T.
   Proof.
@@ -196,7 +196,7 @@ Section rule.
     | None => False
     | Some κm =>
         [{ exhale (⌜syn_type_compat PtrSynType st⌝);
-        return T L (MaybeInherit κm InheritGhost (place_rfn_interp_mut_extracted r γ)) }]
+        return T L (MaybeInherit κm (place_rfn_interp_mut_extracted r γ)) }]
     end.
   Proof.
     iIntros "HT".

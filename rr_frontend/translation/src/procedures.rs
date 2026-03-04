@@ -148,10 +148,10 @@ pub(crate) struct ClosureImplInfo<'tcx, 'def> {
     pub(crate) tl_output_ty: specs::Type<'def>,
 
     // the encoded pre and postconditions
+    pub(crate) params_encoded: coq::term::Term,
     pub(crate) pre_encoded: coq::term::Term,
     pub(crate) post_encoded: coq::term::Term,
-    // only if this closure is FnMut or Fn
-    pub(crate) post_mut_encoded: Option<coq::term::Term>,
+    pub(crate) post_mut_encoded: coq::term::Term,
 }
 
 pub(crate) struct ClosureInfo<'tcx, 'rcx> {

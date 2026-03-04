@@ -1511,13 +1511,14 @@ Program Fixpoint lnth_acc {A} (xl: list A) (i: nat) (Hi : i < length xl) : A :=
   | x :: xl' => match i with 0 => x | S j => lnth_acc xl' j _  end
   end.
 Next Obligation.
-  intros ???? <-. simpl in *. lia.
-Qed.
+  intros ???? <-. simpl in *.
+  by apply Nat.nlt_0_r in Hi.
+Defined.
 Next Obligation.
   intros ?? i Hi ? ? <- j <-.
   simpl in *.
-  lia.
-Qed.
+  by apply Nat.succ_lt_mono.
+Defined.
 
 Program Fixpoint pnth_acc {A} {F : A → Type} Xl {struct Xl} : plist F Xl → ∀ i (Hi : i < length Xl), F (lnth_acc Xl i Hi) :=
   match Xl as Xl return plist F Xl → ∀ i (Hi : i < length Xl), F (lnth_acc Xl i Hi) with
@@ -1528,20 +1529,21 @@ Program Fixpoint pnth_acc {A} {F : A → Type} Xl {struct Xl} : plist F Xl → �
         match i with 0 => x | S j => pnth_acc Xl' xl' j _ end
   end.
 Next Obligation.
-  simpl. intros. lia.
-Qed.
+  simpl. intros.
+  by specialize (Nat.nlt_0_r _ Hi).
+Defined.
 Next Obligation.
   intros. subst.
   simpl. done.
-Qed.
+Defined.
 Next Obligation.
-  intros. subst. simpl in *. lia.
-Qed.
+  intros. subst. simpl in *.
+  by apply Nat.succ_lt_mono.
+Defined.
 Next Obligation.
   intros. subst. simpl.
   f_equiv.
-  cbn. apply proof_irrel.
-Qed.
+Defined.
 End lnth.
 
 Program Definition pnth_acc' {A} {F : A → Type} Xl (xl : plist F Xl) i (Hi : bool_decide (i < length Xl) = true) :  F (lnth_acc Xl i _) :=
@@ -1550,6 +1552,17 @@ Next Obligation.
   intros.
   apply bool_decide_eq_true_1 in Hi.
   done.
-Qed.
+Defined.
 
-Notation "a '.:' n" := (pnth_acc' _ a n ltac:(reflexivity)) (at level 1, only parsing).
+Notation "a '.:' n" := (pnth_acc' _ a n ltac:(reflexivity)) (at level 1, n constr at next level, only parsing).
+Notation "a '.:' n" := (pnth_acc' _ a n _) (at level 1, n constr at next level, only printing).
+
+Section test.
+  Lemma test1 (x : plist id [Z; nat]) :
+    x.:1 + 2 = x.:1 + 1 + 1.
+  Proof.
+    simpl.
+    destruct x as [? [? []]]; simpl.
+    cbn.
+  Abort.
+End test.

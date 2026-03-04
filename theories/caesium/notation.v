@@ -227,18 +227,10 @@ Definition SkipES := ExprS (SkipE (Val [])).
 Arguments SkipES : simpl never.
 Global Typeclasses Opaque SkipES.
 Definition AnnotStmt (n : nat) {A} (a : A) (s : stmt) := Nat.iter n SkipES s.
-Notation "'annot:' a ; s" := (AnnotStmt 1%nat a s%E)
-  (at level 80, s at level 200, format "'annot:'  a ;  s") : expr_scope.
+Notation "'annot{' n '}' ':' a ; s" := (AnnotStmt n a s%E)
+  (at level 80, s at level 200, format "'annot{' n '}' ':'  a ;  s") : expr_scope.
 Arguments AnnotStmt : simpl never.
 Global Typeclasses Opaque AnnotStmt.
-
-(* This uses a syn_type at the surface level so that we have the syn_type annotation still available in the type system *)
-Definition Box `{!LayoutAlg} (st : syn_type) :=
-  let ly := (use_layout_alg' st) in
-  Alloc (Val $ i2v (ly_size ly) USize) (Val $ i2v (ly_align_log ly) USize).
-Notation "'box{' st '}'" := (Box st) (at level 9, format "'box{' st }") : expr_scope.
-Arguments Box : simpl never.
-Global Typeclasses Opaque Box.
 
 Inductive location_info :=
 | LocationInfo (file : string) (line_start column_start line_end column_end : Z).

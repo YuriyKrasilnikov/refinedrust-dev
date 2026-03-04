@@ -1,0 +1,5 @@
+(rocq.theory
+(flags -w -notation-overridden -w -redundant-canonical-projection)
+(package refinedrust-stdlib)
+(name rrstd.vec.theories)
+(theories stdpp iris iris_contrib Ltac2 Equations lrust caesium lithium refinedrust Stdlib))

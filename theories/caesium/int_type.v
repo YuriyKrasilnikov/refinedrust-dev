@@ -115,7 +115,12 @@ Lemma int_elem_of_it_iff z it :
 Proof.
   rewrite /elem_of/int_elem_of_it MinInt_eq MaxInt_eq//.
 Qed.
-
+Global Instance nat_elem_of_it : ElemOf nat int_type := λ z it, (MinInt it ≤ z ≤ MaxInt it)%Z.
+Lemma nat_elem_of_it_iff (n : nat) it :
+  n ∈ it ↔ (min_int it ≤ n ≤ max_int it)%Z.
+Proof.
+  rewrite /elem_of/nat_elem_of_it MinInt_eq MaxInt_eq//.
+Qed.
 
 Definition bool_layout : layout := {| ly_size := 1; ly_align_log := 0 |}.
 Definition it_layout (it : int_type) : layout :=
@@ -149,7 +154,7 @@ Qed.
 
 (*** Lemmas about [int_type] *)
 (* Radium uses 64-bit pointers *)
-Lemma int_elem_of_u64_usize x :
+Lemma int_elem_of_u64_usize (x : Z) :
   x ∈ U64 ↔ x ∈ USize.
 Proof.
   rewrite /elem_of/int_elem_of_it.

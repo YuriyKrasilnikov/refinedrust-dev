@@ -364,8 +364,7 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         // Bind the additional lifetime parameters which are mentioned as part of the instantiation
         // of type parameters and associated types.
         // All of these are turned into quantified lifetimes.
-        let mut next_lft = num_param_regions;
-        for region in regions {
+        for (next_lft, region) in (num_param_regions..).zip(regions) {
             // Use the name the region has inside the function as the binder name, so that the
             // names work out when translating the types below
             let lft_name = self
@@ -379,7 +378,6 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
             // Note: since these are not formal parameters of the function, we do not add them to
             // `fn_inst`.
 
-            next_lft += 1;
             callee_lft_param_inst.push(lft_name);
         }
 

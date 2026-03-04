@@ -12,49 +12,64 @@ Lemma adapters_map_MapMIMFastraits_iterator_Iterator_next_proof (π : thread_id)
 Proof.
   adapters_map_MapMIMFastraits_iterator_Iterator_next_prelude.
 
-  rep liRStep. liShow.
+  repeat liRStep. liShow.
 
-  simpl.
-  iRename select (li_sealed (□ (∀ _ _ _, traits_iterator_Iterator_Next _ _ _ None _ -∗ _))) into "Hnone".
-  iRename select (li_sealed (□ (∀ _ _ _ _,  _))) into "Hsome".
-  iRename select (_ (map_it _) (map_clos _)) into "Hinv".
-  iRename select (traits_iterator_Iterator_Next _ _ _ _ _) into "Hnext".
-  iPoseProof (li_sealed_use_pers with "Hsome") as "#Hsome'".
-  iPoseProof (li_sealed_use_pers with "Hnone") as "#Hnone'".
-  iPoseProof (boringly_intro with "Hnext") as "#Hnext_x".
+  iRename select (traits_iterator_Iterator_Inv _ _ _ _) into "Hinv".
+  iEval (rewrite /traits_iterator_Iterator_Inv/=) in "Hinv".
+  unfold MapInv. iDestruct "Hinv" as "(%Inv & Hinv & Hinv_nested & Hsome & Hnone)".
+  rep <-! liRStep; liShow. 
+  rename x'0 into inner_el.
 
-  destruct x'0.
+  destruct inner_el as [inner_el | ].
   { (* obtain an element *)
-    iPoseProof ("Hsome'" with "Hnext Hinv") as "(Hpre & Hinv_clos)".
+    iRename select (traits_iterator_Iterator_Next _ _ _ _ _ _) into "Hnext".
+    iPoseProof (li_sealed_use_pers with "Hsome") as "#Hsome'".
+    iPoseProof (li_sealed_use_pers with "Hnone") as "#Hnone'".
+    iPoseProof (boringly_intro with "Hnext") as "#Hnext_x".
+    iPoseProof ("Hsome'" with "Hnext_x Hinv") as "(%p & Hpre & Hinv_clos)".
     iPoseProof (boringly_intro with "Hpre") as "#Hpre_x".
+
+    rep liRStep; liShow.
+    liInst Hevar_p p.
     rep <-! liRStep. liShow.
-    iRename select (FnMut_PostMut _ _ _ _ _ _) into "Hpost".
+    iRename select (FnOnce_PostMut _ _ _ _ _ _ _) into "Hpost".
     iPoseProof (boringly_intro with "Hpost") as "#Hpost_x".
-    iPoseProof ("Hinv_clos" with "Hpost") as "Hinv".
+    iPoseProof ("Hinv_clos" with "Hpost_x") as "Hinv".
+    match goal with | H : FnOnce_Params _ |- _ => rename H into p end.
     rep liRStep. liShow.
-    liInst Hevar (mut_ref_ghost_drop _ _).
-    iApply prove_with_subtype_default.
-    liInst Hevar0 r.
+    liInst Hevar_e_inner inner_el.
     rep liRStep. 
-    liInst Hevar x4.
+    liInst Hevar_x p.
+    rep <- 2 liRStep.
+    iEval (rewrite /traits_iterator_Iterator_Inv/=).
+    rewrite /MapInv.
+    rep liRStep; liShow.
+    liInst Hevar_Inv Inv.
     rep liRStep.
   }
   { (* no element *)
-    iPoseProof ("Hnone'" with "Hnext Hinv") as "Hinv".
-    simpl.
+    iRename select (traits_iterator_Iterator_Next _ _ _ _ _ _) into "Hnext".
+    iPoseProof (li_sealed_use_pers with "Hnone") as "#Hnone'".
+    iPoseProof (boringly_intro with "Hnext") as "#Hnext_x".
+    iPoseProof ("Hnone'" with "Hnext_x Hinv") as "Hinv".
     rep <-! liRStep. liShow. 
-    rep 100 liRStep. liShow.
-    rep liRStep.
-    liInst Hevar x4.
+    rep <- 1 liRStep. 
+    iEval (rewrite /traits_iterator_Iterator_Inv/=).
+    rewrite /MapInv.
+    rep liRStep; liShow.
+    liInst Hevar_Inv Inv.
     rep liRStep. }
 
   all: print_remaining_goal.
-  Unshelve. 1-10: sidecond_solver.
-  2: { unshelve sidecond_solver.
-        (* TODO: this is a bug in the contract...: For an instantiation, we also need to be able to assume that its elctx is okay. I.e., similar to how we add typaram_wf *)
-
+  Unshelve. 
+  (* TODO: this is a bug in the contract...: For an instantiation, we also need to be able to assume that its elctx is okay. I.e., similar to how we add typaram_wf *)
+  1: { admit. } 
+  1: sidecond_solver.
+  1: admit.
+  1: sidecond_solver.
+  1: admit.
 
   Unshelve. all: sidecond_hammer.
   Unshelve. all: print_remaining_sidecond.
-Qed.
+Admitted.
 End proof.

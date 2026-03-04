@@ -80,6 +80,7 @@ struct Config {
     post_generation_hook: Option<String>,
     extra_specs: Option<String>,
     trust_debug: bool,
+    find_stdlib: bool,
 }
 
 impl Default for Config {
@@ -105,6 +106,7 @@ impl Default for Config {
             post_generation_hook: None,
             extra_specs: None,
             trust_debug: false,
+            find_stdlib: true,
         }
     }
 }
@@ -131,10 +133,7 @@ static SETTINGS: LazyLock<RwLock<Config>> = LazyLock::new(|| {
         builder = builder.add_source(config::Environment::with_prefix("RR").ignore_empty(true));
 
         // 4. Fill empty fields with default values
-        let mut config: Config = builder.build().unwrap().try_deserialize().unwrap();
-
-        // 5. Add standard library paths
-        config.lib_load_paths.extend(find_stdlib_paths());
+        let config: Config = builder.build().unwrap().try_deserialize().unwrap();
 
         config
     })
@@ -179,6 +178,14 @@ fn find_stdlib_paths() -> Vec<String> {
     };
 
     vec![ocaml_path]
+}
+
+pub fn register_stdlib_paths() {
+    access_config(|mut c| {
+        if c.find_stdlib {
+            c.lib_load_paths.extend(find_stdlib_paths());
+        }
+    });
 }
 
 fn access_config<'a, T, C: FnOnce(RwLockWriteGuard<'a, Config>) -> T>(callback: C) -> T {
