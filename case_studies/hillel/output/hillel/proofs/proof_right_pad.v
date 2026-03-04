@@ -25,7 +25,6 @@ Proof.
   Unshelve. all: sidecond_hammer.
   (* !start proof(right_pad) *)
   - unfold size_of_array_in_bytes in *. nia.
-  - repeat f_equiv. lia.
   (* !end proof *)
 
   Unshelve. all: print_remaining_sidecond.

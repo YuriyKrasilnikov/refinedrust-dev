@@ -16,7 +16,7 @@ Proof.
   rep liRStep; liShow.
   liInst Hevar_Inv (λ _ '(a, b) (clos : plist _ [_]), let x := clos.:0.cur in ⌜0 ≤ a ≤ 10⌝ ∗ ⌜b = 10⌝ ∗ ⌜(x + (b - a))%Z = 10%Z⌝)%I.
   rep <-! liRStep; liShow.
-  assert (x1 = γ) as -> by shelve_sidecond.
+  assert (r'0 = γ) as -> by shelve_sidecond.
   rep <-! liRStep; liShow.
 
   all: print_remaining_goal.
