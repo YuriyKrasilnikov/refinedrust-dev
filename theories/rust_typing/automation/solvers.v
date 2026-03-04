@@ -2882,6 +2882,7 @@ Ltac function_subtype_solve_trait :=
   lazymatch goal with
   | |- FunctionSubtype ?a ?b =>
       is_evar b;
+      unfold a;
       rewrite /FunctionSubtype;
 
       (* we lift out all the generics *)
