@@ -22,7 +22,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use rr_rustc_interface::borrowck::consumers;
 use rr_rustc_interface::hir;
 use rr_rustc_interface::hir::def_id::{DefId, LocalDefId};
 use rr_rustc_interface::middle::{mir, ty};
@@ -326,17 +325,7 @@ impl<'tcx> Environment<'tcx> {
             return body.clone();
         }
 
-        // SAFETY: This is safe because we are feeding in the same `tcx`
-        // that was used to store the data.
-        let body_with_facts = unsafe { mir_storage::retrieve_mir_body(self.tcx, def_id) };
-        let body_with_facts = body_with_facts.unwrap_or_else(|| {
-            let mut bodies = consumers::get_bodies_with_borrowck_facts(
-                self.tcx,
-                def_id,
-                consumers::ConsumerOptions::PoloniusOutputFacts,
-            );
-            bodies.remove(&def_id).unwrap()
-        });
+        let body_with_facts = mir_storage::retrieve_mir_body(self.tcx, def_id).unwrap();
 
         let body = body_with_facts.body;
         let facts = facts::Borrowck {

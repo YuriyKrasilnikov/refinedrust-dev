@@ -39,9 +39,8 @@ use std::{fs, io, process};
 
 use log::{info, trace, warn};
 use radium::{code, coq, lang, specs};
-use rr_rustc_interface::borrowck::consumers::BodyWithBorrowckFacts;
 use rr_rustc_interface::hir::def_id::{DefId, LocalDefId};
-use rr_rustc_interface::middle::ty;
+use rr_rustc_interface::middle::{queries, ty};
 use rr_rustc_interface::{hir, span};
 use typed_arena::Arena;
 
@@ -2201,16 +2200,6 @@ where
     Ok(())
 }
 
-/// # Safety
-///
-/// See the module level comment in `crate::environment::mir_storage`.
-pub unsafe fn store_mir_body<'tcx>(
-    tcx: ty::TyCtxt<'tcx>,
-    def_id: LocalDefId,
-    body_with_facts: BodyWithBorrowckFacts<'tcx>,
-) {
-    // SAFETY: See the module level comment.
-    unsafe {
-        environment::mir_storage::store_mir_body(tcx, def_id, body_with_facts);
-    }
+pub fn mir_borrowck(tcx: ty::TyCtxt<'_>, def_id: LocalDefId) -> queries::mir_borrowck::ProvidedValue<'_> {
+    environment::mir_storage::mir_borrowck(tcx, def_id)
 }
