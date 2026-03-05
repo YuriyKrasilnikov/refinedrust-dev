@@ -1,4 +1,5 @@
 From refinedrust Require Import typing.
+From rrstd.closures.theories Require Export simplification.
 
 
 Definition FnOnce_Params_sig `{RRGS : !(refinedrustGS Σ)} (Self_rt: RT) (Args_rt: RT) (Output_rt: RT) :=
@@ -6,7 +7,7 @@ Definition FnOnce_Params_sig `{RRGS : !(refinedrustGS Σ)} (Self_rt: RT) (Args_r
 Definition FnOnce_Pre_sig `{RRGS : !(refinedrustGS Σ)} (Self_rt: RT) (Args_rt: RT) (Output_rt: RT) (FnOnce_Params: (FnOnce_Params_sig (Self_rt) (Args_rt) (Output_rt))) :=
   (thread_id → FnOnce_Params → (RT_xt (Self_rt)) → (RT_xt (Args_rt)) → iProp Σ).
 Definition FnOnce_Post_sig `{RRGS : !(refinedrustGS Σ)} (Self_rt: RT) (Args_rt: RT) (Output_rt: RT) (FnOnce_Params: (FnOnce_Params_sig (Self_rt) (Args_rt) (Output_rt))) (FnOnce_Pre: (FnOnce_Pre_sig (Self_rt) (Args_rt) (Output_rt) (FnOnce_Params))) :=
-  (thread_id → FnOnce_Params → (RT_xt (Self_rt)) → (RT_xt (Args_rt)) → (RT_xt (Output_rt)) → iProp Σ).
+(thread_id → FnOnce_Params → (RT_xt (Self_rt)) → (RT_xt (Args_rt)) → (RT_xt (Output_rt)) → iProp Σ).
 Definition FnOnce_PostMut_sig `{RRGS : !(refinedrustGS Σ)} (Self_rt: RT) (Args_rt: RT) (Output_rt: RT) (FnOnce_Params: (FnOnce_Params_sig (Self_rt) (Args_rt) (Output_rt))) (FnOnce_Pre: (FnOnce_Pre_sig (Self_rt) (Args_rt) (Output_rt) (FnOnce_Params))) (FnOnce_Post: (FnOnce_Post_sig (Self_rt) (Args_rt) (Output_rt) (FnOnce_Params) (FnOnce_Pre))) :=
   (thread_id → FnOnce_Params → (RT_xt (Self_rt)) → (RT_xt (Args_rt)) → (RT_xt (Self_rt)) → (RT_xt (Output_rt)) → iProp Σ).
 Record FnOnce_spec_attrs `{RRGS : !(refinedrustGS Σ)} `{Self_rt : !RT} `{Args_rt : !RT} `{Output_rt : !RT} : Type := mk_FnOnce_spec_attrs {

@@ -16,7 +16,10 @@ Proof.
   rep liRStep; liShow.
   liInst Hevar_Inv (λ _ '(a, b) (clos : plist _ [_]), let x := clos.:0.cur in ⌜0 ≤ a ≤ 10⌝ ∗ ⌜b = 10⌝ ∗ ⌜(x + (b - a))%Z = 10%Z⌝)%I.
   rep <-! liRStep; liShow.
-  assert (r'0 = γ) as -> by shelve_sidecond.
+  do 11 (destruct clos_states as [ | [? []] clos_states]; simpl in *; first done).
+  destruct clos_states; simpl in *; last done.
+  simpl in *. simplify_eq.
+  repeat revert select ( _ = _).
   rep <-! liRStep; liShow.
 
   all: print_remaining_goal.
@@ -28,11 +31,7 @@ Proof.
     simplify_eq. lia. 
   - case_bool_decide; last done.
     simplify_eq. lia. 
-  - admit.
-  - admit.
-  - admit.
-    (* let's come up with some better simplification machinery for this *)
 
   Unshelve. all: print_remaining_sidecond.
-Admitted.
+Qed.
 End proof.

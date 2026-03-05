@@ -787,14 +787,6 @@ Proof.
   intros ?. eauto.
 Qed.
 
-(** A typeclass to check whether a relation is the identity relation *)
-Class RelationIsIdentity {A} (R : A → A → Prop) := {
-  relation_is_identity_proof : ∀ a b, R a b → a = b;
-}.
-Global Hint Extern 100 (RelationIsIdentity _) =>
-    simpl; econstructor; solve_goal : typeclass_instances.
-Global Hint Mode RelationIsIdentity + + : typeclass_instances.
-
 (** Unfold [ty_ghost_drop] if necessary *)
 Class TyIsNotVar `{!typeGS Σ} {rt} (ty : type rt) := {}.
 Global Hint Mode TyIsNotVar + + + + : typeclass_instances.

@@ -31,28 +31,25 @@ Section extra.
   (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt)
   (FnOnce_attrs : FnOnce_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
   (FnMut_attrs : FnMut_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
-  p ParamPred (It_learn : IteratorLearnInductive It_attrs p)
-
+  p ParamPred
+  (Φ_simpl : thread_id → list _ → nat → _ → _ → Prop)
+  (It_learn : IteratorLearnInductive It_attrs p)
   (FnOnce_pre_learn : ∀ π p self args, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_Pre) π p self args))
   (FnMut_postmut_learn : ∀ π p self args self' out, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_PostMut) π p self args self' out))
   :
-    IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs MB_rt MI_rt MF_rt Item_rt It_attrs FnOnce_attrs FnMut_attrs) (p, ParamPred) := {|
+    (∀ π clos_states idx a b, simplify_closure_prop (∃ pclos, ∃ clos1 clos2, clos_states !! idx = Some clos1 ∧ clos_states !! (S idx) = Some clos2 ∧ ParamPred pclos ∧ (FnOnce_pre_learn π pclos clos1 *[a]).(simplify_boringly_impl_q _) ∧ (FnMut_postmut_learn π pclos clos1 *[a] clos2 b).(simplify_boringly_impl_q _)) (Φ_simpl π clos_states idx a b)) →
+    IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs MB_rt MI_rt MF_rt Item_rt It_attrs FnOnce_attrs FnMut_attrs) (p, ParamPred) := λ _, {|
       iterator_learn_inductive_Q s1 hist s2 :=
         ∃ π hist' clos_states,
           It_learn.(iterator_learn_inductive_Q) s1.(map_it) hist' s2.(map_it) ∧
           length clos_states = (1 + length hist')%nat ∧
           head clos_states = Some(s1.(map_clos)) ∧
           last clos_states = Some(s2.(map_clos)) ∧
-          Forall3 (λ idx a b,
-            ∃ pclos,
-            ∃ clos1 clos2, clos_states !! idx = Some clos1 ∧ clos_states !! (S idx) = Some clos2 ∧
-            ParamPred pclos ∧
-            (FnOnce_pre_learn π pclos clos1 *[a]).(simplify_boringly_impl_q _) ∧
-            (FnMut_postmut_learn π pclos clos1 *[a] clos2 b).(simplify_boringly_impl_q _)
-          ) (seq 0 (length hist)) hist' hist
+          Forall2 (λ p b, Φ_simpl π clos_states p.1 p.2 b) (zip (seq 0 (length hist')) hist') hist
     |}.
   Next Obligation.
-    intros ???? It_attrs FnOnce_attrs FnMut_attrs p ParamPred It_learn FnOnce_pure FnMut_pure.
+    intros ???? It_attrs FnOnce_attrs FnMut_attrs p ParamPred Φ_simpl It_learn FnOnce_pure FnMut_pure.
+    intros Hsimpl.
     simpl. iIntros (? s1 hist s2) "Hnext".
     iPoseProof (boringly_mono with "Hnext") as "Ha".
     { iApply iterator_next_fused_trans_map_inv. }
@@ -76,18 +73,22 @@ Section extra.
       iPureIntro.
       eexists _, _, _. split_and!; done. }
     iPoseProof (big_sepL2_Forall3 with "Hclos") as "%Hf".
-    iPureIntro.
-
-    exists π, hist', states'.
-    split; first done.
     opose proof* Forall3_length_lr as Hlen1; first done.
     opose proof* Forall3_length_lm as Hlen2; first done.
+    
+    iPureIntro.
+    exists π, hist', states'.
+    split; first done.
     simpl in *.
     split. { rewrite Hlen. lia. }
     split. { rewrite head_lookup. done. }
     split. { rewrite last_lookup. rewrite Hlen. done. }
     replace (length hist) with (length hist') by lia.
-    done.
+    eapply (Forall2_impl (λ '(a, b) c, Φ_simpl π states' a b c)).
+    { eapply Forall3_to_Forall2_l.
+      eapply Forall3_impl; first apply Hf.
+      intros. apply Hsimpl. done. } 
+    intros []. done. 
   Qed.
 
   (** Declared as an extern instance below, to enforce order on the argument resolution *)
@@ -95,22 +96,25 @@ Section extra.
   (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt)
   (FnOnce_attrs : FnOnce_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
   (FnMut_attrs : FnMut_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
-  p ParamPred (It_learn : IteratorLearnInductive It_attrs p)
-
+  p ParamPred
+  (Φ_simpl : thread_id → _ → _ → _ → Prop)
+  (It_learn : IteratorLearnInductive It_attrs p)
   (FnOnce_pre_learn : ∀ π p self args, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_Pre) π p self args))
   (FnMut_postmut_learn : ∀ π p self args self' out, SimplifyBoringlyImpl (FnOnce_attrs.(FnOnce_PostMut) π p self args self' out))
   (FnMut_postmut_stateless : ∀ π p args out, RelationIsIdentity (λ self self', (FnMut_postmut_learn π p self args self' out).(simplify_boringly_impl_q _)))
   :
-    IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs MB_rt MI_rt MF_rt Item_rt It_attrs FnOnce_attrs FnMut_attrs) (p, ParamPred) := {|
+    (∀ π clos a b, simplify_closure_prop (∃ pclos, ParamPred pclos ∧ (FnOnce_pre_learn π pclos clos *[a]).(simplify_boringly_impl_q _) ∧ (FnMut_postmut_learn π pclos clos *[a] clos b).(simplify_boringly_impl_q _)) (Φ_simpl π clos a b)) →
+    IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs MB_rt MI_rt MF_rt Item_rt It_attrs FnOnce_attrs FnMut_attrs) (p, ParamPred) := λ _, {|
       iterator_learn_inductive_Q s1 hist s2 :=
         ∃ π hist',
           It_learn.(iterator_learn_inductive_Q) s1.(map_it) hist' s2.(map_it) ∧
           s1.(map_clos) = s2.(map_clos) ∧
-          Forall2 (λ a b, ∃ pclos, ParamPred pclos ∧ (FnOnce_pre_learn π pclos s1.(map_clos) *[a]).(simplify_boringly_impl_q _) ∧ (FnMut_postmut_learn π pclos s1.(map_clos) *[a] s1.(map_clos) b).(simplify_boringly_impl_q _)) hist' hist
+          Forall2 (λ a b, Φ_simpl π s1.(map_clos) a b) hist' hist
         ;
     |}.
   Next Obligation.
-    intros ???? It_attrs FnOnce_attrs FnMut_attrs p ParamPred It_learn FnOnce_pure FnMut_pure FnMut_stateless.
+    intros ???? It_attrs FnOnce_attrs FnMut_attrs p ParamPred Φ_simpl It_learn FnOnce_pure FnMut_pure FnMut_stateless.
+    intros Hsimpl.
     simpl. iIntros (? s1 hist s2) "Hnext".
     iPoseProof (boringly_mono with "Hnext") as "Ha".
     { iApply iterator_next_fused_trans_map_inv. }
@@ -167,7 +171,9 @@ Section extra.
     iDestruct "Hpost" as "%".
     opose proof (Hstates' (S k) k _ _ Hlook5); first lia.
     opose proof (Hstates' (S (S k)) (S k) _ _ Hlook6); first lia.
-    subst. iPureIntro. eexists _. done.
+    subst. iPureIntro.
+    apply Hsimpl.
+    eexists _. done.
   Qed.
 
   Program Definition iterator_learn_range_it
@@ -290,7 +296,6 @@ Section extra.
 
 End extra.
 Global Hint Extern 100 (IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ _ _ _) _ ) =>
-  unshelve notypeclasses refine (iterator_learn_map_stateless _ _ _ _ _ _ _ _ _); [tc_solve | tc_solve | tc_solve | tc_solve] : typeclass_instances.
+  unshelve notypeclasses refine (iterator_learn_map_stateless _ _ _ _ _ _ _ _ _ _ _); [ | tc_solve | tc_solve | tc_solve | tc_solve | tc_solve] : typeclass_instances.
 Global Hint Extern 101 (IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ _ _ _) _) =>
-  unshelve notypeclasses refine (iterator_learn_map_stateful _ _ _ _ _ _ _ _); [tc_solve | tc_solve | tc_solve] : typeclass_instances.
-
+  unshelve notypeclasses refine (iterator_learn_map_stateful _ _ _ _ _ _ _ _ _ _); [ | tc_solve | tc_solve | tc_solve | tc_solve] : typeclass_instances.

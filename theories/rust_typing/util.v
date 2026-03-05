@@ -124,6 +124,19 @@ Proof.
   naive_solver.
 Qed.
 
+Lemma Forall3_to_Forall2_l {A B C} Φ (l1 : list A) (l2 : list B) (l3 : list C) :
+  Forall3 Φ l1 l2 l3 →
+  Forall2 (λ '(a, b) c, Φ a b c) (zip l1 l2) l3.
+Proof.
+  induction 1; simpl; econstructor; done.
+Qed.
+Lemma Forall3_to_Forall2_r {A B C} Φ (l1 : list A) (l2 : list B) (l3 : list C) :
+  Forall3 Φ l1 l2 l3 →
+  Forall2 (λ a '(b, c), Φ a b c) l1 (zip l2 l3).
+Proof.
+  induction 1; simpl; econstructor; done.
+Qed.
+
 Lemma and_proper (A B C : Prop) :
   (A → B ↔ C) →
   (A ∧ B) ↔ (A ∧ C).
