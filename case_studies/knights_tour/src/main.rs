@@ -53,10 +53,10 @@ impl Point {
 }
 
 #[rr::refined_by("(s, f)" : "nat * (list (list nat))")]
-#[rr::invariant("s = length f")]
-#[rr::invariant("∀ i : nat, i < length f -> length (f !!! i) = s")]
 #[rr::exists("field" : "list _")]
 #[rr::invariant("field = fmap (λ (x : list nat), #(fmap (λ (y: nat), #(Z.of_nat y)) x) : place_rfn (list (place_rfn Z))) f")]
+#[rr::invariant("s = length f")]
+#[rr::invariant("∀ i : nat, i < length f -> length (f !!! i) = s")]
 pub struct Board {
     #[rr::field("Z.of_nat s")]
     pub size: usize,
@@ -136,7 +136,7 @@ impl Board {
     // #[ensures((^self).size == (*self).size)]
     #[rr::requires("in_bounds self.cur.1 p")]
     #[rr::exists("new_rows" : "list (list nat)")]
-    #[rr::observe("self.ghost" : "#(self.cur.1, new_rows)")]
+    #[rr::observe("self.ghost" : "(self.cur.1, new_rows)")]
     /* TODO(lennard): indexing. (not enough simplification) */
     fn set(&mut self, p: Point, v: usize) {
         /* use wrapper for indexing: vec_index */
