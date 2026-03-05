@@ -4,7 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::cell::RefCell;
 use std::fmt;
 
 use rr_rustc_interface::borrowck;
@@ -19,11 +18,11 @@ pub(crate) type PointIndex = <RustcFacts as FactTypes>::Point;
 pub(crate) type AllInput = borrowck::consumers::PoloniusInput;
 pub(crate) type AllOutput = borrowck::consumers::PoloniusOutput;
 
-pub(crate) struct Borrowck {
+pub(crate) struct Borrowck<'tcx> {
     /// Polonius input facts.
-    pub input_facts: RefCell<Option<Box<AllInput>>>,
+    pub input_facts: &'tcx Option<Box<AllInput>>,
     /// The table that maps Polonius points to locations in the table.
-    pub location_table: RefCell<Option<PoloniusLocationTable>>,
+    pub location_table: &'tcx Option<PoloniusLocationTable>,
 }
 
 /// The type of the point. Either the start of a statement or in the
@@ -47,13 +46,13 @@ impl fmt::Display for Point {
     }
 }
 
-pub(crate) struct Interner {
-    pub(crate) location_table: PoloniusLocationTable,
+pub(crate) struct Interner<'tcx> {
+    pub(crate) location_table: &'tcx PoloniusLocationTable,
 }
 
-impl Interner {
+impl<'tcx> Interner<'tcx> {
     #[must_use]
-    pub(crate) const fn new(location_table: PoloniusLocationTable) -> Self {
+    pub(crate) const fn new(location_table: &'tcx PoloniusLocationTable) -> Self {
         Self { location_table }
     }
 

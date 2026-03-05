@@ -113,9 +113,9 @@ pub(crate) fn compute_transitive_closure(
 pub(crate) struct PoloniusInfo<'a, 'tcx> {
     pub(crate) tcx: ty::TyCtxt<'tcx>,
     pub(crate) mir: &'a mir::Body<'tcx>,
-    pub(crate) borrowck_in_facts: facts::AllInput,
+    pub(crate) borrowck_in_facts: &'tcx facts::AllInput,
     pub(crate) borrowck_out_facts: facts::AllOutput,
-    pub(crate) interner: facts::Interner,
+    pub(crate) interner: facts::Interner<'tcx>,
     /// Position at which a specific loan was created.
     pub(crate) loan_position: HashMap<facts::Loan, mir::Location>,
     pub(crate) loan_at_position: HashMap<mir::Location, facts::Loan>,
@@ -131,10 +131,10 @@ impl<'a, 'tcx: 'a> PoloniusInfo<'a, 'tcx> {
         // Read Polonius facts.
         let facts = env.local_mir_borrowck_facts(def_id.expect_local());
 
-        let interner = facts::Interner::new(facts.location_table.take().unwrap());
-        let all_facts = facts.input_facts.take().unwrap();
+        let interner = facts::Interner::new(facts.location_table.as_ref().unwrap());
+        let all_facts = facts.input_facts.as_ref().unwrap();
 
-        let output = polonius_engine::Output::compute(&all_facts, polonius_engine::Algorithm::Naive, true);
+        let output = polonius_engine::Output::compute(all_facts, polonius_engine::Algorithm::Naive, true);
 
         let loan_position: HashMap<_, _> = all_facts
             .loan_issued_at
@@ -153,12 +153,12 @@ impl<'a, 'tcx: 'a> PoloniusInfo<'a, 'tcx> {
             })
             .collect();
 
-        let additional_facts = AdditionalFacts::new(&all_facts, &output);
+        let additional_facts = AdditionalFacts::new(all_facts, &output);
 
         Self {
             tcx,
             mir,
-            borrowck_in_facts: *all_facts,
+            borrowck_in_facts: all_facts,
             borrowck_out_facts: output,
             interner,
             loan_position,

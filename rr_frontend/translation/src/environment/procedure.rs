@@ -4,8 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::rc::Rc;
-
 use log::trace;
 use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
@@ -20,7 +18,7 @@ pub(crate) type BasicBlockIndex = mir::BasicBlock;
 pub(crate) struct Procedure<'tcx> {
     tcx: ty::TyCtxt<'tcx>,
     proc_def_id: DefId,
-    mir: Rc<mir::Body<'tcx>>,
+    mir: &'tcx mir::Body<'tcx>,
     real_edges: RealEdges,
     loop_info: loops::ProcedureLoops,
 }
@@ -32,8 +30,8 @@ impl<'tcx> Procedure<'tcx> {
         trace!("Encoding procedure {:?}", proc_def_id);
         let tcx = env.tcx();
         let mir = env.local_mir(proc_def_id.expect_local());
-        let real_edges = RealEdges::new(&mir);
-        let loop_info = loops::ProcedureLoops::new(&mir, &real_edges);
+        let real_edges = RealEdges::new(mir);
+        let loop_info = loops::ProcedureLoops::new(mir, &real_edges);
 
         Self {
             tcx,
@@ -57,8 +55,8 @@ impl<'tcx> Procedure<'tcx> {
 
     /// Get the MIR of the procedure
     #[must_use]
-    pub(crate) fn get_mir(&self) -> &mir::Body<'tcx> {
-        &self.mir
+    pub(crate) const fn get_mir(&self) -> &mir::Body<'tcx> {
+        self.mir
     }
 
     /// Get the typing context.

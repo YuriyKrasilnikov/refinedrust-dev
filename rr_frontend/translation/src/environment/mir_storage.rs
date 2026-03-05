@@ -75,11 +75,13 @@ pub(crate) fn mir_borrowck(
     original_mir_borrowck(tcx, def_id)
 }
 
+#[expect(clippy::significant_drop_tightening)]
 pub(crate) fn retrieve_mir_body<'tcx>(
     _tcx: ty::TyCtxt<'tcx>,
     def_id: LocalDefId,
-) -> Option<BodyWithBorrowckFacts<'tcx>> {
-    let body_with_facts = MIR_FACTS.lock().unwrap().remove(&def_id);
+) -> Option<&'tcx BodyWithBorrowckFacts<'tcx>> {
+    let map = MIR_FACTS.lock().unwrap();
+    let body_with_facts = map.get(&def_id);
 
     // SAFETY: For soundness we need to ensure that the bodies have the same lifetime (`'tcx`), which they had
     // before they were stored in the thread local.

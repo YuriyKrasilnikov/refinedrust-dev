@@ -18,10 +18,6 @@ pub(crate) mod polonius_info;
 pub(crate) mod procedure;
 pub(crate) mod region_folder;
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-
 use rr_rustc_interface::hir;
 use rr_rustc_interface::hir::def_id::{DefId, LocalDefId};
 use rr_rustc_interface::middle::{mir, ty};
@@ -34,22 +30,14 @@ use crate::{attrs, traits};
 
 /// Facade to the Rust compiler.
 pub(crate) struct Environment<'tcx> {
-    /// Cached MIR bodies.
-    bodies: RefCell<HashMap<LocalDefId, Rc<mir::Body<'tcx>>>>,
-    /// Cached borrowck information.
-    borrowck_facts: RefCell<HashMap<LocalDefId, Rc<facts::Borrowck>>>,
     tcx: ty::TyCtxt<'tcx>,
 }
 
 impl<'tcx> Environment<'tcx> {
     /// Builds an environment given a compiler state.
     #[must_use]
-    pub(crate) fn new(tcx: ty::TyCtxt<'tcx>) -> Self {
-        Environment {
-            tcx,
-            bodies: RefCell::new(HashMap::new()),
-            borrowck_facts: RefCell::new(HashMap::new()),
-        }
+    pub(crate) const fn new(tcx: ty::TyCtxt<'tcx>) -> Self {
+        Environment { tcx }
     }
 
     /// Returns the typing context
@@ -318,33 +306,19 @@ impl<'tcx> Environment<'tcx> {
     }
 
     /// Get the MIR body of a local procedure.
-    pub(crate) fn local_mir(&self, def_id: LocalDefId) -> Rc<mir::Body<'tcx>> {
-        let mut bodies = self.bodies.borrow_mut();
-
-        if let Some(body) = bodies.get(&def_id) {
-            return body.clone();
-        }
-
-        let body_with_facts = mir_storage::retrieve_mir_body(self.tcx, def_id).unwrap();
-
-        let body = body_with_facts.body;
-        let facts = facts::Borrowck {
-            input_facts: RefCell::new(body_with_facts.input_facts),
-            location_table: RefCell::new(body_with_facts.location_table),
-        };
-
-        let mut borrowck_facts = self.borrowck_facts.borrow_mut();
-        borrowck_facts.insert(def_id, Rc::new(facts));
-
-        bodies.entry(def_id).or_insert_with(|| Rc::new(body)).clone()
+    pub(crate) fn local_mir(&self, def_id: LocalDefId) -> &'tcx mir::Body<'tcx> {
+        &mir_storage::retrieve_mir_body(self.tcx, def_id).as_ref().unwrap().body
     }
 
     /// Get Polonius facts of a local procedure.
-    pub(crate) fn local_mir_borrowck_facts(&self, def_id: LocalDefId) -> Rc<facts::Borrowck> {
-        // ensure that we have already fetched the body & facts
-        self.local_mir(def_id);
-        let borrowck_facts = self.borrowck_facts.borrow();
-        borrowck_facts.get(&def_id).unwrap().clone()
+    pub(crate) fn local_mir_borrowck_facts(&self, def_id: LocalDefId) -> facts::Borrowck<'tcx> {
+        let body_with_facts = mir_storage::retrieve_mir_body(self.tcx, def_id);
+        let body_with_facts = body_with_facts.as_ref().unwrap();
+
+        facts::Borrowck {
+            input_facts: &body_with_facts.input_facts,
+            location_table: &body_with_facts.location_table,
+        }
     }
 }
 
