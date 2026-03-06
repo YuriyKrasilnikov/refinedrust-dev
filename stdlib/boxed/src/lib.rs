@@ -2,6 +2,7 @@
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
 #![allow(unused)]
+#![allow(internal_features)]
 
 #![feature(allocator_api)]
 #![feature(ptr_internals)]
