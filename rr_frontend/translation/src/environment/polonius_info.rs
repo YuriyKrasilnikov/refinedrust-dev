@@ -7,12 +7,13 @@
 use std::collections::HashMap;
 
 use log::{debug, trace};
+use rr_rustc_interface::hir::def_id::LocalDefId;
 use rr_rustc_interface::middle::ty::TypeFolder as _;
 use rr_rustc_interface::middle::{mir, ty};
 use rr_rustc_interface::{data_structures, polonius_engine};
 
-use crate::environment::Environment;
 use crate::environment::borrowck::facts;
+use crate::environment::mir_storage;
 use crate::environment::procedure::Procedure;
 use crate::environment::region_folder::*;
 
@@ -123,13 +124,24 @@ pub(crate) struct PoloniusInfo<'a, 'tcx> {
 }
 
 impl<'a, 'tcx: 'a> PoloniusInfo<'a, 'tcx> {
-    pub(crate) fn new(env: &'a Environment<'tcx>, procedure: &'a Procedure<'tcx>) -> Self {
+    /// Get Polonius facts of a local procedure.
+    fn local_mir_borrowck_facts(tcx: ty::TyCtxt<'tcx>, def_id: LocalDefId) -> facts::Borrowck<'tcx> {
+        let body_with_facts = mir_storage::retrieve_mir_body(tcx, def_id);
+        let body_with_facts = body_with_facts.as_ref().unwrap();
+
+        facts::Borrowck {
+            input_facts: &body_with_facts.input_facts,
+            location_table: &body_with_facts.location_table,
+        }
+    }
+
+    pub(crate) fn new(procedure: &'a Procedure<'tcx>) -> Self {
         let tcx = procedure.get_tcx();
         let def_id = procedure.get_id();
         let mir = procedure.get_mir();
 
         // Read Polonius facts.
-        let facts = env.local_mir_borrowck_facts(def_id.expect_local());
+        let facts = Self::local_mir_borrowck_facts(tcx, def_id.expect_local());
 
         let interner = facts::Interner::new(facts.location_table.as_ref().unwrap());
         let all_facts = facts.input_facts.as_ref().unwrap();

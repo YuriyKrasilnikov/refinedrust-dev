@@ -15,8 +15,8 @@ use rr_rustc_interface::middle::{mir, ty};
 
 use crate::base::*;
 use crate::environment::borrowck::facts;
+use crate::environment::polonius_info;
 use crate::environment::polonius_info::PoloniusInfo;
-use crate::environment::{Environment, polonius_info};
 use crate::regions::arg_folder::instantiate_open;
 use crate::regions::inclusion_tracker::InclusionTracker;
 use crate::regions::region_bi_folder::RegionBiFolder;
@@ -30,7 +30,7 @@ use crate::types::scope;
 /// Moreover, returns a `EarlyLateRegionMap` that contains the mapping of indices to Polonius
 /// region variables.
 pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
-    env: &Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     params: &[ty::GenericArg<'tcx>],
     of_did: DefId,
     num_universal_regions: usize,
@@ -67,7 +67,7 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
     for a in params {
         if let ty::GenericArgKind::Lifetime(r) = a.kind() {
             let next_id = facts::Region::from_usize(first_early_bound + early_count);
-            let revar = ty::Region::new_var(env.tcx(), next_id.into());
+            let revar = ty::Region::new_var(tcx, next_id.into());
             subst_early_bounds.push(ty::GenericArg::from(revar));
 
             region_substitution_early.push(Some(next_id));
@@ -75,7 +75,7 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
             match r.kind() {
                 ty::RegionKind::ReEarlyParam(r) => {
                     let mut name = strip_coq_ident(r.name.as_str());
-                    let origin = scope::determine_origin_of_lft_param(of_did, env.tcx(), r);
+                    let origin = scope::determine_origin_of_lft_param(of_did, tcx, r);
 
                     if name == "_" {
                         name = format!("{}", next_id.index());
@@ -96,7 +96,7 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
             region_substitution_early.push(None);
         }
     }
-    let subst_early_bounds = env.tcx().mk_args(&subst_early_bounds);
+    let subst_early_bounds = tcx.mk_args(&subst_early_bounds);
 
     trace!("Computed early region map {region_substitution_early:?}");
 
@@ -114,7 +114,7 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
 
         match r {
             ty::BoundRegionKind::Named(did) => {
-                if let Some(name) = env.tcx().opt_item_name(did) {
+                if let Some(name) = tcx.opt_item_name(did) {
                     let mut region_name = strip_coq_ident(name.as_str());
                     if region_name == "_" {
                         region_name = next_id.as_usize().to_string();
@@ -167,18 +167,18 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
     let mut folder = |_| {
         let cur_index = next_index;
         next_index += 1;
-        ty::Region::new_var(env.tcx(), ty::RegionVid::from_usize(cur_index))
+        ty::Region::new_var(tcx, ty::RegionVid::from_usize(cur_index))
     };
-    let (late_sig, _late_region_map) = env.tcx().instantiate_bound_regions(sig, &mut folder);
+    let (late_sig, _late_region_map) = tcx.instantiate_bound_regions(sig, &mut folder);
 
     // replace early bound variables
     let inputs: Vec<_> = late_sig
         .inputs()
         .iter()
-        .map(|ty| instantiate_open(*ty, env.tcx(), subst_early_bounds))
+        .map(|ty| instantiate_open(*ty, tcx, subst_early_bounds))
         .collect();
 
-    let output = instantiate_open(late_sig.output(), env.tcx(), subst_early_bounds);
+    let output = instantiate_open(late_sig.output(), tcx, subst_early_bounds);
 
     trace!("Computed late region map {region_substitution_late:?}");
 

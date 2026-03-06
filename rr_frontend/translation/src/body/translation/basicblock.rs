@@ -56,7 +56,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     if (self.is_spec_closure_local(plc.local)?).is_some() {
                         info!("skipping assignment to spec closure local: {:?}", plc);
                     } else {
-                        let rhs_ty = val.ty(&self.proc.get_mir().local_decls, self.env.tcx());
+                        let rhs_ty = val.ty(&self.proc.get_mir().local_decls, self.tcx);
 
                         let borrow_annots = regions::assignment::get_assignment_loan_annots(
                             &mut self.inclusion_tracker, &self.ty_translator,
@@ -65,13 +65,13 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
                         // TODO; maybe move this to rvalue
                         let composite_annots = regions::composite::get_composite_rvalue_creation_annots(
-                            self.env, &mut self.inclusion_tracker, &self.ty_translator, loc, rhs_ty);
+                            self.tcx, &mut self.inclusion_tracker, &self.ty_translator, loc, rhs_ty);
 
                         let plc_ty = self.get_type_of_place(plc);
                         let plc_strongly_writeable = !self.check_place_below_reference(plc);
                         let assignment_annots =
                             regions::assignment::get_assignment_annots(
-                                self.env, &mut self.inclusion_tracker, &self.ty_translator,
+                                self.tcx, &mut self.inclusion_tracker, &self.ty_translator,
                                 loc, plc_strongly_writeable, plc_ty, rhs_ty);
 
                         trace!("assignment at point {loc:?}: got assignment_annots={assignment_annots:?}");

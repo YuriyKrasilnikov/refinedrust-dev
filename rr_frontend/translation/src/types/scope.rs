@@ -16,14 +16,13 @@ use rr_rustc_interface::middle::ty;
 use rr_rustc_interface::middle::ty::TypeFoldable as _;
 
 use crate::base::*;
-use crate::environment::Environment;
-use crate::regions;
 use crate::spec_parsers::parse_utils::{ParamLookup, RustPath, RustPathElem};
 use crate::spec_parsers::verbose_function_spec_parser::TraitReqHandler;
 use crate::traits::registry::GenericTraitUse;
 use crate::traits::{self, registry};
 use crate::types::translator::TX;
 use crate::types::tyvars::TyRegionEraseFolder;
+use crate::{environment, regions};
 
 /// Key used for resolving early-bound parameters for function calls.
 /// Invariant: All regions contained in these types should be erased, as type parameter instantiation is
@@ -539,17 +538,17 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
     fn add_trait_requirements(
         &mut self,
         did: DefId,
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         type_translator: &TX<'def, 'tcx>,
         trait_registry: &registry::TR<'tcx, 'def>,
     ) -> Result<(), TranslationError<'tcx>> {
-        let typing_env = ty::TypingEnv::post_analysis(env.tcx(), did);
-        let is_trait = env.tcx().is_trait(did);
-        let requirements = traits::requirements::get_trait_requirements_with_origin(env, did);
+        let typing_env = ty::TypingEnv::post_analysis(tcx, did);
+        let is_trait = tcx.is_trait(did);
+        let requirements = traits::requirements::get_trait_requirements_with_origin(tcx, did);
 
         // pre-register all the requirements, in order to resolve dependencies
         for req in &requirements {
-            let key = (req.trait_ref.def_id, generate_args_inst_key(env.tcx(), req.trait_ref.args).unwrap());
+            let key = (req.trait_ref.def_id, generate_args_inst_key(tcx, req.trait_ref.args).unwrap());
             if req.is_self_in_trait_decl {
                 assert!(req.bound_regions.is_empty());
                 let dummy_trait_use = trait_registry.make_trait_self_use(req.trait_ref);
@@ -573,7 +572,7 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
                 return Err(traits::Error::UnregisteredTrait(req.trait_ref.def_id).into());
             };
 
-            let key = (req.trait_ref.def_id, generate_args_inst_key(env.tcx(), req.trait_ref.args).unwrap());
+            let key = (req.trait_ref.def_id, generate_args_inst_key(tcx, req.trait_ref.args).unwrap());
             let entry = &self.trait_scope.used_traits[&key];
 
             registry::TR::fill_trait_use(
@@ -604,7 +603,7 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
                 .collect();
 
             // lookup the trait use
-            let key = (req.trait_ref.def_id, generate_args_inst_key(env.tcx(), req.trait_ref.args).unwrap());
+            let key = (req.trait_ref.def_id, generate_args_inst_key(tcx, req.trait_ref.args).unwrap());
             let entry = &self.trait_scope.used_traits[&key];
 
             {
@@ -622,7 +621,7 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
                 continue;
             }
 
-            let key = (req.trait_ref.def_id, generate_args_inst_key(env.tcx(), req.trait_ref.args).unwrap());
+            let key = (req.trait_ref.def_id, generate_args_inst_key(tcx, req.trait_ref.args).unwrap());
             let entry = &self.trait_scope.used_traits[&key];
 
             // finalize the entry by adding dependencies on other trait parameters
@@ -635,10 +634,10 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
                 continue;
             }
 
-            let key = (req.trait_ref.def_id, generate_args_inst_key(env.tcx(), req.trait_ref.args).unwrap());
+            let key = (req.trait_ref.def_id, generate_args_inst_key(tcx, req.trait_ref.args).unwrap());
             let entry = &self.trait_scope.used_traits[&key];
 
-            let assoc_tys = entry.get_associated_types(env);
+            let assoc_tys = entry.get_associated_types(tcx);
 
             {
                 let trait_use_ref = entry.trait_use.borrow();
@@ -677,13 +676,13 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
 
         // finally, if we are in a trait declaration or impl declaration, add notation shorthands
         // to the scope
-        if let Some(trait_did) = env.tcx().trait_of_assoc(did) {
+        if let Some(trait_did) = tcx.trait_of_assoc(did) {
             // we are in a trait declaration
             if let Some(trait_ref) = trait_registry.lookup_trait(trait_did) {
                 // make the parameter for the attrs that the function is parametric over
                 if let Some(trait_use_ref) = self.trait_scope.get_self_trait_use().cloned() {
                     // add the associated types
-                    for (name, ty) in trait_use_ref.get_associated_types(env) {
+                    for (name, ty) in trait_use_ref.get_associated_types(tcx) {
                         let path = vec![RustPathElem::AssocItem(name.clone())];
                         if let hash_map::Entry::Vacant(e) = self.trait_scope.assoc_ty_names.entry(path) {
                             e.insert(ty);
@@ -704,8 +703,8 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
             }
         }
 
-        if let Some(impl_did) = env.tcx().impl_of_assoc(did)
-            && env.tcx().impl_is_of_trait(impl_did)
+        if let Some(impl_did) = tcx.impl_of_assoc(did)
+            && tcx.impl_is_of_trait(impl_did)
         {
             // we are in a trait impl
             let (impl_ref, _, _) = trait_registry.get_trait_impl_info(impl_did)?;
@@ -719,9 +718,9 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
         // if we are declaring the trait itself, add the associated types of the trait to the scope
         // (we skip the self trait requirement above)
         if is_trait {
-            let assoc_types = env.get_trait_assoc_types(did);
+            let assoc_types = environment::get_trait_assoc_types(tcx, did);
             for ty_did in &assoc_types {
-                let name = env.get_assoc_item_name(*ty_did).unwrap();
+                let name = environment::get_assoc_item_name(tcx, *ty_did).unwrap();
                 let path = vec![RustPathElem::AssocItem(name.clone())];
                 let ty = specs::Type::LiteralParam(specs::LiteralTyParam::new(&name));
                 if let hash_map::Entry::Vacant(e) = self.trait_scope.assoc_ty_names.entry(path) {
@@ -738,15 +737,15 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
     pub(crate) fn add_param_env(
         &mut self,
         did: DefId,
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         type_translator: &TX<'def, 'tcx>,
         trait_registry: &registry::TR<'tcx, 'def>,
     ) -> Result<(), TranslationError<'tcx>> {
         trace!("Enter add_param_env for did = {did:?}");
-        let typing_env = ty::TypingEnv::post_analysis(env.tcx(), did);
+        let typing_env = ty::TypingEnv::post_analysis(tcx, did);
 
         self.add_lifetime_constraints(typing_env, type_translator)?;
-        self.add_trait_requirements(did, env, type_translator, trait_registry)?;
+        self.add_trait_requirements(did, tcx, type_translator, trait_registry)?;
 
         trace!("Leave add_param_env for did = {did:?} with trait scope {:?}", self.trait_scope);
         Ok(())

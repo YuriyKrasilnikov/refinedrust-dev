@@ -9,7 +9,7 @@ use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
 
 use crate::environment::mir_utils::real_edges::RealEdges;
-use crate::environment::{Environment, loops};
+use crate::environment::{loops, mir_storage};
 
 /// Index of a Basic Block
 pub(crate) type BasicBlockIndex = mir::BasicBlock;
@@ -26,10 +26,9 @@ pub(crate) struct Procedure<'tcx> {
 impl<'tcx> Procedure<'tcx> {
     /// Builds an implementation of the Procedure interface, given a typing context and the
     /// identifier of a procedure
-    pub(crate) fn new(env: &Environment<'tcx>, proc_def_id: DefId) -> Self {
+    pub(crate) fn new(tcx: ty::TyCtxt<'tcx>, proc_def_id: DefId) -> Self {
         trace!("Encoding procedure {:?}", proc_def_id);
-        let tcx = env.tcx();
-        let mir = env.local_mir(proc_def_id.expect_local());
+        let mir = &mir_storage::retrieve_mir_body(tcx, proc_def_id.expect_local()).as_ref().unwrap().body;
         let real_edges = RealEdges::new(mir);
         let loop_info = loops::ProcedureLoops::new(mir, &real_edges);
 

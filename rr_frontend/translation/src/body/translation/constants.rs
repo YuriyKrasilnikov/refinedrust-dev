@@ -132,7 +132,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 mir::interpret::Scalar::Int(_) => unreachable!(),
 
                 mir::interpret::Scalar::Ptr(pointer, _) => {
-                    let glob_alloc = self.env.tcx().global_alloc(pointer.provenance.alloc_id());
+                    let glob_alloc = self.tcx.global_alloc(pointer.provenance.alloc_id());
                     match glob_alloc {
                         mir::interpret::GlobalAlloc::Static(did) => {
                             info!(
@@ -140,7 +140,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                                 did, sc, ty
                             );
 
-                            let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+                            let ordered_did = OrderedDefId::new(self.tcx, did);
                             let s = self.const_registry.get_static(ordered_did)?;
                             self.collected_statics.insert(ordered_did);
                             Ok((code::Expr::Literal(code::Literal::Loc(s.loc_name.clone())), None))
@@ -227,8 +227,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             mir::Const::Val(val, ty) => self.translate_constant_value(*val, *ty),
             mir::Const::Unevaluated(c, ty) => {
                 // call const evaluation
-                let typing_env = ty::TypingEnv::post_analysis(self.env.tcx(), self.proc.get_id());
-                match self.env.tcx().const_eval_resolve(typing_env, *c, span::DUMMY_SP) {
+                let typing_env = ty::TypingEnv::post_analysis(self.tcx, self.proc.get_id());
+                match self.tcx.const_eval_resolve(typing_env, *c, span::DUMMY_SP) {
                     Ok(res) => self.translate_constant_value(res, *ty),
                     Err(e) => match e {
                         mir::interpret::ErrorHandled::Reported(_, _) => {

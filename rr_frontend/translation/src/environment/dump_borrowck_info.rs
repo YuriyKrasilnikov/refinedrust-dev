@@ -13,18 +13,17 @@ use log::{debug, trace};
 use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::ty;
 
-use crate::environment::Environment;
 use crate::environment::polonius_info::PoloniusInfo;
 
 pub(crate) fn dump_borrowck_info<'a, 'tcx>(
-    env: &'a Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     procedure: DefId,
     info: &'a PoloniusInfo<'a, 'tcx>,
 ) {
     trace!("[dump_borrowck_info] enter");
 
     let printer = InfoPrinter {
-        tcx: env.tcx(),
+        tcx,
         phantom: PhantomData,
     };
 

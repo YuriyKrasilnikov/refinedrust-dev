@@ -37,9 +37,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
     /// Check if a call goes to `std::rt::begin_panic`
     fn is_call_destination_panic(&self, func: &mir::Operand<'_>) -> bool {
-        if let Some(panic_id_std) =
-            search::try_resolve_did(self.env.tcx(), &["std", "panicking", "begin_panic"])
-        {
+        if let Some(panic_id_std) = search::try_resolve_did(self.tcx, &["std", "panicking", "begin_panic"]) {
             if Self::check_call_destination(func, panic_id_std) {
                 return true;
             }
@@ -47,8 +45,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             warn!("Failed to determine DefId of std::panicking::begin_panic");
         }
 
-        if let Some(panic_id_core) = search::try_resolve_did(self.env.tcx(), &["core", "panicking", "panic"])
-        {
+        if let Some(panic_id_core) = search::try_resolve_did(self.tcx, &["core", "panicking", "panic"]) {
             if Self::check_call_destination(func, panic_id_core) {
                 return true;
             }
@@ -62,7 +59,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     // Check if the destination of this call is `core::intrinsics::discriminant_value`.
     fn is_call_destination_discriminant(&self, func: &mir::Operand<'_>) -> bool {
         if let Some(discriminant_did) =
-            search::try_resolve_did(self.env.tcx(), &["core", "intrinsics", "discriminant_value"])
+            search::try_resolve_did(self.tcx, &["core", "intrinsics", "discriminant_value"])
         {
             if Self::check_call_destination(func, discriminant_did) {
                 return true;
@@ -163,7 +160,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 let return_synty = self.ty_translator.translate_type_to_syn_type(self.return_ty)?;
 
                 // compute which lifetimes depend on local borrows
-                let mut region_folder = regions::TyRegionCollectFolder::new(self.env.tcx());
+                let mut region_folder = regions::TyRegionCollectFolder::new(self.tcx);
                 region_folder.fold_ty(self.return_ty);
                 let regions_in_return = region_folder.get_regions();
 

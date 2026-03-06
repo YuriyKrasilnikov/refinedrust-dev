@@ -53,7 +53,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
             mir::AggregateKind::Adt(did, variant, args, ..) => {
                 // get the adt def
-                let adt_def: ty::AdtDef<'tcx> = self.env.tcx().adt_def(did);
+                let adt_def: ty::AdtDef<'tcx> = self.tcx.adt_def(did);
 
                 if adt_def.is_struct() {
                     let variant = adt_def.variant(variant);

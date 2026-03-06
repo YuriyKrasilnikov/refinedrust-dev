@@ -13,10 +13,10 @@ use typed_arena::Arena;
 
 use crate::traits::registry::TR;
 use crate::types::{TX, scope};
-use crate::{Environment, base, body, procedures, search};
+use crate::{base, body, environment, procedures, search};
 
 pub(crate) struct ClosureImplGenerator<'tcx, 'def> {
-    env: &'def Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     trait_registry: &'def TR<'tcx, 'def>,
     ty_translator: &'def TX<'def, 'tcx>,
 
@@ -43,21 +43,21 @@ enum ShimRefSelf {
 
 impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
     pub(crate) fn new(
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         trait_registry: &'def TR<'tcx, 'def>,
         ty_translator: &'def TX<'def, 'tcx>,
         fn_arena: &'def Arena<specs::functions::Spec<'def, specs::functions::InnerSpec<'def>>>,
     ) -> Option<Self> {
-        let fnmut_did = search::get_closure_trait_did(env.tcx(), ty::ClosureKind::FnMut)?;
-        let fn_did = search::get_closure_trait_did(env.tcx(), ty::ClosureKind::Fn)?;
-        let fnonce_did = search::get_closure_trait_did(env.tcx(), ty::ClosureKind::FnOnce)?;
+        let fnmut_did = search::get_closure_trait_did(tcx, ty::ClosureKind::FnMut)?;
+        let fn_did = search::get_closure_trait_did(tcx, ty::ClosureKind::Fn)?;
+        let fnonce_did = search::get_closure_trait_did(tcx, ty::ClosureKind::FnOnce)?;
 
         let fnmut_spec = trait_registry.lookup_trait(fnmut_did)?;
         let fn_spec = trait_registry.lookup_trait(fn_did)?;
         let fnonce_spec = trait_registry.lookup_trait(fnonce_did)?;
 
         Some(Self {
-            env,
+            tcx,
             trait_registry,
             ty_translator,
             fn_arena,
@@ -318,20 +318,19 @@ impl<'tcx, 'def> ClosureImplGenerator<'tcx, 'def> {
         let loc_name = format!("{code_name}_loc");
 
         // The scope is the same as the scope of the closure.
-        let typing_env = ty::TypingEnv::post_analysis(self.env.tcx(), closure_did);
+        let typing_env = ty::TypingEnv::post_analysis(self.tcx, closure_did);
 
         // Note: this does not include all lifetimes
-        let clos_args = self.env.get_closure_args(closure_did);
+        let clos_args = environment::get_closure_args(self.tcx, closure_did);
         let parent_args = clos_args.parent_args();
-        let mut param_scope =
-            scope::Params::new_from_generics(self.env.tcx(), self.env.tcx().mk_args(parent_args), None);
-        param_scope.add_param_env(closure_did, self.env, self.ty_translator, self.trait_registry)?;
+        let mut param_scope = scope::Params::new_from_generics(self.tcx, self.tcx.mk_args(parent_args), None);
+        param_scope.add_param_env(closure_did, self.tcx, self.ty_translator, self.trait_registry)?;
 
         trace!("closure assumption generation: param_scope={param_scope:?}");
 
         // compute the syntypes of the closure's args
         let syntypes = body::get_arg_syntypes_for_procedure_call(
-            self.env.tcx(),
+            self.tcx,
             self.ty_translator,
             &param_scope,
             &typing_env,

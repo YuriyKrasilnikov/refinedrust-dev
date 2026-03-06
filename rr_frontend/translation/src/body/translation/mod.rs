@@ -26,9 +26,9 @@ use typed_arena::Arena;
 use crate::base::*;
 use crate::body::translation::calls::ProcedureInst;
 use crate::environment::borrowck::facts;
+use crate::environment::polonius_info;
 use crate::environment::polonius_info::PoloniusInfo;
 use crate::environment::procedure::Procedure;
-use crate::environment::{Environment, polonius_info};
 use crate::regions::inclusion_tracker::InclusionTracker;
 use crate::traits::registry;
 use crate::{consts, procedures, regions, rustcmp, types};
@@ -43,9 +43,9 @@ pub(crate) type ExprWithInfo<'tcx, 'def> = (code::Expr, Option<ExprInfo<'tcx, 'd
 struct TranslationKey<'tcx>(OrderedDefId, types::GenericsKey<'tcx>);
 
 impl<'tcx> TranslationKey<'tcx> {
-    fn cmp(&self, env: &Environment<'tcx>, b: &Self) -> cmp::Ordering {
+    fn cmp(&self, tcx: ty::TyCtxt<'tcx>, b: &Self) -> cmp::Ordering {
         let did_ord = self.0.cmp(&b.0);
-        did_ord.then_with(|| rustcmp::cmp_tys(env, &self.1, &b.1))
+        did_ord.then_with(|| rustcmp::cmp_tys(tcx, &self.1, &b.1))
     }
 }
 
@@ -54,7 +54,7 @@ impl<'tcx> TranslationKey<'tcx> {
 /// `'def` is the lifetime of the generated code (the code may refer to struct defs).
 /// `'tcx` is the lifetime of the rustc tctx.
 pub(crate) struct TX<'a, 'def, 'tcx> {
-    env: &'def Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     /// registry of other procedures
     procedure_registry: &'a procedures::Scope<'tcx, 'def>,
     /// scope of used consts
@@ -107,7 +107,7 @@ pub(crate) struct TX<'a, 'def, 'tcx> {
 #[expect(clippy::multiple_inherent_impl)]
 impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     pub(crate) fn new(
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         procedure_registry: &'a procedures::Scope<'tcx, 'def>,
         const_registry: &'a consts::Scope<'def>,
         trait_registry: &'def registry::TR<'tcx, 'def>,
@@ -131,8 +131,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let debug_info = &body.var_debug_info;
         info!("using debug info: {:?}", debug_info);
 
-        let empty_args = env.tcx().mk_type_list(&[]);
-        let mut return_ty = env.tcx().mk_ty_from_kind(ty::TyKind::Tuple(empty_args));
+        let empty_args = tcx.mk_type_list(&[]);
+        let mut return_ty = tcx.mk_ty_from_kind(ty::TyKind::Tuple(empty_args));
         let mut fn_locals = Vec::new();
         let mut opt_return_name =
             Err(TranslationError::UnknownError("could not find local for return value".to_owned()));
@@ -183,9 +183,9 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let return_name = opt_return_name?;
 
         // add lifetime parameters to the map
-        let typing_env = ty::TypingEnv::post_analysis(env.tcx(), proc.get_id());
+        let typing_env = ty::TypingEnv::post_analysis(tcx, proc.get_id());
         let initial_constraints = regions::init::get_initial_universal_arg_constraints(
-            env.tcx(),
+            tcx,
             typing_env,
             info,
             &mut inclusion_tracker,
@@ -195,7 +195,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         info!("initial constraints: {:?}", initial_constraints);
 
         Ok(Self {
-            env,
+            tcx,
             proc,
             info,
             variable_map,
@@ -324,7 +324,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         // generate dependencies on other procedures.
         let mut used_procs: Vec<_> = self.collected_procedures.iter().collect();
-        used_procs.sort_by(|a, b| a.0.cmp(self.env, b.0));
+        used_procs.sort_by(|a, b| a.0.cmp(self.tcx, b.0));
         for (_, used_proc) in used_procs {
             self.translated_fn.require_function(used_proc.clone());
         }
@@ -415,7 +415,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     fn check_place_below_reference(&self, place: &mir::Place<'tcx>) -> bool {
         for (pl, _) in place.iter_projections() {
             // check if the current ty is a reference that we then descend under with proj
-            let cur_ty_kind = pl.ty(&self.proc.get_mir().local_decls, self.env.tcx()).ty.kind();
+            let cur_ty_kind = pl.ty(&self.proc.get_mir().local_decls, self.tcx).ty.kind();
             if let ty::TyKind::Ref(_, _, _) = cur_ty_kind {
                 return true;
             }
@@ -428,11 +428,11 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     #[expect(clippy::unused_self)]
     const fn register_drop_shim_for(&self, _ty: ty::Ty<'tcx>) {
         // TODO!
-        //let drop_in_place_did: DefId = search::try_resolve_did(self.env.tcx(), &["std", "ptr",
+        //let drop_in_place_did: DefId = search::try_resolve_did(self.tcx, &["std", "ptr",
         // "drop_in_place"]).unwrap();
 
         //let x: ty::InstanceDef = ty::InstanceDef::DropGlue(drop_in_place_did, Some(ty));
-        //let body: &'tcx mir::Body = self.env.tcx().mir_shims(x);
+        //let body: &'tcx mir::Body = self.tcx.mir_shims(x);
 
         //info!("Generated drop shim for {:?}", ty);
         //Self::dump_body(body);
@@ -500,12 +500,12 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
     /// Get the type of a place expression.
     fn get_type_of_place(&self, pl: &mir::Place<'tcx>) -> mir::PlaceTy<'tcx> {
-        pl.ty(&self.proc.get_mir().local_decls, self.env.tcx())
+        pl.ty(&self.proc.get_mir().local_decls, self.tcx)
     }
 
     /// Get the type of an operand.
     fn get_type_of_operand(&self, op: &mir::Operand<'tcx>) -> ty::Ty<'tcx> {
-        op.ty(&self.proc.get_mir().local_decls, self.env.tcx())
+        op.ty(&self.proc.get_mir().local_decls, self.tcx)
     }
 
     /// Check if a local is used for a spec closure.
