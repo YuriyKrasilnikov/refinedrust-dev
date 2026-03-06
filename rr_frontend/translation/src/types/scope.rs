@@ -121,7 +121,7 @@ pub(crate) struct Params<'tcx, 'def> {
     /// conversely, map the declaration name of a lifetime to an early index
     lft_names: HashMap<String, usize>,
     /// map types to their index
-    ty_names: HashMap<String, usize>,
+    ty_names: HashMap<String, u32>,
 
     /// the trait instances which are in scope
     trait_scope: Traits<'tcx, 'def>,
@@ -204,7 +204,7 @@ impl<'def> TraitReqHandler<'def> for Params<'_, 'def> {
         #[expect(clippy::iter_over_hash_type)]
         for ((_, ty), trait_use_ref) in &self.trait_scope.used_traits {
             // check if the Self parameter matches up
-            if ty[0].is_param(*typaram_idx as u32) {
+            if ty[0].is_param(*typaram_idx) {
                 let trait_use = trait_use_ref.trait_use.borrow();
                 let trait_use = trait_use.as_ref();
                 let Some(spec_use) = trait_use else {
@@ -275,8 +275,8 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
         let mut ty_names = HashMap::new();
         let mut lft_names = HashMap::new();
 
-        for p in x {
-            if let Some(r) = p.as_region() {
+        for (num, p) in (0_u32..).zip(x) {
+            let param = if let Some(r) = p.as_region() {
                 if let Some(name) = r.get_name(tcx)
                     && name.as_str() != "'_"
                 {
@@ -286,39 +286,43 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
                     let ty::RegionKind::ReEarlyParam(early) = r.kind() else {
                         unreachable!("should have early param");
                     };
+
                     let origin = if let Some(of_did) = with_origin {
                         determine_origin_of_lft_param(of_did, tcx, early)
                     } else {
                         specs::LftParamOrigin::LocalEarlyBound
                     };
 
-                    scope.push(Param::Region(specs::LftParam::new(coq::Ident::new(&name), origin)));
+                    Param::Region(specs::LftParam::new(coq::Ident::new(&name), origin))
                 } else {
                     let name = coq::Ident::new(&format!("ulft_{}", region_count));
                     region_count += 1;
-                    scope.push(Param::Region(specs::LftParam::new(
-                        name,
-                        specs::LftParamOrigin::LocalEarlyBound,
-                    )));
+
+                    Param::Region(specs::LftParam::new(name, specs::LftParamOrigin::LocalEarlyBound))
                 }
             } else if let Some(ty) = p.as_type() {
-                if let ty::TyKind::Param(x) = ty.kind() {
-                    ty_names.insert(x.name.as_str().to_owned(), scope.len());
-                    let name = strip_coq_ident(x.name.as_str());
-
-                    let lit = if let Some(of_did) = with_origin {
-                        let origin = Self::determine_origin_of_param(of_did, tcx, *x);
-                        specs::LiteralTyParam::new_with_origin(&name, origin)
-                    } else {
-                        specs::LiteralTyParam::new(&name)
-                    };
-                    scope.push(Param::Ty(lit));
-                } else {
+                let ty::TyKind::Param(x) = ty.kind() else {
                     unreachable!("Should not convert a non-parametric GenericArgsRef to a Params");
-                }
+                };
+
+                ty_names.insert(x.name.as_str().to_owned(), num);
+                let name = strip_coq_ident(x.name.as_str());
+
+                let lit = if let Some(of_did) = with_origin {
+                    let origin = Self::determine_origin_of_param(of_did, tcx, *x);
+                    specs::LiteralTyParam::new_with_origin(&name, origin)
+                } else {
+                    specs::LiteralTyParam::new(&name)
+                };
+
+                Param::Ty(lit)
             } else if p.as_const().is_some() {
-                scope.push(Param::Const);
-            }
+                Param::Const
+            } else {
+                unreachable!("Should not be a Term");
+            };
+
+            scope.push(param);
         }
         Self {
             scope,
@@ -333,8 +337,8 @@ impl<'tcx, 'def> Params<'tcx, 'def> {
 
     /// Lookup a type parameter by its De Bruijn index.
     #[must_use]
-    pub(crate) fn lookup_ty_param_idx(&self, idx: usize) -> Option<&specs::LiteralTyParam> {
-        let ty = self.scope.get(idx)?;
+    pub(crate) fn lookup_ty_param_idx(&self, idx: u32) -> Option<&specs::LiteralTyParam> {
+        let ty = self.scope.get(idx as usize)?;
         ty.as_type()
     }
 
@@ -841,38 +845,40 @@ impl From<&[ty::GenericParamDef]> for Params<'_, '_> {
         let mut ty_names = HashMap::new();
         let mut lft_names = HashMap::new();
 
-        for (num, p) in x.iter().enumerate() {
+        for (num, p) in (0_u32..).zip(x) {
             let mut name = strip_coq_ident(p.name.as_str());
             if name == "_" {
                 name = format!("p{num}");
             }
-            match p.kind {
-                ty::GenericParamDefKind::Const { .. } => {
-                    scope.push(Param::Const);
-                },
+
+            let param = match p.kind {
+                ty::GenericParamDefKind::Const { .. } => Param::Const,
                 ty::GenericParamDefKind::Type { .. } => {
                     let lit = specs::LiteralTyParam::new(&name);
-                    ty_names.insert(p.name.as_str().to_owned(), scope.len());
-                    scope.push(Param::Ty(lit));
+                    ty_names.insert(p.name.as_str().to_owned(), num);
+                    Param::Ty(lit)
                 },
                 ty::GenericParamDefKind::Lifetime => {
                     let name = p.name.as_str().to_owned();
                     if name.as_str() == "'_" {
-                        scope.push(Param::Region(specs::LftParam::new(
+                        Param::Region(specs::LftParam::new(
                             coq::Ident::new(&format!("ulft_{}", num)),
                             specs::LftParamOrigin::LocalEarlyBound,
-                        )));
+                        ))
                     } else {
                         let sanitized_name = name.replace('\'', "");
                         lft_names.insert(sanitized_name.clone(), scope.len());
-                        scope.push(Param::Region(specs::LftParam::new(
+                        Param::Region(specs::LftParam::new(
                             coq::Ident::new(&format!("ulft_{}", sanitized_name)),
                             specs::LftParamOrigin::LocalEarlyBound,
-                        )));
+                        ))
                     }
                 },
-            }
+            };
+
+            scope.push(param);
         }
+
         Self {
             scope,
             late_scope: Vec::new(),

@@ -361,7 +361,7 @@ impl<'def, 'tcx> STInner<'_, 'def, 'tcx> {
 
     /// Lookup a type parameter in the current state
     fn lookup_ty_param(&self, param_ty: ty::ParamTy) -> Result<specs::Type<'def>, TranslationError<'tcx>> {
-        let ty = self.param_scope().lookup_ty_param_idx(param_ty.index as usize).ok_or_else(|| {
+        let ty = self.param_scope().lookup_ty_param_idx(param_ty.index).ok_or_else(|| {
             TranslationError::UnknownVar(format!("unknown generic parameter {:?}", param_ty))
         })?;
         Ok(specs::Type::LiteralParam(ty.clone()))

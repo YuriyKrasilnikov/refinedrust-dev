@@ -33,9 +33,9 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
     env: &Environment<'tcx>,
     params: &[ty::GenericArg<'tcx>],
     of_did: DefId,
-    num_universal_regions: u32,
-    num_early_bounds: u32,
-    num_late_bounds: u32,
+    num_universal_regions: usize,
+    num_early_bounds: usize,
+    num_late_bounds: usize,
     sig: ty::Binder<'tcx, ty::FnSig<'tcx>>,
 ) -> (Vec<ty::Ty<'tcx>>, ty::Ty<'tcx>, EarlyLateRegionMap<'def>) {
     trace!(
@@ -66,7 +66,7 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
     let mut early_count = 0;
     for a in params {
         if let ty::GenericArgKind::Lifetime(r) = a.kind() {
-            let next_id = facts::Region::from_u32(first_early_bound + early_count);
+            let next_id = facts::Region::from_usize(first_early_bound + early_count);
             let revar = ty::Region::new_var(env.tcx(), next_id.into());
             subst_early_bounds.push(ty::GenericArg::from(revar));
 
@@ -104,7 +104,7 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
     let mut late_count = 0;
     let mut region_substitution_late = Vec::new();
     for b in sig.bound_vars() {
-        let next_id = facts::Region::from_u32(first_late_bound + late_count);
+        let next_id = facts::Region::from_usize(first_late_bound + late_count);
 
         let ty::BoundVariableKind::Region(r) = b else {
             continue;
@@ -167,7 +167,7 @@ pub(crate) fn replace_fnsig_args_with_polonius_vars<'def, 'tcx>(
     let mut folder = |_| {
         let cur_index = next_index;
         next_index += 1;
-        ty::Region::new_var(env.tcx(), ty::RegionVid::from_u32(cur_index))
+        ty::Region::new_var(env.tcx(), ty::RegionVid::from_usize(cur_index))
     };
     let (late_sig, _late_region_map) = env.tcx().instantiate_bound_regions(sig, &mut folder);
 
@@ -204,7 +204,7 @@ pub(crate) fn find_placeholder_region_for(
     info: &PoloniusInfo<'_, '_>,
 ) -> Option<facts::Region> {
     let root_location = mir::Location {
-        block: mir::BasicBlock::from_u32(0),
+        block: mir::BasicBlock::from_usize(0),
         statement_index: 0,
     };
     let root_point = info.interner.get_point_index(&facts::Point {
@@ -230,7 +230,7 @@ pub(crate) fn initialize_inclusion_tracker<'a, 'tcx>(
     let mut inclusion_tracker = InclusionTracker::new(info);
 
     let root_location = mir::Location {
-        block: mir::BasicBlock::from_u32(0),
+        block: mir::BasicBlock::from_usize(0),
         statement_index: 0,
     };
     let root_point = info.interner.get_point_index(&facts::Point {
@@ -262,7 +262,7 @@ pub(crate) fn get_initial_closure_constraints<'a>(
     let input_facts = &info.borrowck_in_facts;
 
     let root_location = mir::Location {
-        block: mir::BasicBlock::from_u32(0),
+        block: mir::BasicBlock::from_usize(0),
         statement_index: 0,
     };
     let root_point = info.interner.get_point_index(&facts::Point {
@@ -318,7 +318,7 @@ pub(crate) fn get_initial_universal_arg_constraints<'a, 'tcx>(
     // add the inclusions to the inclusion tracker
 
     let root_location = mir::Location {
-        block: mir::BasicBlock::from_u32(0),
+        block: mir::BasicBlock::from_usize(0),
         statement_index: 0,
     };
     let root_point = info.interner.get_point_index(&facts::Point {

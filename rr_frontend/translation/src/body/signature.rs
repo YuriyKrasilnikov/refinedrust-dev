@@ -86,9 +86,9 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let params = Self::get_proc_ty_params(env.tcx(), proc_did);
         info!("Function generic args: {:?}", params);
 
-        let num_late_bounds = sig.bound_vars().len() as u32;
+        let num_late_bounds = sig.bound_vars().len();
         let num_early_bounds =
-            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
         // + 1 for static, + 1 for function lifetime
         let num_universal_regions = num_late_bounds + num_early_bounds + 2;
         let (inputs, output, region_substitution) = regions::init::replace_fnsig_args_with_polonius_vars(
@@ -252,9 +252,9 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         // Note: this only treats the formal arguments of the closure, but not the closure captures
         let num_universals = info.borrowck_in_facts.universal_region.len();
-        let mut num_late_bounds = sig.bound_vars().len() as u32;
+        let mut num_late_bounds = sig.bound_vars().len();
         let num_early_bounds =
-            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
         // closures don't have early bounds: only late bounds and external lifetimes from the
         // surrounding scope.
         assert!(num_early_bounds == 0);
@@ -267,7 +267,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 env,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 sig,
@@ -469,15 +469,15 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
             // Important: use the fn's sig here.
             let num_universals = info.borrowck_in_facts.universal_region.len();
-            let num_late_bounds = sig.bound_vars().len() as u32;
+            let num_late_bounds = sig.bound_vars().len();
             let num_early_bounds =
-                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
 
             let (direct_inputs, direct_output, _) = regions::init::replace_fnsig_args_with_polonius_vars(
                 env,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 sig,
@@ -489,7 +489,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 env,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 expected_sig,
@@ -517,15 +517,15 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             (inputs, output, mapping)
         } else {
             let num_universals = info.borrowck_in_facts.universal_region.len();
-            let num_late_bounds = sig.bound_vars().len() as u32;
+            let num_late_bounds = sig.bound_vars().len();
             let num_early_bounds =
-                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
 
             regions::init::replace_fnsig_args_with_polonius_vars(
                 env,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 sig,
