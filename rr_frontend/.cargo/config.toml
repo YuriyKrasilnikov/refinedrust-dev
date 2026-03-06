@@ -75,7 +75,6 @@ rustflags = [
     # clippy::restriction
     "-Aclippy::arithmetic_side_effects",
     "-Aclippy::as_conversions",
-    "-Aclippy::clone_on_ref_ptr",
     "-Aclippy::doc_paragraphs_missing_punctuation",
     "-Aclippy::exit",
     "-Aclippy::expect_used",
