@@ -65,7 +65,6 @@ rustflags = [
     # === POTENTIAL LINTS (See: #7) ===
 
     # clippy::pedantic
-    "-Aclippy::map_unwrap_or", # this one seems buggy
     "-Aclippy::cast_possible_truncation",
     "-Aclippy::manual_assert",
     "-Aclippy::missing_errors_doc",

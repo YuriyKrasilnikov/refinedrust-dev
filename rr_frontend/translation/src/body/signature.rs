@@ -119,9 +119,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let arg_names: Vec<_> = arg_names
             .iter()
             .enumerate()
-            .map(|(i, maybe_name)| {
-                maybe_name.map(|x| x.as_str().to_owned()).unwrap_or_else(|| format!("_arg_{i}"))
-            })
+            .map(|(i, maybe_name)| maybe_name.map_or_else(|| format!("_arg_{i}"), |x| x.as_str().to_owned()))
             .collect();
         info!("arg names: {arg_names:?}");
 
@@ -555,9 +553,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let arg_names: Vec<_> = arg_names
             .iter()
             .enumerate()
-            .map(|(i, maybe_name)| {
-                maybe_name.map(|x| x.as_str().to_owned()).unwrap_or_else(|| format!("_arg_{i}"))
-            })
+            .map(|(i, maybe_name)| maybe_name.map_or_else(|| format!("_arg_{i}"), |x| x.as_str().to_owned()))
             .collect();
         info!("arg names: {arg_names:?}");
 
