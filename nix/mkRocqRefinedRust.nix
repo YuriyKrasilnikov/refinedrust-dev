@@ -17,12 +17,12 @@
   ...
 } @ origArgs: let
   args = let
-    fullArgs = origArgs // {inherit cargoRefinedRustArgs libDeps opam-name pname propagatedBuildInputs rocqArgs rocqTheoriesArgs src useDune withTheories;};
-    commonRemoveAttrs = ["cargoRefinedRustArgs" "propagatedBuildInputs" "rocqArgs" "rocqTheoriesArgs" "withTheories"];
+    fullArgs = origArgs // {inherit cargoRefinedRustArgs libDeps opam-name propagatedBuildInputs rocqArgs rocqTheoriesArgs src useDune withTheories;};
+    commonRemoveAttrs = ["cargoRefinedRustArgs" "pname" "propagatedBuildInputs" "rocqArgs" "rocqTheoriesArgs" "withTheories"];
   in rec {
     cargo = builtins.removeAttrs fullArgs (commonRemoveAttrs ++ ["opam-name" "useDune"]);
     rocq = builtins.removeAttrs fullArgs (commonRemoveAttrs ++ ["cargoArtifacts" "cargoExtraArgs" "cargoVendorDir" "libDeps" "src" "target" "withStdlib"]);
-    rocqTheories = builtins.removeAttrs rocq ["pname" "opam-name"];
+    rocqTheories = builtins.removeAttrs rocq ["opam-name"];
   };
 
   theories = pkgs.rocqPackages.mkRocqDerivation ({
@@ -32,13 +32,15 @@
         ++ libDeps
         ++ propagatedBuildInputs;
 
-      pname = pname + "-theories";
+      pname = "refinedrust-" + pname + "-theories";
       opam-name = opam-name + "-theories";
     }
     // args.rocqTheories // rocqTheoriesArgs);
 in
   pkgs.rocqPackages.mkRocqDerivation ({
       src = cargoRefinedRust (args.cargo // cargoRefinedRustArgs);
+      pname = "refinedrust-" + pname;
+
       propagatedBuildInputs =
         (pkgs.lib.optionals withStdlib [rrPkgs.stdlib])
         ++ libDeps
