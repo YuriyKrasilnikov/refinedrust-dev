@@ -30,7 +30,7 @@ use crate::spec_parsers::struct_spec_parser::{self, InvariantSpecParser as _, St
 use crate::spec_parsers::verbose_function_spec_parser::TraitReqHandler;
 use crate::traits::registry;
 use crate::types::scope;
-use crate::{attrs, error, search};
+use crate::{attrs, error, search, spec_parsers};
 
 /// A scope tracking the type translation state when translating the body of a function.
 /// This also includes the state needed for tracking trait constraints, as type translation for
@@ -1017,6 +1017,17 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         match translate_adt() {
             Ok(mut struct_def) => {
                 let lit = self.intern_literal(struct_def.make_literal_type());
+
+                // check for extra annotated dependencies
+                let attrs = self.env.get_attributes(ty.def_id);
+                let attrs = attrs::filter_for_tool(attrs);
+                let extra_deps =
+                    spec_parsers::get_depends_on_attrs(&attrs).map_err(TranslationError::AttributeError)?;
+                for dep in extra_deps {
+                    if let Some(did) = search::try_resolve_did(self.env.tcx(), dep.path.as_slice()) {
+                        deps.insert(OrderedDefId::new(self.env.tcx(), did));
+                    }
+                }
 
                 // check the deps
                 let is_rec_type = deps.contains(&OrderedDefId::new(self.env.tcx(), adt.did()));
