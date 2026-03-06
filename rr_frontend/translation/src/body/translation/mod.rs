@@ -20,6 +20,7 @@ use log::{info, trace};
 use radium::{code, coq, lang, specs};
 use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
+use rr_rustc_interface::span;
 use rr_rustc_interface::mir_dataflow::impls::always_storage_live_locals;
 use typed_arena::Arena;
 
@@ -103,7 +104,7 @@ pub(crate) struct TX<'a, 'def, 'tcx> {
     /// the Caesium function buildder
     translated_fn: code::FunctionBuilder<'def>,
     /// accumulator for non-SeqCst atomic operation spans (crate-level summary warning)
-    non_sc_atomic_spans: &'a mut Vec<rr_rustc_interface::span::Span>,
+    non_sc_atomic_spans: &'a mut Vec<span::Span>,
 }
 
 #[expect(clippy::multiple_inherent_impl)]
@@ -121,7 +122,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         mut inclusion_tracker: InclusionTracker<'a, 'tcx>,
         mut translated_fn: code::FunctionBuilder<'def>,
-        non_sc_atomic_spans: &'a mut Vec<rr_rustc_interface::span::Span>,
+        non_sc_atomic_spans: &'a mut Vec<span::Span>,
     ) -> Result<Self, TranslationError<'tcx>> {
         let body = proc.get_mir();
 

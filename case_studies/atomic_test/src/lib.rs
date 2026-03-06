@@ -39,6 +39,13 @@ impl MyAtomicU8 {
     pub fn swap(&self, _value: u8) -> u8 {
         unimplemented!()
     }
+    /// Spec-only: intercepted by mode(atomic) → CAS via 5-stmt bridge.
+    #[rr::only_spec]
+    #[rr::exists("x" : "Z")]
+    #[rr::returns("(x, true)")]
+    pub fn compare_exchange(&self, _current: u8, _new: u8) -> (u8, bool) {
+        unimplemented!()
+    }
 }
 
 #[rr::verify]
@@ -54,4 +61,9 @@ fn test_store(x: &MyAtomicU8) {
 #[rr::verify]
 fn test_swap(x: &MyAtomicU8) {
     let _v = x.swap(99);
+}
+
+#[rr::verify]
+fn test_cas(x: &MyAtomicU8) {
+    let _r = x.compare_exchange(10, 20);
 }

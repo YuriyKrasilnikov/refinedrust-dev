@@ -24,7 +24,7 @@ use crate::{search, types};
 /// (`core::intrinsics::atomic_load`). On nightly-2026-02-23, the ordering
 /// is a const generic parameter — the intrinsic name does NOT include the
 /// ordering suffix.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum AtomicIntrinsicKind {
     Load,
     Store,
@@ -80,7 +80,7 @@ fn classify_atomic_intrinsic(name: &str) -> Option<AtomicIntrinsicKind> {
 /// Classify a method on a `#[rr::mode(atomic)]` type by name.
 ///
 /// Maps standard atomic method names to Caesium operation equivalents.
-/// `signed` selects MaxSigned/MinSigned vs MaxUnsigned/MinUnsigned for fetch_max/fetch_min.
+/// `signed` selects `MaxSigned`/`MinSigned` vs `MaxUnsigned`/`MinUnsigned` for `fetch_max`/`fetch_min`.
 /// Returns `None` for methods that are not atomic operations (e.g. `new`, `into_inner`).
 fn classify_atomic_method(name: &str, signed: bool) -> Option<AtomicIntrinsicKind> {
     match name {
@@ -215,7 +215,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         Ok(vec![assign])
     }
 
-    /// Extract DefId from a function call operand.
+    /// Extract `DefId` from a function call operand.
     fn extract_fn_def_id(func: &mir::Operand<'_>) -> Option<DefId> {
         let mir::Operand::Constant(box c) = func else {
             return None;
@@ -264,7 +264,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         }
     }
 
-    /// Extract the pointee OpType from a raw pointer operand.
+    /// Extract the pointee `OpType` from a raw pointer operand.
     fn get_pointee_op_type(
         &self,
         op: &mir::Operand<'tcx>,
@@ -482,13 +482,13 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
     /// Check if a function call targets a method on a `#[rr::mode(atomic)]` type.
     ///
-    /// If so, returns the classified operation and the inner value's OpType.
+    /// If so, returns the classified operation and the inner value's `OpType`.
     /// Returns `Ok(None)` for non-atomic methods or non-method calls.
     fn try_classify_atomic_method(
         &self,
         func: &mir::Operand<'tcx>,
         args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
-    ) -> Result<Option<(AtomicIntrinsicKind, lang::OpType)>, TranslationError<'tcx>> {
+    ) -> Result<Option<(AtomicIntrinsicKind, lang::OpType, lang::SynType)>, TranslationError<'tcx>> {
         let Some(did) = Self::extract_fn_def_id(func) else {
             return Ok(None);
         };
@@ -543,7 +543,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let method_name = tcx.item_name(did);
 
         match classify_atomic_method(method_name.as_str(), signed) {
-            Some(kind) => Ok(Some((kind, ot))),
+            Some(kind) => Ok(Some((kind, ot, inner_st))),
             None => Ok(None),
         }
     }
@@ -551,13 +551,15 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     /// Translate an atomic method call on a `#[rr::mode(atomic)]` type to Caesium primitives.
     ///
     /// Method argument conventions (Ordering args are ignored — all map to ScOrd):
-    /// - load(&self, order) → Deref ScOrd
-    /// - store(&self, val, order) → Assign ScOrd
-    /// - swap/fetch_*(&self, val, order) → AtomicRMW
+    /// - `load(&self, order)` → `Deref` `ScOrd`
+    /// - `store(&self, val, order)` → `Assign` `ScOrd`
+    /// - `swap`/`fetch_*(&self, val, order)` → `AtomicRMW`
+    /// - `compare_exchange(&self, current, new, ord_s, ord_f)` → `CAS` via 5-stmt bridge
     fn translate_atomic_method(
         &mut self,
         kind: AtomicIntrinsicKind,
         ot: lang::OpType,
+        st: lang::SynType,
         args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
         destination: &mir::Place<'tcx>,
     ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
@@ -626,11 +628,83 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             },
 
             AtomicIntrinsicKind::Cxchg => {
-                Err(TranslationError::UnsupportedFeature {
-                    description: "compare_exchange via mode(atomic) method mapping is not yet supported; \
-                                  Rust returns Result<T, T> but Caesium CAS returns (T, bool)"
-                        .to_owned(),
-                })
+                // compare_exchange(&self, current, new, success_ord, failure_ord) -> (T, bool)
+                // Same 5-stmt bridge as intrinsic CAS, but args[0] = &self (shared ref).
+                let (target_ptr, _) = self.translate_operand(&args[0].node, true)?;
+                let (expected_val, _) = self.translate_operand(&args[1].node, true)?;
+                let (desired_val, _) = self.translate_operand(&args[2].node, true)?;
+
+                // Dest tuple (T, bool): get SLS for FieldOf projections
+                let dest_pty = self.get_type_of_place(destination);
+                let dest_lit = self
+                    .ty_translator
+                    .generate_structlike_use(dest_pty.ty, dest_pty.variant_index)?;
+                let dest_sls = dest_lit
+                    .map_or(lang::SynType::Unit, |x| x.generate_raw_syn_type_term())
+                    .to_string();
+                let dest_place = self.translate_place(destination)?;
+
+                let dest_0 = code::Expr::FieldOf {
+                    e: Box::new(dest_place.clone()),
+                    sls: dest_sls.clone(),
+                    name: "0".to_owned(),
+                };
+                let dest_1 = code::Expr::FieldOf {
+                    e: Box::new(dest_place),
+                    sls: dest_sls,
+                    name: "1".to_owned(),
+                };
+
+                let temp_name = "__cas_expected".to_owned();
+                let temp_var = code::Expr::Var(temp_name.clone());
+
+                // 1. Allocate temporary for expected value
+                let stmt_live = code::PrimStmt::LocalLive(code::Variable::new(
+                    temp_name.clone(),
+                    st,
+                ));
+
+                // 2. Store expected value into temporary
+                let stmt_store = code::PrimStmt::Assign {
+                    ot: ot.clone(),
+                    order: lang::Order::Na,
+                    e1: Box::new(temp_var.clone()),
+                    e2: Box::new(expected_val),
+                };
+
+                // 3. CAS: dest.1 <-{BoolOp} CAS(ot, target, &raw{Mut}(temp), desired)
+                let cas_expr = code::Expr::Cas {
+                    ot: ot.clone(),
+                    target: Box::new(target_ptr),
+                    expected: Box::new(code::Expr::AddressOf {
+                        mt: code::Mutability::Mut,
+                        e: Box::new(temp_var.clone()),
+                    }),
+                    desired: Box::new(desired_val),
+                };
+                let stmt_cas = code::PrimStmt::Assign {
+                    ot: lang::OpType::Bool,
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_1),
+                    e2: Box::new(cas_expr),
+                };
+
+                // 4. Read old value: dest.0 <-{ot} copy{ot}(temp)
+                let stmt_old = code::PrimStmt::Assign {
+                    ot: ot.clone(),
+                    order: lang::Order::Na,
+                    e1: Box::new(dest_0),
+                    e2: Box::new(code::Expr::Copy {
+                        ot,
+                        order: lang::Order::Na,
+                        e: Box::new(temp_var),
+                    }),
+                };
+
+                // 5. Deallocate temporary
+                let stmt_dead = code::PrimStmt::LocalDead(temp_name);
+
+                Ok(vec![stmt_live, stmt_store, stmt_cas, stmt_old, stmt_dead])
             },
 
             AtomicIntrinsicKind::Fence => {
@@ -694,14 +768,14 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 }
 
                 // Check for method call on #[rr::mode(atomic)] type
-                if let Some((kind, ot)) = self.try_classify_atomic_method(func, args)? {
+                if let Some((kind, ot, st)) = self.try_classify_atomic_method(func, args)? {
                     info!("Translating mode(atomic) method: {kind:?}");
 
                     if !matches!(kind, AtomicIntrinsicKind::Fence) {
                         self.non_sc_atomic_spans.push(term.source_info.span);
                     }
 
-                    let stmts = self.translate_atomic_method(kind, ot, args, destination)?;
+                    let stmts = self.translate_atomic_method(kind, ot, st, args, destination)?;
                     let goto = self.translate_goto_like(&loc, target.unwrap())?;
 
                     return Ok(code::Stmt::Prim(stmts, Box::new(goto)));
