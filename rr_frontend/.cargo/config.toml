@@ -73,7 +73,6 @@ rustflags = [
     "-Aclippy::wildcard_imports",
 
     # clippy::restriction
-    "-Aclippy::str_to_string", # this one seems buggy
     "-Aclippy::arithmetic_side_effects",
     "-Aclippy::as_conversions",
     "-Aclippy::clone_on_ref_ptr",
