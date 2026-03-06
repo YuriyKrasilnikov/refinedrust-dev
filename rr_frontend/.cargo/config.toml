@@ -89,7 +89,6 @@ rustflags = [
     "-Aclippy::pattern_type_mismatch",
     "-Aclippy::print_stderr",
     "-Aclippy::print_stdout",
-    "-Aclippy::string_slice",
     "-Aclippy::unimplemented",
     "-Aclippy::unwrap_used",
     "-Aclippy::use_debug",
