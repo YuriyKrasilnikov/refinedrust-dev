@@ -9,17 +9,11 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    rust-targets = {
-      url = "file+https://raw.githubusercontent.com/oxalica/rust-overlay/refs/heads/master/manifests/targets.nix";
-      flake = false;
-    };
   };
 
   outputs = {
     flake-utils,
     nixpkgs,
-    rust-targets,
     ...
   } @ inputs:
     flake-utils.lib.eachDefaultSystem (system: let
@@ -74,7 +68,7 @@
 
         mkDrvRustTargetToolchains = drv:
           lib.mapToAttrs (target: "target-" + target) ({pname}: drv (mkToolchain pname))
-          (map (pname: {inherit pname;}) (pkgs.lib.attrsets.attrValues (import rust-targets.outPath)));
+            (map (pname: {inherit pname;}) (lib.rust.availableTargets components));
       };
     in
       with pkgs.lib; rec {
