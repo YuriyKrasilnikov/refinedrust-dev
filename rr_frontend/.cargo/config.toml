@@ -125,7 +125,6 @@ rustflags = [
     "-Aclippy::missing_inline_in_public_items",
     "-Aclippy::missing_trait_methods",
     "-Aclippy::question_mark_used",
-    "-Aclippy::return_and_then",
     "-Aclippy::shadow_reuse",
     "-Aclippy::shadow_same",
     "-Aclippy::shadow_unrelated",
