@@ -39,7 +39,9 @@ impl MyAtomicU8 {
     pub fn swap(&self, _value: u8) -> u8 {
         unimplemented!()
     }
-    /// Spec-only: intercepted by mode(atomic) → CAS via 5-stmt bridge.
+    /// Spec-only: intercepted by mode(atomic) → CAS via 7-stmt StructInitE bridge.
+    /// Note: Rust tuples use plist refinement (tuple2_rt = plist place_rfnRT),
+    /// so returns must use -[...] notation, not Coq pair (a, b).
     #[rr::only_spec]
     #[rr::exists("x" : "Z")]
     #[rr::returns("(x, true)")]

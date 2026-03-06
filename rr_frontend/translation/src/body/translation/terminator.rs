@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use log::{info, trace, warn};
-use radium::{code, lang, specs};
+use radium::{code, coq, lang, specs};
 use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
 
@@ -283,6 +283,231 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         }
     }
 
+    // ── Shared atomic Caesium emitters (used by both intrinsic and method paths) ──
+
+    /// Emit atomic load: `dest <-{ot, Na} !{ot, ScOrd}(ptr)`
+    fn emit_atomic_load(
+        ot: lang::OpType,
+        ptr_expr: code::Expr,
+        dest_place: code::Expr,
+    ) -> Vec<code::PrimStmt> {
+        let deref_expr = code::Expr::Deref {
+            ot: ot.clone(),
+            order: lang::Order::Sc,
+            e: Box::new(ptr_expr),
+        };
+        vec![code::PrimStmt::Assign {
+            ot,
+            order: lang::Order::Na,
+            e1: Box::new(dest_place),
+            e2: Box::new(deref_expr),
+        }]
+    }
+
+    /// Emit atomic store: `ptr <-{ot, ScOrd} val; dest <-{UnitOp, Na} ZST`
+    fn emit_atomic_store(
+        ot: lang::OpType,
+        ptr_expr: code::Expr,
+        val_expr: code::Expr,
+        dest_place: code::Expr,
+    ) -> Vec<code::PrimStmt> {
+        let atomic_store = code::PrimStmt::Assign {
+            ot,
+            order: lang::Order::Sc,
+            e1: Box::new(ptr_expr),
+            e2: Box::new(val_expr),
+        };
+        let unit_assign = code::PrimStmt::Assign {
+            ot: lang::SynType::Unit.into(),
+            order: lang::Order::Na,
+            e1: Box::new(dest_place),
+            e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
+        };
+        vec![atomic_store, unit_assign]
+    }
+
+    /// Emit atomic RMW: `dest <-{ot, Na} AtomicRMW op ot (ptr) (val)`
+    fn emit_atomic_rmw(
+        rmw_op: lang::AtomicRmwOp,
+        ot: lang::OpType,
+        ptr_expr: code::Expr,
+        val_expr: code::Expr,
+        dest_place: code::Expr,
+    ) -> Vec<code::PrimStmt> {
+        let rmw_expr = code::Expr::AtomicRmw {
+            op: rmw_op,
+            ot: ot.clone(),
+            target: Box::new(ptr_expr),
+            arg: Box::new(val_expr),
+        };
+        vec![code::PrimStmt::Assign {
+            ot,
+            order: lang::Order::Na,
+            e1: Box::new(dest_place),
+            e2: Box::new(rmw_expr),
+        }]
+    }
+
+    /// Emit CAS via 10-stmt bridge (Rust-style: expected by value, returns old value):
+    ///   1.  `local_live __cas_expected`
+    ///   2.  `__cas_expected <-{ot} expected_val`
+    ///   3.  `local_live __cas_old`
+    ///   4.  `__cas_old <-{ot} CAS(ot, target, copy(__cas_expected), desired)`
+    ///   5.  `local_live __cas_result`
+    ///   6.  `__cas_result <-{BoolOp} (copy __cas_old) =={ot,ot} (copy __cas_expected)`
+    ///   7.  `dest <-{sls} StructInit sls [copy(__cas_old), copy(__cas_result)]`
+    ///   8.  `local_dead __cas_result`
+    ///   9.  `local_dead __cas_old`
+    ///   10. `local_dead __cas_expected`
+    fn emit_atomic_cas(
+        &mut self,
+        ot: lang::OpType,
+        st: lang::SynType,
+        target_ptr: code::Expr,
+        expected_val: code::Expr,
+        desired_val: code::Expr,
+        destination: &mir::Place<'tcx>,
+    ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
+        let dest_pty = self.get_type_of_place(destination);
+        let dest_lit = self
+            .ty_translator
+            .generate_structlike_use(dest_pty.ty, dest_pty.variant_index)?;
+        let dest_sls = dest_lit
+            .map_or(lang::SynType::Unit, |x| x.generate_raw_syn_type_term());
+        let dest_place = self.translate_place(destination)?;
+
+        let expected_name = "__cas_expected".to_owned();
+        let expected_var = code::Expr::Var(expected_name.clone());
+        let old_name = "__cas_old".to_owned();
+        let old_var = code::Expr::Var(old_name.clone());
+        let result_name = "__cas_result".to_owned();
+        let result_var = code::Expr::Var(result_name.clone());
+
+        // 1. local_live __cas_expected
+        let stmt_live_expected = code::PrimStmt::LocalLive(code::Variable::new(
+            expected_name.clone(),
+            st.clone(),
+        ));
+
+        // 2. __cas_expected <-{ot} expected_val
+        let stmt_store_expected = code::PrimStmt::Assign {
+            ot: ot.clone(),
+            order: lang::Order::Na,
+            e1: Box::new(expected_var.clone()),
+            e2: Box::new(expected_val),
+        };
+
+        // 3. local_live __cas_old
+        let stmt_live_old = code::PrimStmt::LocalLive(code::Variable::new(
+            old_name.clone(),
+            st,
+        ));
+
+        // 4. __cas_old <-{ot} CAS(ot, target, copy(__cas_expected), desired)
+        let cas_expr = code::Expr::Cas {
+            ot: ot.clone(),
+            target: Box::new(target_ptr),
+            expected: Box::new(code::Expr::Copy {
+                ot: ot.clone(),
+                order: lang::Order::Na,
+                e: Box::new(expected_var.clone()),
+            }),
+            desired: Box::new(desired_val),
+        };
+        let stmt_cas = code::PrimStmt::Assign {
+            ot: ot.clone(),
+            order: lang::Order::Na,
+            e1: Box::new(old_var.clone()),
+            e2: Box::new(cas_expr),
+        };
+
+        // 5. local_live __cas_result
+        let stmt_live_result = code::PrimStmt::LocalLive(code::Variable::new(
+            result_name.clone(),
+            lang::SynType::Bool,
+        ));
+
+        // 6. __cas_result <-{BoolOp} (copy __cas_old) =={ot,ot} (copy __cas_expected)
+        let eq_expr = code::Expr::BinOp {
+            o: code::Binop::Eq,
+            ot1: ot.clone(),
+            ot2: ot.clone(),
+            e1: Box::new(code::Expr::Copy {
+                ot: ot.clone(),
+                order: lang::Order::Na,
+                e: Box::new(old_var.clone()),
+            }),
+            e2: Box::new(code::Expr::Copy {
+                ot: ot.clone(),
+                order: lang::Order::Na,
+                e: Box::new(expected_var.clone()),
+            }),
+        };
+        let stmt_eq = code::PrimStmt::Assign {
+            ot: lang::OpType::Bool,
+            order: lang::Order::Na,
+            e1: Box::new(result_var.clone()),
+            e2: Box::new(eq_expr),
+        };
+
+        // 7. dest <-{sls} StructInit sls [(0, copy __cas_old), (1, copy __cas_result)]
+        let struct_init = code::Expr::StructInitE {
+            sls: coq::term::App::new_lhs(dest_sls.to_string()),
+            components: vec![
+                (
+                    "0".to_owned(),
+                    code::Expr::Copy {
+                        ot,
+                        order: lang::Order::Na,
+                        e: Box::new(old_var),
+                    },
+                ),
+                (
+                    "1".to_owned(),
+                    code::Expr::Copy {
+                        ot: lang::OpType::Bool,
+                        order: lang::Order::Na,
+                        e: Box::new(result_var),
+                    },
+                ),
+            ],
+        };
+        let stmt_init = code::PrimStmt::Assign {
+            ot: lang::OpType::UseOpAlg(coq::term::Term::Literal(dest_sls.to_string())),
+            order: lang::Order::Na,
+            e1: Box::new(dest_place),
+            e2: Box::new(struct_init),
+        };
+
+        // 8-10. local_dead
+        let stmt_dead_result = code::PrimStmt::LocalDead(result_name);
+        let stmt_dead_old = code::PrimStmt::LocalDead(old_name);
+        let stmt_dead_expected = code::PrimStmt::LocalDead(expected_name);
+
+        Ok(vec![
+            stmt_live_expected,
+            stmt_store_expected,
+            stmt_live_old,
+            stmt_cas,
+            stmt_live_result,
+            stmt_eq,
+            stmt_init,
+            stmt_dead_result,
+            stmt_dead_old,
+            stmt_dead_expected,
+        ])
+    }
+
+    /// Emit fence (no-op in SC interleaving model): `dest <-{UnitOp, Na} ZST`
+    fn emit_atomic_fence(dest_place: code::Expr) -> Vec<code::PrimStmt> {
+        vec![code::PrimStmt::Assign {
+            ot: lang::SynType::Unit.into(),
+            order: lang::Order::Na,
+            e1: Box::new(dest_place),
+            e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
+        }]
+    }
+
     /// Translate an atomic intrinsic to Caesium primitive statements.
     ///
     /// All Rust memory orderings map to `ScOrd` (sequentially consistent) — a sound
@@ -295,87 +520,29 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
         match kind {
             AtomicIntrinsicKind::Load => {
-                // atomic_load<T, ORD>(src: *const T) -> T
-                // Emit: dest <-{ot, Na} !{ot, ScOrd}(ptr)
                 let ot = self.get_pointee_op_type(&args[0].node)?;
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
-
-                let deref_expr = code::Expr::Deref {
-                    ot: ot.clone(),
-                    order: lang::Order::Sc,
-                    e: Box::new(ptr_expr),
-                };
-
                 let dest_place = self.translate_place(destination)?;
-                Ok(vec![code::PrimStmt::Assign {
-                    ot,
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(deref_expr),
-                }])
+                Ok(Self::emit_atomic_load(ot, ptr_expr, dest_place))
             },
 
             AtomicIntrinsicKind::Store => {
-                // atomic_store<T, ORD>(dst: *mut T, val: T) -> ()
-                // Emit: ptr <-{ot, ScOrd} val; dest <-{UnitOp, Na} zst_val
                 let ot = self.get_pointee_op_type(&args[0].node)?;
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
-
-                let atomic_store = code::PrimStmt::Assign {
-                    ot,
-                    order: lang::Order::Sc,
-                    e1: Box::new(ptr_expr),
-                    e2: Box::new(val_expr),
-                };
-
                 let dest_place = self.translate_place(destination)?;
-                let unit_assign = code::PrimStmt::Assign {
-                    ot: lang::SynType::Unit.into(),
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
-                };
-
-                Ok(vec![atomic_store, unit_assign])
+                Ok(Self::emit_atomic_store(ot, ptr_expr, val_expr, dest_place))
             },
 
             AtomicIntrinsicKind::Rmw(rmw_op) => {
-                // atomic_xchg/xadd/xsub/and/or/xor/nand/max/min/umax/umin
-                // <T, ORD>(dst: *mut T, val: T) -> T  (returns old value)
-                // Emit: dest <-{ot, Na} AtomicRMW op ot (ptr) (val)
                 let ot = self.get_pointee_op_type(&args[0].node)?;
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
-
-                let rmw_expr = code::Expr::AtomicRmw {
-                    op: rmw_op,
-                    ot: ot.clone(),
-                    target: Box::new(ptr_expr),
-                    arg: Box::new(val_expr),
-                };
-
                 let dest_place = self.translate_place(destination)?;
-                Ok(vec![code::PrimStmt::Assign {
-                    ot,
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(rmw_expr),
-                }])
+                Ok(Self::emit_atomic_rmw(rmw_op, ot, ptr_expr, val_expr, dest_place))
             },
 
             AtomicIntrinsicKind::Cxchg => {
-                // atomic_cxchg<T, ORD_S, ORD_F>(dst: *mut T, old: T, src: T) -> (T, bool)
-                //
-                // Caesium CAS returns bool and writes old value to *expected (C11 model).
-                // Rust returns (T, bool). Bridge via temporary:
-                //   1. local_live temp
-                //   2. temp <-{ot} expected_val
-                //   3. dest.1 <-{BoolOp} CAS(ot, target, &raw{Mut}(temp), desired)
-                //   4. dest.0 <-{ot} copy{ot}(temp)   — old value
-                //   5. local_dead temp
-
-                // Pointee SynType + OpType from args[0]: *mut T
                 let ptr_ty = self.get_type_of_operand(&args[0].node);
                 let ty::TyKind::RawPtr(pointee_ty, _) = ptr_ty.kind() else {
                     return Err(TranslationError::UnsupportedFeature {
@@ -384,98 +551,19 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                         ),
                     });
                 };
-                let pointee_st = self.ty_translator.translate_type_to_syn_type(*pointee_ty)?;
-                let ot: lang::OpType = (&pointee_st).into();
+                let st = self.ty_translator.translate_type_to_syn_type(*pointee_ty)?;
+                let ot: lang::OpType = (&st).into();
 
                 let (target_ptr, _) = self.translate_operand(&args[0].node, true)?;
                 let (expected_val, _) = self.translate_operand(&args[1].node, true)?;
                 let (desired_val, _) = self.translate_operand(&args[2].node, true)?;
 
-                // Dest tuple (T, bool): get SLS for FieldOf projections
-                let dest_pty = self.get_type_of_place(destination);
-                let dest_lit = self
-                    .ty_translator
-                    .generate_structlike_use(dest_pty.ty, dest_pty.variant_index)?;
-                let dest_sls = dest_lit
-                    .map_or(lang::SynType::Unit, |x| x.generate_raw_syn_type_term())
-                    .to_string();
-                let dest_place = self.translate_place(destination)?;
-
-                let dest_0 = code::Expr::FieldOf {
-                    e: Box::new(dest_place.clone()),
-                    sls: dest_sls.clone(),
-                    name: "0".to_owned(),
-                };
-                let dest_1 = code::Expr::FieldOf {
-                    e: Box::new(dest_place),
-                    sls: dest_sls,
-                    name: "1".to_owned(),
-                };
-
-                let temp_name = "__cas_expected".to_owned();
-                let temp_var = code::Expr::Var(temp_name.clone());
-
-                // 1. Allocate temporary for expected value
-                let stmt_live = code::PrimStmt::LocalLive(code::Variable::new(
-                    temp_name.clone(),
-                    pointee_st,
-                ));
-
-                // 2. Store expected value into temporary
-                let stmt_store = code::PrimStmt::Assign {
-                    ot: ot.clone(),
-                    order: lang::Order::Na,
-                    e1: Box::new(temp_var.clone()),
-                    e2: Box::new(expected_val),
-                };
-
-                // 3. CAS: dest.1 <-{BoolOp} CAS(ot, target, &raw{Mut}(temp), desired)
-                let cas_expr = code::Expr::Cas {
-                    ot: ot.clone(),
-                    target: Box::new(target_ptr),
-                    expected: Box::new(code::Expr::AddressOf {
-                        mt: code::Mutability::Mut,
-                        e: Box::new(temp_var.clone()),
-                    }),
-                    desired: Box::new(desired_val),
-                };
-                let stmt_cas = code::PrimStmt::Assign {
-                    ot: lang::OpType::Bool,
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_1),
-                    e2: Box::new(cas_expr),
-                };
-
-                // 4. Read old value: dest.0 <-{ot} copy{ot}(temp)
-                // After CAS, temp contains old target value in both cases:
-                //   failure: Caesium writes old value to *expected
-                //   success: temp unchanged, but expected == old (match was exact)
-                let stmt_old = code::PrimStmt::Assign {
-                    ot: ot.clone(),
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_0),
-                    e2: Box::new(code::Expr::Copy {
-                        ot,
-                        order: lang::Order::Na,
-                        e: Box::new(temp_var),
-                    }),
-                };
-
-                // 5. Deallocate temporary
-                let stmt_dead = code::PrimStmt::LocalDead(temp_name);
-
-                Ok(vec![stmt_live, stmt_store, stmt_cas, stmt_old, stmt_dead])
+                self.emit_atomic_cas(ot, st, target_ptr, expected_val, desired_val, destination)
             },
 
             AtomicIntrinsicKind::Fence => {
-                // No-op in SC interleaving model. Assign () to destination.
                 let dest_place = self.translate_place(destination)?;
-                Ok(vec![code::PrimStmt::Assign {
-                    ot: lang::SynType::Unit.into(),
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
-                }])
+                Ok(Self::emit_atomic_fence(dest_place))
             },
         }
     }
@@ -550,11 +638,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
     /// Translate an atomic method call on a `#[rr::mode(atomic)]` type to Caesium primitives.
     ///
-    /// Method argument conventions (Ordering args are ignored — all map to ScOrd):
-    /// - `load(&self, order)` → `Deref` `ScOrd`
-    /// - `store(&self, val, order)` → `Assign` `ScOrd`
-    /// - `swap`/`fetch_*(&self, val, order)` → `AtomicRMW`
-    /// - `compare_exchange(&self, current, new, ord_s, ord_f)` → `CAS` via 5-stmt bridge
+    /// Delegates to shared `emit_atomic_*` functions (same code as intrinsic path).
     fn translate_atomic_method(
         &mut self,
         kind: AtomicIntrinsicKind,
@@ -565,156 +649,35 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
         match kind {
             AtomicIntrinsicKind::Load => {
-                // load(&self, order) -> T
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
-
-                let deref_expr = code::Expr::Deref {
-                    ot: ot.clone(),
-                    order: lang::Order::Sc,
-                    e: Box::new(ptr_expr),
-                };
-
                 let dest_place = self.translate_place(destination)?;
-                Ok(vec![code::PrimStmt::Assign {
-                    ot,
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(deref_expr),
-                }])
+                Ok(Self::emit_atomic_load(ot, ptr_expr, dest_place))
             },
 
             AtomicIntrinsicKind::Store => {
-                // store(&self, val, order)
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
-
-                let atomic_store = code::PrimStmt::Assign {
-                    ot,
-                    order: lang::Order::Sc,
-                    e1: Box::new(ptr_expr),
-                    e2: Box::new(val_expr),
-                };
-
                 let dest_place = self.translate_place(destination)?;
-                let unit_assign = code::PrimStmt::Assign {
-                    ot: lang::SynType::Unit.into(),
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
-                };
-
-                Ok(vec![atomic_store, unit_assign])
+                Ok(Self::emit_atomic_store(ot, ptr_expr, val_expr, dest_place))
             },
 
             AtomicIntrinsicKind::Rmw(rmw_op) => {
-                // swap/fetch_*(&self, val, order) -> T
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
-
-                let rmw_expr = code::Expr::AtomicRmw {
-                    op: rmw_op,
-                    ot: ot.clone(),
-                    target: Box::new(ptr_expr),
-                    arg: Box::new(val_expr),
-                };
-
                 let dest_place = self.translate_place(destination)?;
-                Ok(vec![code::PrimStmt::Assign {
-                    ot,
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(rmw_expr),
-                }])
+                Ok(Self::emit_atomic_rmw(rmw_op, ot, ptr_expr, val_expr, dest_place))
             },
 
             AtomicIntrinsicKind::Cxchg => {
-                // compare_exchange(&self, current, new, success_ord, failure_ord) -> (T, bool)
-                // Same 5-stmt bridge as intrinsic CAS, but args[0] = &self (shared ref).
                 let (target_ptr, _) = self.translate_operand(&args[0].node, true)?;
                 let (expected_val, _) = self.translate_operand(&args[1].node, true)?;
                 let (desired_val, _) = self.translate_operand(&args[2].node, true)?;
-
-                // Dest tuple (T, bool): get SLS for FieldOf projections
-                let dest_pty = self.get_type_of_place(destination);
-                let dest_lit = self
-                    .ty_translator
-                    .generate_structlike_use(dest_pty.ty, dest_pty.variant_index)?;
-                let dest_sls = dest_lit
-                    .map_or(lang::SynType::Unit, |x| x.generate_raw_syn_type_term())
-                    .to_string();
-                let dest_place = self.translate_place(destination)?;
-
-                let dest_0 = code::Expr::FieldOf {
-                    e: Box::new(dest_place.clone()),
-                    sls: dest_sls.clone(),
-                    name: "0".to_owned(),
-                };
-                let dest_1 = code::Expr::FieldOf {
-                    e: Box::new(dest_place),
-                    sls: dest_sls,
-                    name: "1".to_owned(),
-                };
-
-                let temp_name = "__cas_expected".to_owned();
-                let temp_var = code::Expr::Var(temp_name.clone());
-
-                // 1. Allocate temporary for expected value
-                let stmt_live = code::PrimStmt::LocalLive(code::Variable::new(
-                    temp_name.clone(),
-                    st,
-                ));
-
-                // 2. Store expected value into temporary
-                let stmt_store = code::PrimStmt::Assign {
-                    ot: ot.clone(),
-                    order: lang::Order::Na,
-                    e1: Box::new(temp_var.clone()),
-                    e2: Box::new(expected_val),
-                };
-
-                // 3. CAS: dest.1 <-{BoolOp} CAS(ot, target, &raw{Mut}(temp), desired)
-                let cas_expr = code::Expr::Cas {
-                    ot: ot.clone(),
-                    target: Box::new(target_ptr),
-                    expected: Box::new(code::Expr::AddressOf {
-                        mt: code::Mutability::Mut,
-                        e: Box::new(temp_var.clone()),
-                    }),
-                    desired: Box::new(desired_val),
-                };
-                let stmt_cas = code::PrimStmt::Assign {
-                    ot: lang::OpType::Bool,
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_1),
-                    e2: Box::new(cas_expr),
-                };
-
-                // 4. Read old value: dest.0 <-{ot} copy{ot}(temp)
-                let stmt_old = code::PrimStmt::Assign {
-                    ot: ot.clone(),
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_0),
-                    e2: Box::new(code::Expr::Copy {
-                        ot,
-                        order: lang::Order::Na,
-                        e: Box::new(temp_var),
-                    }),
-                };
-
-                // 5. Deallocate temporary
-                let stmt_dead = code::PrimStmt::LocalDead(temp_name);
-
-                Ok(vec![stmt_live, stmt_store, stmt_cas, stmt_old, stmt_dead])
+                self.emit_atomic_cas(ot, st, target_ptr, expected_val, desired_val, destination)
             },
 
             AtomicIntrinsicKind::Fence => {
                 let dest_place = self.translate_place(destination)?;
-                Ok(vec![code::PrimStmt::Assign {
-                    ot: lang::SynType::Unit.into(),
-                    order: lang::Order::Na,
-                    e1: Box::new(dest_place),
-                    e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
-                }])
+                Ok(Self::emit_atomic_fence(dest_place))
             },
         }
     }

@@ -596,33 +596,36 @@ Inductive expr_step : expr → thread_id → state → list Empty_set → runtim
     val_to_loc v = Some l →
     heap_at l (ot_layout ot) v' start_st σ.(st_heap).(hs_heap) →
     expr_step (Deref o ot mc (Val v)) π σ [] (to_rtexpr π end_expr) (heap_fmap (heap_upd l v' end_st) σ) []
-(* TODO: look at CAS and see whether it makes sense. Also allow
-comparing pointers? (see lambda rust) *)
-(* corresponds to atomic_compare_exchange_strong, see https://en.cppreference.com/w/c/atomic/atomic_compare_exchange *)
-| CasFailS l1 l2 vo ve σ π z1 z2 v1 v2 v3 ot:
-    val_to_loc v1 = Some l1 →
-    heap_at l1 (ot_layout ot) vo (λ st, ∃ n, st = RSt n) σ.(st_heap).(hs_heap) →
-    val_to_loc v2 = Some l2 →
-    heap_at l2 (ot_layout ot) ve (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
+(* Rust-style CAS: expected by value, returns old value.
+   CAS ot v1 v2 v3 where:
+     v1 = pointer to target atomic location
+     v2 = expected value (by value, like AtomicRMW arg)
+     v3 = desired value (by value)
+   Returns: old value from target (vo), uniform with AtomicRMW.
+   On success (vo == v2 as integers): target ← v3.
+   On failure (vo ≠ v2 as integers): target unchanged. *)
+| CasFailS ot l vo σ π z1 z2 v1 v2 v3:
+    val_to_loc v1 = Some l →
+    heap_at l (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
     val_to_Z_ot vo ot = Some z1 →
-    val_to_Z_ot ve ot = Some z2 →
+    val_to_Z_ot v2 ot = Some z2 →
+    v2 `has_layout_val` ot_layout ot →
     v3 `has_layout_val` ot_layout ot →
     ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
     z1 ≠ z2 →
     expr_step (CAS ot (Val v1) (Val v2) (Val v3)) π σ []
-              (RTVal (val_of_bool false)) (heap_fmap (heap_upd l2 vo (λ _, RSt 0%nat)) σ) []
-| CasSucS l1 l2 ot vo ve σ π z1 z2 v1 v2 v3:
-    val_to_loc v1 = Some l1 →
-    heap_at l1 (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
-    val_to_loc v2 = Some l2 →
-    heap_at l2 (ot_layout ot) ve (λ st, ∃ n, st = RSt n) σ.(st_heap).(hs_heap) →
+              (RTVal vo) σ []
+| CasSucS ot l vo σ π z1 z2 v1 v2 v3:
+    val_to_loc v1 = Some l →
+    heap_at l (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
     val_to_Z_ot vo ot = Some z1 →
-    val_to_Z_ot ve ot = Some z2 →
+    val_to_Z_ot v2 ot = Some z2 →
+    v2 `has_layout_val` ot_layout ot →
     v3 `has_layout_val` ot_layout ot →
     ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
     z1 = z2 →
     expr_step (CAS ot (Val v1) (Val v2) (Val v3)) π σ []
-              (RTVal (val_of_bool true)) (heap_fmap (heap_upd l1 v3 (λ _, RSt 0%nat)) σ) []
+              (RTVal vo) (heap_fmap (heap_upd l v3 (λ _, RSt 0%nat)) σ) []
 | AtomicRMWS op ot l vo σ π v1 v2 v_new:
     val_to_loc v1 = Some l →
     heap_at l (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →

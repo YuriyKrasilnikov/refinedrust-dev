@@ -12,7 +12,7 @@ Lemma test_cas_proof (π : thread_id) :
 Proof.
   test_cas_prelude.
 
-  rep <-! liRStep; liShow.
+  repeat liRStep.
 
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.

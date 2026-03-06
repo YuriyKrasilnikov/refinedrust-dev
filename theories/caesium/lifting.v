@@ -736,74 +736,67 @@ Qed.
    WP CAS (IntOp it) (Val vl1) (Val vl2) (Val vd) @ E {{ Φ }}.
 *)
 
-Lemma wp_cas_fail vl1 vl2 vd vo ve z1 z2 Φ l1 l2 ot q π E:
-  val_to_loc vl1 = Some l1 →
-  val_to_loc vl2 = Some l2 →
-  l1 `has_layout_loc` ot_layout ot →
-  l2 `has_layout_loc` ot_layout ot →
+(* Rust-style CAS WP lemmas: expected by value, returns old value.
+   Uniform with [wp_atomic_rmw]: single location, full ownership, returns vo. *)
+Lemma wp_cas_fail vl ve vd vo z1 z2 Φ l ot π E:
+  val_to_loc vl = Some l →
+  l `has_layout_loc` ot_layout ot →
   val_to_Z_ot vo ot = Some z1 →
   val_to_Z_ot ve ot = Some z2 →
+  ve `has_layout_val` ot_layout ot →
   length vd = (ot_layout ot).(ly_size) →
   ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
   z1 ≠ z2 →
-  l1↦{q}vo -∗ l2↦ve -∗
-  (|={E}⧗=> (l1 ↦{q} vo -∗ l2↦vo -∗ Φ (val_of_bool false))) -∗
-   WPe{π} CAS ot (Val vl1) (Val vl2) (Val vd) @ E {{ Φ }}.
+  l↦vo -∗
+  (|={E}⧗=> (l ↦ vo -∗ Φ vo)) -∗
+  WPe{π} CAS ot (Val vl) (Val ve) (Val vd) @ E {{ Φ }}.
 Proof.
-  iIntros (Hl1 Hl2 Hly1 Hly2 Hvo Hve Hlen1 Hlen2 Hneq) "Hl1 Hl2 HΦ".
+  iIntros (Hl Hly Hvo Hve Hve_ly Hlen Hbpa Hneq) "Hl HΦ".
   rewrite expr_wp_unfold.
   iApply wp_lift_expr_step; auto.
   iIntros (σ1) "((%&Hhctx&?)&Hfctx)".
-  iDestruct (heap_pointsto_is_alloc with "Hl1") as %Haid1.
-  iDestruct (heap_pointsto_is_alloc with "Hl2") as %Haid2.
-  move: (Hvo) (Hve) => /val_to_Z_ot_length ? /val_to_Z_ot_length ?.
-  iDestruct (heap_pointsto_lookup_q (λ st : lock_state, ∃ n : nat, st = RSt n) with "Hhctx Hl1") as %? => //. { naive_solver. }
-  iDestruct (heap_pointsto_lookup_1 (λ st : lock_state, st = RSt 0%nat) with "Hhctx Hl2") as %? => //.
+  iDestruct (heap_pointsto_is_alloc with "Hl") as %Haid.
+  move: (Hvo) => /val_to_Z_ot_length ?.
+  iDestruct (heap_pointsto_lookup_1 (λ st : lock_state, st = RSt 0%nat) with "Hhctx Hl") as %? => //.
   iModIntro. iSplit; first by eauto 15 using CasFailS.
   iIntros (? e2 σ2 efs Hst ?). inv_expr_step;
-    have ? : (vo = vo0) by [apply: heap_lookup_loc_inj_val => //; congruence];
-    have ? : (ve = ve0) by [apply: heap_lookup_loc_inj_val => //; congruence]; simplify_eq.
-  have ? : (length ve0 = length vo0) by congruence.
+    have ? : (vo = vo0) by [apply: heap_lookup_loc_inj_val => //; congruence]; simplify_eq.
+  (* σ2 = σ1: no heap change on failure *)
   iApply physical_step_fupd.
   iApply (physical_step_wand with "HΦ"). iIntros "HΦ".
-  iMod (heap_write with "Hhctx Hl2") as "[$ Hl2]" => //. iModIntro.
-  iFrame. iSplit => //. iSplit; first done.
-  iApply wp_value. by iApply ("HΦ" with "[$] [$]").
+  iModIntro. iFrame. iSplit => //. iSplit; first done.
+  iApply wp_value. by iApply ("HΦ" with "[$]").
 Qed.
 
-Lemma wp_cas_suc vl1 vl2 vd vo ve z1 z2 Φ l1 l2 ot π E q:
-  val_to_loc vl1 = Some l1 →
-  val_to_loc vl2 = Some l2 →
-  l1 `has_layout_loc` ot_layout ot →
-  l2 `has_layout_loc` ot_layout ot →
+Lemma wp_cas_suc vl ve vd vo z1 z2 Φ l ot π E:
+  val_to_loc vl = Some l →
+  l `has_layout_loc` ot_layout ot →
   val_to_Z_ot vo ot = Some z1 →
   val_to_Z_ot ve ot = Some z2 →
+  ve `has_layout_val` ot_layout ot →
   length vd = (ot_layout ot).(ly_size) →
   ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
   z1 = z2 →
-  l1↦vo -∗ l2↦{q}ve -∗
-  (|={E}⧗=> (l1 ↦ vd -∗ l2↦{q}ve -∗ Φ (val_of_bool true))) -∗
-  WPe{π} CAS ot (Val vl1) (Val vl2) (Val vd) @ E {{ Φ }}.
+  l↦vo -∗
+  (|={E}⧗=> (l ↦ vd -∗ Φ vo)) -∗
+  WPe{π} CAS ot (Val vl) (Val ve) (Val vd) @ E {{ Φ }}.
 Proof.
-  iIntros (Hl1 Hl2 Hly1 Hly2 Hvo Hve Hlen1 Hlen2 Hneq) "Hl1 Hl2 HΦ".
+  iIntros (Hl Hly Hvo Hve Hve_ly Hlen Hbpa Heq) "Hl HΦ".
   rewrite expr_wp_unfold.
   iApply wp_lift_expr_step; auto.
   iIntros (σ1) "((%&Hhctx&?)&Hfctx)".
-  iDestruct (heap_pointsto_is_alloc with "Hl1") as %Haid1.
-  iDestruct (heap_pointsto_is_alloc with "Hl2") as %Haid2.
-  move: (Hvo) (Hve) => /val_to_Z_ot_length ? /val_to_Z_ot_length ?.
-  iDestruct (heap_pointsto_lookup_1 (λ st : lock_state, st = RSt 0%nat) with "Hhctx Hl1") as %? => //.
-  iDestruct (heap_pointsto_lookup_q (λ st : lock_state, ∃ n : nat, st = RSt n) with "Hhctx Hl2") as %? => //. { naive_solver. }
+  iDestruct (heap_pointsto_is_alloc with "Hl") as %Haid.
+  move: (Hvo) => /val_to_Z_ot_length ?.
+  iDestruct (heap_pointsto_lookup_1 (λ st : lock_state, st = RSt 0%nat) with "Hhctx Hl") as %? => //.
   iModIntro. iSplit; first by eauto 15 using CasSucS.
   iIntros (? e2 σ2 efs Hst ?). inv_expr_step;
-      have ? : (ve = ve0) by [apply: heap_lookup_loc_inj_val => //; congruence];
-      have ? : (vo = vo0) by [apply: heap_lookup_loc_inj_val => //; congruence]; simplify_eq.
+    have ? : (vo = vo0) by [apply: heap_lookup_loc_inj_val => //; congruence]; simplify_eq.
   have ? : (length vo0 = length vd) by congruence.
   iApply physical_step_fupd.
   iApply (physical_step_wand with "HΦ"). iIntros "HΦ".
-  iMod (heap_write with "Hhctx Hl1") as "[$ Hmt]" => //. iModIntro.
+  iMod (heap_write with "Hhctx Hl") as "[$ Hl]" => //. iModIntro.
   iFrame. iSplit => //. iSplit; first done.
-  iApply wp_value. by iApply ("HΦ" with "[$] [$]").
+  iApply wp_value. by iApply ("HΦ" with "[$]").
 Qed.
 
 Lemma wp_atomic_rmw op vl varg vo v_new Φ l ot π E:

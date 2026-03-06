@@ -1,5 +1,5 @@
 From refinedrust Require Export atomic_int.
-From refinedrust Require Import int alias_ptr shr_ref options.
+From refinedrust Require Import int shr_ref options.
 
 (** Typing rules for atomic operations on [at_ex_plain_t]-wrapped integer types.
 
@@ -80,6 +80,7 @@ Section atomic_load.
       (v : val) (κ : lft) (r : place_rfn Y)
       (T : typed_val_expr_cont_t) :
     ⌜lctx_lft_alive E L κ⌝ ∗
+    ⌜((ot_layout (IntOp it)).(ly_size) ≤ bytes_per_addr)%nat⌝ ∗
     find_in_context FindCreditStore (λ '(c, a),
       ⌜fast_lia_hint (1 ≤ c)⌝ ∗
       (credit_store (c - 1) a -∗
@@ -92,7 +93,7 @@ Section atomic_load.
   Proof.
     (** Phase 1 — Setup: unfold [shr_ref], extract location and [ty_shr] *)
     rewrite /typed_atomic_load /FindCreditStore /fast_lia_hint.
-    iIntros "(%Halive & Ha) Hv".
+    iIntros "(%Halive & %Hbpa & Ha) Hv".
     iDestruct "Ha" as ([c a]) "(Hstore & %Hn & HT)". simpl.
     iIntros (Φ) "#(LFT & LLCTX) #HE HL Hf HΦ".
     (* Unfold shr_ref value ownership *)
@@ -165,6 +166,7 @@ Section atomic_store.
       (κ : lft) (r : place_rfn Y)
       (T : typed_write_cont_t) :
     ⌜lctx_lft_alive E L κ⌝ ∗
+    ⌜((ot_layout (IntOp it)).(ly_size) ≤ bytes_per_addr)%nat⌝ ∗
     find_in_context FindCreditStore (λ '(c, a),
       ⌜fast_lia_hint (1 ≤ c)⌝ ∗
       (credit_store (c - 1) a -∗
@@ -176,7 +178,7 @@ Section atomic_store.
   Proof.
     (** Phase 1 — Setup: unfold [shr_ref], extract location and [ty_shr] *)
     rewrite /typed_atomic_store /FindCreditStore /fast_lia_hint.
-    iIntros "(%Halive & Ha) Hv_ptr Hv_val".
+    iIntros "(%Halive & %Hbpa & Ha) Hv_ptr Hv_val".
     iDestruct "Ha" as ([c a]) "(Hstore & %Hn & HT)". simpl.
     iIntros (s fn R ϝ) "Hcont".
     iIntros (Ψ) "#(LFT & LLCTX) #HE HL Hf HΨ".
@@ -442,51 +444,46 @@ Section cas.
   Context `{!typeGS Σ}.
   Context {Y : RT} (P : at_ex_inv_def Z Y).
 
+  (** Atomic CAS through a shared reference to [at_ex_plain_t]-wrapped integer.
+      Rust-style: expected by value, returns old value. Uniform with RMW.
+
+      Phase 1: unfold [shr_ref] for v1, [int] for v2 (expected) and v3 (desired).
+      Phase 2: open atomic invariant via [shr_ref_at_ex_acc] under reduced mask.
+      Phase 3: case split on old == expected, apply [wp_cas_suc] or [wp_cas_fail].
+      Phase 4: close invariant, restore lifetime, return old value. *)
   Lemma typed_cas_atomic_int E L f (it : int_type)
-      (v1 : val) (v2 : val) (l2 : loc) (v3 : val) (n3 : Z)
+      (v1 : val) (v2 : val) (n2 : Z) (v3 : val) (n3 : Z)
       (κ : lft) (r : place_rfn Y)
       (T : typed_val_expr_cont_t) :
     ⌜lctx_lft_alive E L κ⌝ ∗
     ⌜((ot_layout (IntOp it)).(ly_size) ≤ bytes_per_addr)%nat⌝ ∗
-    find_in_context (FindLocWithRt Z l2 f.1) (λ '(lt2, r2, b2),
-      ⌜b2 = Owned⌝ ∗ ⌜lt2 = OfTy (int it)⌝ ∗
-      find_in_context FindCreditStore (λ '(c, a),
-        ⌜fast_lia_hint (1 ≤ c)⌝ ∗
-        (credit_store (c - 1) a -∗
-          ∃ x, ⌜r = #x⌝ ∗
-          ((∀ (z : Z),
-            P.(at_inv_P) f.1 z x -∗
-            P.(at_inv_P) f.1 n3 x ∗
-            (l2 ◁ₗ[f.1, Owned] r2 @ (◁ int it) -∗
-             T L (val_of_bool true) MetaNone bool bool_t true)) ∧
-          (∀ (z_old : Z),
-            l2 ◁ₗ[f.1, Owned] (PlaceIn z_old) @ (◁ int it) -∗
-            T L (val_of_bool false) MetaNone bool bool_t false)))))
+    find_in_context FindCreditStore (λ '(c, a),
+      ⌜fast_lia_hint (1 ≤ c)⌝ ∗
+      (credit_store (c - 1) a -∗
+        ∃ x, ⌜r = #x⌝ ∗
+        (∀ (z : Z) (v_old : val),
+          ⌜val_to_Z v_old it = Some z⌝ -∗
+          P.(at_inv_P) f.1 z x -∗
+          (⌜z = n2⌝ -∗ P.(at_inv_P) f.1 n3 x ∗ T L v_old MetaNone Z (int it) z) ∧
+          (⌜z ≠ n2⌝ -∗ P.(at_inv_P) f.1 z x ∗ T L v_old MetaNone Z (int it) z))))
     ⊢ typed_cas E L f v1 (v1 ◁ᵥ{f.1, MetaNone} r @ shr_ref κ (∃at; P, int it))
-                         v2 (v2 ◁ᵥ{f.1, MetaNone} l2 @ alias_ptr_t)
+                         v2 (v2 ◁ᵥ{f.1, MetaNone} n2 @ int it)
                          v3 (v3 ◁ᵥ{f.1, MetaNone} n3 @ int it)
                          (IntOp it) T.
   Proof.
-    (** Phase 1 — Setup: unfold [shr_ref] for v1, [alias_ptr] for v2, [int] for v3 *)
+    (** Phase 1 — Setup: unfold [shr_ref] for v1, [int] for v2 and v3 *)
     rewrite /typed_cas /find_in_context /FindCreditStore /fast_lia_hint.
     iIntros "(%Halive & %Hbpa & Ha) Hv1 Hv2 Hv3".
-    (* Destructure FindLocWithRt Z l2: tuple (ltype Z * place_rfn Z * bor_kind) *)
-    iDestruct "Ha" as (fic_l2) "(Hl2_own & Hrest)".
-    destruct fic_l2 as [[lt2 r2] b2]. simpl.
-    iDestruct "Hrest" as "(%Hb2 & %Hlt2 & Hfcs)".
-    subst b2 lt2.
-    (* Destructure FindCreditStore *)
-    iDestruct "Hfcs" as ([c a]) "(Hstore & %Hn & HT)". simpl.
+    iDestruct "Ha" as ([c a]) "(Hstore & %Hn & HT)". simpl.
     iIntros (Φ) "#(LFT & LLCTX) #HE HL Hf HΦ".
-    (* Unfold shr_ref value ownership for v1 → extract l1, ty_shr *)
+    (* Unfold shr_ref value ownership for v1 → extract l, ty_shr *)
     iEval (rewrite /ty_own_val /=) in "Hv1".
-    iDestruct "Hv1" as "(%l1 & %ly1 & %r1' & %Hm1 & %Hv1_eq & %Halg1 & %Hly1_loc & #Hlb1 & #Hsc1 & #Hrfn1 & #Hshr1)".
+    iDestruct "Hv1" as "(%l & %ly & %r' & %Hm1 & %Hv1_eq & %Halg & %Hly_loc & #Hlb & #Hsc & #Hrfn & #Hshr)".
     subst v1.
-    (* Unfold alias_ptr_t value ownership for v2 → confirms v2 = val_of_loc l2 *)
+    (* Unfold int value ownership for v2 (expected) *)
     iEval (rewrite /ty_own_val /=) in "Hv2".
-    iDestruct "Hv2" as "(%Hmeta2 & %Hv2_eq & %Husize2)".
-    subst v2.
-    (* Unfold int value ownership for v3 → extract val_to_Z *)
+    iDestruct "Hv2" as "(%Hmeta2 & %Hval_z2)".
+    (* Unfold int value ownership for v3 (desired) *)
     iEval (rewrite /ty_own_val /=) in "Hv3".
     iDestruct "Hv3" as "(%Hmeta3 & %Hval_z3)".
     (* Credits + lifetime *)
@@ -495,32 +492,23 @@ Section cas.
     iPoseProof (llctx_interp_acc_noend with "HL") as "(HL & HL_cl)".
     iMod (lctx_lft_alive_tok_noend κ with "HE HL") as (q') "(Hκ & HL & Hclose_lft)";
       [solve_ndisj | done | ].
-    subst r. iDestruct "Hrfn1" as "%Hrfn1_eq". subst r1'.
-    apply syn_type_has_layout_int_inv in Halg1. subst ly1.
+    subst r. iDestruct "Hrfn" as "%Hrfn_eq". subst r'.
+    apply syn_type_has_layout_int_inv in Halg. subst ly.
 
-    (** Phase 2b — Extract l2 ↦ ve from l2's Owned place ownership (at mask ⊤) *)
-    iEval (rewrite ltype_own_ofty_unfold /lty_of_ty_own) in "Hl2_own".
-    iDestruct "Hl2_own" as (ly2) "(%Halg2 & %Hly2_loc & #Hsc2 & #Hlib2 & Hl2_inner)".
-    apply syn_type_has_layout_int_inv in Halg2. subst ly2.
-    iDestruct "Hl2_inner" as (r2') "(#Hrfn2 & Hl2_fupd)".
-    iMod (fupd_mask_mono lftE with "Hl2_fupd") as (ve) "(Hl2 & Hve)"; first set_solver.
-    iEval (rewrite /ty_own_val /=) in "Hve".
-    iDestruct "Hve" as "(%Hmeta_ve & %Hval_z_ve)".
+    (** Phase 2 — Open atomic invariant via [shr_ref_at_ex_acc] *)
+    iApply (wpe_atomic ⊤ (⊤ ∖ ↑shrN.@l)).
+    iMod (shr_ref_at_ex_acc ⊤ with "LFT Hcred Hκ Hshr") as
+      (z) "(Hinv & Hpoints & Hclose)"; [solve_ndisj | solve_ndisj | ].
+    iDestruct "Hpoints" as (vo) "(Hl & #Hown)".
+    iEval (rewrite /ty_own_val /=) in "Hown".
+    iDestruct "Hown" as "(%Hmeta & %Hval_z)".
 
-    (** Phase 2a — Open atomic invariant for l1 via [shr_ref_at_ex_acc] *)
-    iApply (wpe_atomic ⊤ (⊤ ∖ ↑shrN.@l1)).
-    iMod (shr_ref_at_ex_acc ⊤ with "LFT Hcred Hκ Hshr1") as
-      (z1) "(Hinv & Hpoints1 & Hclose1)"; [solve_ndisj | solve_ndisj | ].
-    iDestruct "Hpoints1" as (vo) "(Hl1 & #Hown1)".
-    iEval (rewrite /ty_own_val /=) in "Hown1".
-    iDestruct "Hown1" as "(%Hmeta1 & %Hval_z1)".
-
-    (** Pre-compute layout facts in pure Coq — avoids [destruct it] inside Iris *)
+    (** Pre-compute layout facts in pure Coq *)
     have Hly_vo : has_layout_val vo (ot_layout (IntOp it))
-      by (apply val_to_Z_length in Hval_z1;
+      by (apply val_to_Z_length in Hval_z;
           rewrite /has_layout_val /ot_layout /it_layout /ly_size; lia).
-    have Hly_ve : has_layout_val ve (ot_layout (IntOp it))
-      by (apply val_to_Z_length in Hval_z_ve;
+    have Hly_ve : has_layout_val v2 (ot_layout (IntOp it))
+      by (apply val_to_Z_length in Hval_z2;
           rewrite /has_layout_val /ot_layout /it_layout /ly_size; lia).
     have Hly_vd : has_layout_val v3 (ot_layout (IntOp it))
       by (apply val_to_Z_length in Hval_z3;
@@ -528,93 +516,63 @@ Section cas.
     have Hlen_vd : length v3 = (ot_layout (IntOp it)).(ly_size)
       by (apply val_to_Z_length in Hval_z3;
           rewrite /ot_layout /it_layout /ly_size; lia).
+    (* Specialize continuation with concrete old value *)
+    iSpecialize ("HT" $! z vo with "[//] Hinv").
     iModIntro.
 
-    (** Phase 3 — Case split: z1 = r2' (success) vs z1 ≠ r2' (failure) *)
-    destruct (decide (z1 = r2')) as [Heq | Hneq].
+    (** Phase 3 — Case split: z = n2 (success) vs z ≠ n2 (failure) *)
+    destruct (decide (z = n2)) as [Heq | Hneq].
 
-    - (** SUCCESS: z1 = r2' — apply [wp_cas_suc] *)
-      iApply (wp_cas_suc _ _ v3 vo ve z1 r2' _ l1 l2 with "Hl1 Hl2").
-      { apply val_to_of_loc. }
+    - (** SUCCESS: z = n2 — apply [wp_cas_suc] *)
+      iApply (wp_cas_suc _ v2 v3 vo z n2 with "Hl").
       { apply val_to_of_loc. }
       { rewrite /ot_layout. done. }
-      { exact Hly2_loc. }
-      { rewrite /val_to_Z_ot. exact Hval_z1. }
-      { rewrite /val_to_Z_ot. exact Hval_z_ve. }
+      { rewrite /val_to_Z_ot. exact Hval_z. }
+      { rewrite /val_to_Z_ot. exact Hval_z2. }
+      { exact Hly_ve. }
       { exact Hlen_vd. }
       { exact Hbpa. }
       { exact Heq. }
-      (* Postcondition: l1 ↦ v3, l2 ↦ ve (unchanged), Φ (val_of_bool true) *)
-      iApply physical_step_intro. iNext. iIntros "Hl1_new Hl2_same".
-      (* Specialize success continuation *)
+      iApply physical_step_intro. iNext. iIntros "Hl_new".
       iDestruct "HT" as "[HT_suc _]".
-      iSpecialize ("HT_suc" $! z1 with "Hinv").
-      iDestruct "HT_suc" as "(Hinv_new & HT_wand)".
-      (* Close atomic invariant with new value n3 *)
-      iMod ("Hclose1" $! n3 with "[Hl1_new Hinv_new]") as "Hκ".
-      { iFrame "Hinv_new". iExists v3. iFrame "Hl1_new".
+      iDestruct ("HT_suc" with "[//]") as "(Hinv_new & HT)".
+      (* Close invariant with new value n3 *)
+      iMod ("Hclose" $! n3 with "[Hl_new Hinv_new]") as "Hκ".
+      { iFrame "Hinv_new". iExists v3. iFrame "Hl_new".
         rewrite /ty_own_val /=. iPureIntro. split; done. }
-      (* Reconstruct l2 ◁ₗ with unchanged value, return via wand *)
-      iAssert (l2 ◁ₗ[f.1, Owned] r2 @ (◁ int it))%I
-        with "[Hl2_same]" as "Hl2_own".
-      { rewrite ltype_own_ofty_unfold /lty_of_ty_own.
-        iExists (it_layout it).
-        iSplitR. { iPureIntro. apply syn_type_has_layout_int; first done. }
-        iSplitR. { iPureIntro. exact Hly2_loc. }
-        iFrame "Hsc2". iFrame "Hlib2".
-        iExists r2'. iFrame "Hrfn2".
-        iModIntro. iExists ve. iFrame "Hl2_same".
-        rewrite /ty_own_val /=. iPureIntro. split; done. }
-      iSpecialize ("HT_wand" with "Hl2_own").
-      (* Return: val_of_bool true *)
       iMod ("Hclose_lft" with "Hκ HL") as "HL".
       iPoseProof ("HL_cl" with "HL") as "HL".
-      iAssert ((val_of_bool true) ◁ᵥ{f.1, MetaNone} true @ bool_t)%I as "Hv_ret".
-      { rewrite /ty_own_val /=. iPureIntro. split; first done. by destruct true. }
-      iModIntro. iApply ("HΦ" with "HL Hf Hv_ret [HT_wand]").
-      iExact "HT_wand".
+      iAssert (vo ◁ᵥ{f.1, MetaNone} z @ (int it))%I as "Hv_ret".
+      { rewrite /ty_own_val /=. iPureIntro. exact (conj Hmeta Hval_z). }
+      iModIntro. iApply ("HΦ" with "HL Hf Hv_ret [HT]").
+      iExact "HT".
 
-    - (** FAILURE: z1 ≠ r2' — apply [wp_cas_fail] *)
-      iApply (wp_cas_fail _ _ v3 vo ve z1 r2' _ l1 l2 with "Hl1 Hl2").
-      { apply val_to_of_loc. }
+    - (** FAILURE: z ≠ n2 — apply [wp_cas_fail] *)
+      iApply (wp_cas_fail _ v2 v3 vo z n2 with "Hl").
       { apply val_to_of_loc. }
       { rewrite /ot_layout. done. }
-      { exact Hly2_loc. }
-      { rewrite /val_to_Z_ot. exact Hval_z1. }
-      { rewrite /val_to_Z_ot. exact Hval_z_ve. }
+      { rewrite /val_to_Z_ot. exact Hval_z. }
+      { rewrite /val_to_Z_ot. exact Hval_z2. }
+      { exact Hly_ve. }
       { exact Hlen_vd. }
       { exact Hbpa. }
       { exact Hneq. }
-      (* Postcondition: l1 ↦ vo (unchanged), l2 ↦ vo (old target written), Φ false *)
-      iApply physical_step_intro. iNext. iIntros "Hl1_same Hl2_new".
-      (* Use failure continuation *)
+      iApply physical_step_intro. iNext. iIntros "Hl_same".
       iDestruct "HT" as "[_ HT_fail]".
-      (* Close atomic invariant with unchanged value z1 *)
-      iMod ("Hclose1" $! z1 with "[Hl1_same Hinv]") as "Hκ".
-      { iFrame "Hinv". iExists vo. iFrame "Hl1_same".
+      iDestruct ("HT_fail" with "[//]") as "(Hinv_same & HT)".
+      (* Close invariant with unchanged value z *)
+      iMod ("Hclose" $! z with "[Hl_same Hinv_same]") as "Hκ".
+      { iFrame "Hinv_same". iExists vo. iFrame "Hl_same".
         rewrite /ty_own_val /=. iPureIntro. split; done. }
-      (* Reconstruct l2 ◁ₗ with old target value z1, return via wand *)
-      iAssert (l2 ◁ₗ[f.1, Owned] (PlaceIn z1) @ (◁ int it))%I
-        with "[Hl2_new]" as "Hl2_own".
-      { rewrite ltype_own_ofty_unfold /lty_of_ty_own.
-        iExists (it_layout it).
-        iSplitR. { iPureIntro. apply syn_type_has_layout_int; first done. }
-        iSplitR. { iPureIntro. exact Hly2_loc. }
-        iFrame "Hsc2". iFrame "Hlib2".
-        iExists z1. iSplitR. { iPureIntro. done. }
-        iModIntro. iExists vo. iFrame "Hl2_new".
-        rewrite /ty_own_val /=. iPureIntro. split; done. }
-      iSpecialize ("HT_fail" $! z1 with "Hl2_own").
-      (* Return: val_of_bool false *)
       iMod ("Hclose_lft" with "Hκ HL") as "HL".
       iPoseProof ("HL_cl" with "HL") as "HL".
-      iAssert ((val_of_bool false) ◁ᵥ{f.1, MetaNone} false @ bool_t)%I as "Hv_ret".
-      { rewrite /ty_own_val /=. iPureIntro. split; first done. by destruct false. }
-      iModIntro. iApply ("HΦ" with "HL Hf Hv_ret [HT_fail]").
-      iExact "HT_fail".
+      iAssert (vo ◁ᵥ{f.1, MetaNone} z @ (int it))%I as "Hv_ret".
+      { rewrite /ty_own_val /=. iPureIntro. exact (conj Hmeta Hval_z). }
+      iModIntro. iApply ("HΦ" with "HL Hf Hv_ret [HT]").
+      iExact "HT".
   Qed.
 
-  Global Program Instance typed_cas_val_atomic_int_inst E L f it v1 r v2 l2 v3 n3 κ :
-    TypedCasVal E L f v1 (shr_ref κ (∃at; P, int it)) r v2 alias_ptr_t l2 v3 (int it) n3 (IntOp it) :=
-    λ T, i2p (typed_cas_atomic_int E L f it v1 v2 l2 v3 n3 κ r T).
+  Global Program Instance typed_cas_val_atomic_int_inst E L f it v1 r v2 n2 v3 n3 κ :
+    TypedCasVal E L f v1 (shr_ref κ (∃at; P, int it)) r v2 (int it) n2 v3 (int it) n3 (IntOp it) :=
+    λ T, i2p (typed_cas_atomic_int E L f it v1 v2 n2 v3 n3 κ r T).
 End cas.
