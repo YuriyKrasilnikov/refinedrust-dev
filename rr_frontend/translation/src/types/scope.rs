@@ -856,11 +856,20 @@ impl From<&[ty::GenericParamDef]> for Params<'_, '_> {
                     scope.push(Param::Ty(lit));
                 },
                 ty::GenericParamDefKind::Lifetime => {
-                    lft_names.insert(p.name.as_str().to_owned(), scope.len());
-                    scope.push(Param::Region(specs::LftParam::new(
-                        coq::Ident::new(&format!("ulft_{}", name)),
-                        specs::LftParamOrigin::LocalEarlyBound,
-                    )));
+                    let name = p.name.as_str().to_owned();
+                    if name.as_str() == "'_" {
+                        scope.push(Param::Region(specs::LftParam::new(
+                            coq::Ident::new(&format!("ulft_{}", num)),
+                            specs::LftParamOrigin::LocalEarlyBound,
+                        )));
+                    } else {
+                        let sanitized_name = name.replace('\'', "");
+                        lft_names.insert(sanitized_name.clone(), scope.len());
+                        scope.push(Param::Region(specs::LftParam::new(
+                            coq::Ident::new(&format!("ulft_{}", sanitized_name)),
+                            specs::LftParamOrigin::LocalEarlyBound,
+                        )));
+                    }
                 },
             }
         }
