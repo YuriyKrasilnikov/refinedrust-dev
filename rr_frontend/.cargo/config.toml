@@ -119,8 +119,6 @@ rustflags = [
     "-Aclippy::exhaustive_structs",
     "-Aclippy::format_push_string",
     "-Aclippy::implicit_return",
-    "-Aclippy::integer_division",
-    "-Aclippy::integer_division_remainder_used",
     "-Aclippy::min_ident_chars",
     "-Aclippy::missing_inline_in_public_items",
     "-Aclippy::missing_trait_methods",
