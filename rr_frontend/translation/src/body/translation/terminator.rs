@@ -348,7 +348,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         }]
     }
 
-    /// Emit CAS via 10-stmt bridge (Rust-style: expected by value, returns old value):
+    /// Emit CAS with (T, bool) tuple return via 10-stmt bridge.
+    /// Used by the intrinsic path (`atomic_cxchg` returns `(T, bool)`).
     ///   1.  `local_live __cas_expected`
     ///   2.  `__cas_expected <-{ot} expected_val`
     ///   3.  `local_live __cas_old`
@@ -477,6 +478,213 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             order: lang::Order::Na,
             e1: Box::new(dest_place),
             e2: Box::new(struct_init),
+        };
+
+        // 8-10. local_dead
+        let stmt_dead_result = code::PrimStmt::LocalDead(result_name);
+        let stmt_dead_old = code::PrimStmt::LocalDead(old_name);
+        let stmt_dead_expected = code::PrimStmt::LocalDead(expected_name);
+
+        Ok(vec![
+            stmt_live_expected,
+            stmt_store_expected,
+            stmt_live_old,
+            stmt_cas,
+            stmt_live_result,
+            stmt_eq,
+            stmt_init,
+            stmt_dead_result,
+            stmt_dead_old,
+            stmt_dead_expected,
+        ])
+    }
+
+    /// Emit CAS with `Result<T,T>` return type via IfE + EnumInitE bridge.
+    /// Used by the method path (`compare_exchange` returns `Result<T,T>`).
+    ///   1.  `local_live __cas_expected`
+    ///   2.  `__cas_expected <-{ot} expected_val`
+    ///   3.  `local_live __cas_old`
+    ///   4.  `__cas_old <-{ot} CAS(ot, target, copy(__cas_expected), desired)`
+    ///   5.  `local_live __cas_result`
+    ///   6.  `__cas_result <-{BoolOp} (copy __cas_old) =={ot,ot} (copy __cas_expected)`
+    ///   7.  `dest <-{els} IfE BoolOp (copy __cas_result)
+    ///          (EnumInit els "Ok" rsen (StructInit ok_sls [("0", copy __cas_old)]))
+    ///          (EnumInit els "Err" rsen (StructInit err_sls [("0", copy __cas_old)]))`
+    ///   8.  `local_dead __cas_result`
+    ///   9.  `local_dead __cas_old`
+    ///   10. `local_dead __cas_expected`
+    fn emit_atomic_cas_result(
+        &mut self,
+        ot: lang::OpType,
+        st: lang::SynType,
+        target_ptr: code::Expr,
+        expected_val: code::Expr,
+        desired_val: code::Expr,
+        destination: &mir::Place<'tcx>,
+    ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
+        // Resolve destination as Result enum
+        let dest_pty = self.get_type_of_place(destination);
+        let ty::TyKind::Adt(adt_def, substs) = dest_pty.ty.kind() else {
+            return Err(TranslationError::UnsupportedFeature {
+                description: format!(
+                    "CAS Result destination must be an enum, got {:?}",
+                    dest_pty.ty
+                ),
+            });
+        };
+
+        let variants: Vec<_> = adt_def.variants().iter().collect();
+        if variants.len() != 2 {
+            return Err(TranslationError::UnsupportedFeature {
+                description: format!(
+                    "CAS Result enum must have exactly 2 variants, got {}",
+                    variants.len()
+                ),
+            });
+        }
+        let ok_variant = &variants[0];
+        let err_variant = &variants[1];
+
+        // Enum use (Result<T,T> layout spec)
+        let enum_use = self.ty_translator.generate_enum_use(*adt_def, substs)?;
+        let els = enum_use.generate_raw_syn_type_term();
+        let enum_def: code::RustEnumDef = enum_use.clone().try_into().map_err(|()| {
+            TranslationError::UnknownError("failed to convert enum use to RustEnumDef".to_owned())
+        })?;
+
+        // Variant struct layouts
+        let ok_use = self
+            .ty_translator
+            .generate_enum_variant_use(ok_variant.def_id, substs)?;
+        let ok_sls = ok_use.generate_raw_syn_type_term();
+
+        let err_use = self
+            .ty_translator
+            .generate_enum_variant_use(err_variant.def_id, substs)?;
+        let err_sls = err_use.generate_raw_syn_type_term();
+
+        let dest_place = self.translate_place(destination)?;
+
+        let expected_name = "__cas_expected".to_owned();
+        let expected_var = code::Expr::Var(expected_name.clone());
+        let old_name = "__cas_old".to_owned();
+        let old_var = code::Expr::Var(old_name.clone());
+        let result_name = "__cas_result".to_owned();
+        let result_var = code::Expr::Var(result_name.clone());
+
+        // 1. local_live __cas_expected
+        let stmt_live_expected = code::PrimStmt::LocalLive(code::Variable::new(
+            expected_name.clone(),
+            st.clone(),
+        ));
+
+        // 2. __cas_expected <-{ot} expected_val
+        let stmt_store_expected = code::PrimStmt::Assign {
+            ot: ot.clone(),
+            order: lang::Order::Na,
+            e1: Box::new(expected_var.clone()),
+            e2: Box::new(expected_val),
+        };
+
+        // 3. local_live __cas_old
+        let stmt_live_old = code::PrimStmt::LocalLive(code::Variable::new(
+            old_name.clone(),
+            st,
+        ));
+
+        // 4. __cas_old <-{ot} CAS(ot, target, copy(__cas_expected), desired)
+        let cas_expr = code::Expr::Cas {
+            ot: ot.clone(),
+            target: Box::new(target_ptr),
+            expected: Box::new(code::Expr::Copy {
+                ot: ot.clone(),
+                order: lang::Order::Na,
+                e: Box::new(expected_var.clone()),
+            }),
+            desired: Box::new(desired_val),
+        };
+        let stmt_cas = code::PrimStmt::Assign {
+            ot: ot.clone(),
+            order: lang::Order::Na,
+            e1: Box::new(old_var.clone()),
+            e2: Box::new(cas_expr),
+        };
+
+        // 5. local_live __cas_result
+        let stmt_live_result = code::PrimStmt::LocalLive(code::Variable::new(
+            result_name.clone(),
+            lang::SynType::Bool,
+        ));
+
+        // 6. __cas_result <-{BoolOp} (copy __cas_old) =={ot,ot} (copy __cas_expected)
+        let eq_expr = code::Expr::BinOp {
+            o: code::Binop::Eq,
+            ot1: ot.clone(),
+            ot2: ot.clone(),
+            e1: Box::new(code::Expr::Copy {
+                ot: ot.clone(),
+                order: lang::Order::Na,
+                e: Box::new(old_var.clone()),
+            }),
+            e2: Box::new(code::Expr::Copy {
+                ot: ot.clone(),
+                order: lang::Order::Na,
+                e: Box::new(expected_var.clone()),
+            }),
+        };
+        let stmt_eq = code::PrimStmt::Assign {
+            ot: lang::OpType::Bool,
+            order: lang::Order::Na,
+            e1: Box::new(result_var.clone()),
+            e2: Box::new(eq_expr),
+        };
+
+        // Helper: copy __cas_old expression
+        let copy_old = |ot: &lang::OpType| code::Expr::Copy {
+            ot: ot.clone(),
+            order: lang::Order::Na,
+            e: Box::new(old_var.clone()),
+        };
+
+        // 7. dest <-{els} IfE BoolOp (copy __cas_result)
+        //      (EnumInit els "Ok" rsen (StructInit ok_sls [("0", copy __cas_old)]))
+        //      (EnumInit els "Err" rsen (StructInit err_sls [("0", copy __cas_old)]))
+        let ok_init = code::Expr::EnumInitE {
+            els: coq::term::App::new_lhs(els.to_string()),
+            variant: ok_variant.name.to_string(),
+            ty: enum_def.clone(),
+            initializer: Box::new(code::Expr::StructInitE {
+                sls: coq::term::App::new_lhs(ok_sls.to_string()),
+                components: vec![("0".to_owned(), copy_old(&ot))],
+            }),
+        };
+
+        let err_init = code::Expr::EnumInitE {
+            els: coq::term::App::new_lhs(els.to_string()),
+            variant: err_variant.name.to_string(),
+            ty: enum_def,
+            initializer: Box::new(code::Expr::StructInitE {
+                sls: coq::term::App::new_lhs(err_sls.to_string()),
+                components: vec![("0".to_owned(), copy_old(&ot))],
+            }),
+        };
+
+        let if_expr = code::Expr::If {
+            ot: lang::OpType::Bool,
+            e1: Box::new(code::Expr::Copy {
+                ot: lang::OpType::Bool,
+                order: lang::Order::Na,
+                e: Box::new(result_var.clone()),
+            }),
+            e2: Box::new(ok_init),
+            e3: Box::new(err_init),
+        };
+
+        let stmt_init = code::PrimStmt::Assign {
+            ot: lang::OpType::UseOpAlg(coq::term::Term::Literal(els.to_string())),
+            order: lang::Order::Na,
+            e1: Box::new(dest_place),
+            e2: Box::new(if_expr),
         };
 
         // 8-10. local_dead
@@ -672,7 +880,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 let (target_ptr, _) = self.translate_operand(&args[0].node, true)?;
                 let (expected_val, _) = self.translate_operand(&args[1].node, true)?;
                 let (desired_val, _) = self.translate_operand(&args[2].node, true)?;
-                self.emit_atomic_cas(ot, st, target_ptr, expected_val, desired_val, destination)
+                self.emit_atomic_cas_result(ot, st, target_ptr, expected_val, desired_val, destination)
             },
 
             AtomicIntrinsicKind::Fence => {

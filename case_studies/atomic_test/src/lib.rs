@@ -1,6 +1,7 @@
 #![feature(register_tool)]
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
+#![rr::include("result")]
 
 /// Minimal atomic type for integration testing.
 ///
@@ -39,13 +40,10 @@ impl MyAtomicU8 {
     pub fn swap(&self, _value: u8) -> u8 {
         unimplemented!()
     }
-    /// Spec-only: intercepted by mode(atomic) → CAS via 7-stmt StructInitE bridge.
-    /// Note: Rust tuples use plist refinement (tuple2_rt = plist place_rfnRT),
-    /// so returns must use -[...] notation, not Coq pair (a, b).
+    /// Spec-only: intercepted by mode(atomic) → CAS via IfE + EnumInitE bridge.
+    /// Returns `Ok(old)` on success, `Err(old)` on failure.
     #[rr::only_spec]
-    #[rr::exists("x" : "Z")]
-    #[rr::returns("(x, true)")]
-    pub fn compare_exchange(&self, _current: u8, _new: u8) -> (u8, bool) {
+    pub fn compare_exchange(&self, _current: u8, _new: u8) -> Result<u8, u8> {
         unimplemented!()
     }
 }
