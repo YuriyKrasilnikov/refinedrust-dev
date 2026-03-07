@@ -191,7 +191,25 @@ Proof.
   done.
 Abort.
 
-
+(** check if lifetime is local *)
+Lemma test1 `{!typeGS Σ} κ ϝ:
+  ∃ b, check_lft_is_local_pure_goal [] [ϝ ⊑ₗ{0} []] κ b ∧ b = false.
+Proof.
+  eexists. split; first solve_check_lft_is_local_goal.
+  done.
+Abort.
+Lemma test2 `{!typeGS Σ} κ ϝ:
+  ∃ b, check_lft_is_local_pure_goal [] [κ ⊑ₗ{0} [ϝ]; ϝ ⊑ₗ{0} []] κ b ∧ b = true.
+Proof.
+  eexists. split; first solve_check_lft_is_local_goal.
+  done.
+Abort.
+Lemma test2 `{!typeGS Σ} κ κ' ϝ:
+  ∃ b, check_lft_is_local_pure_goal [] [κ' ⊑ₗ{0} [κ]; κ ⊑ₗ{0} [ϝ]; ϝ ⊑ₗ{0} []] κ b ∧ b = true.
+Proof.
+  eexists. split; first solve_check_lft_is_local_goal.
+  done.
+Abort.
 
 (** inv_layout_alg *)
 Section test.

@@ -590,9 +590,9 @@ Section iterate.
     ⊢ iterate_with_hooks E L StripGuarded T.
   Proof.
     iIntros "(%g & Hg & HT)".
-    iIntros (??) "#HE HL".
+    iIntros (??) "#CTX #HE HL".
     destruct g as [[prepaid P] | ]; simpl.
-    - simpl. iMod ("HT" with "[//] HE HL Hg") as "(%L2 & HL & HT)".
+    - simpl. iMod ("HT" with "[//] CTX HE HL Hg") as "(%L2 & HL & HT)".
       by iApply "HT".
     - by iFrame.
   Qed.
@@ -608,9 +608,9 @@ Section introduce.
     introduce_with_hooks E L P1 (λ L', introduce_with_hooks E L' P2 T) ⊢
     introduce_with_hooks E L (P1 ∗ P2) T.
   Proof.
-    iIntros "Ha" (F ?) "#HE HL [HP1 HP2]".
-    iMod ("Ha" with "[//] HE HL HP1") as "(%L' & HL & Ha)".
-    iApply ("Ha" with "[//] HE HL HP2").
+    iIntros "Ha" (F ?) "#CTX #HE HL [HP1 HP2]".
+    iMod ("Ha" with "[//] CTX HE HL HP1") as "(%L' & HL & Ha)".
+    iApply ("Ha" with "[//] CTX HE HL HP2").
   Qed.
   Definition introduce_with_hooks_sep_inst := [instance @introduce_with_hooks_sep].
   Global Existing Instance introduce_with_hooks_sep_inst.
@@ -619,8 +619,8 @@ Section introduce.
     (∀ x, introduce_with_hooks E L (Φ x) T) ⊢
     introduce_with_hooks E L (∃ x, Φ x) T.
   Proof.
-    iIntros "Ha" (F ?) "#HE HL (%x & HP)".
-    iApply ("Ha" with "[//] HE HL HP").
+    iIntros "Ha" (F ?) "#CTX #HE HL (%x & HP)".
+    iApply ("Ha" with "[//] CTX HE HL HP").
   Qed.
   Definition introduce_with_hooks_exists_inst := [instance @introduce_with_hooks_exists].
   Global Existing Instance introduce_with_hooks_exists_inst.
@@ -630,9 +630,9 @@ Section introduce.
     (P -∗ introduce_with_hooks E L (learn_from_hyp_Q) T) ⊢
     introduce_with_hooks E L P T.
   Proof.
-    iIntros "HT" (F ?) "#HE HL HP".
+    iIntros "HT" (F ?) "#CTX #HE HL HP".
     iMod (learn_from_hyp_proof with "[//] HP") as "(HP & Hlearn)".
-    iMod ("HT" with "HP [] HE HL Hlearn") as "Ha"; first done.
+    iMod ("HT" with "HP [] CTX HE HL Hlearn") as "Ha"; first done.
     done.
   Qed.
   Definition introduce_with_hooks_base_learnable_inst := [instance @introduce_with_hooks_base_learnable].
@@ -642,7 +642,7 @@ Section introduce.
     (P -∗ T L) ⊢
     introduce_with_hooks E L P T.
   Proof.
-    iIntros "HT" (F ?) "#HE HL HP".
+    iIntros "HT" (F ?) "#CTX #HE HL HP".
     iSpecialize ("HT" with "HP").
     iModIntro. iExists L. iFrame.
   Qed.
@@ -666,7 +666,7 @@ Section introduce.
   Proof.
     rewrite /FindCreditStore. iIntros "Ha".
     iDestruct "Ha" as ([c a]) "(Hstore & HT)". simpl.
-    iIntros (??) "#HE HL Hc".
+    iIntros (??) "#CTX #HE HL Hc".
     iPoseProof (credit_store_donate with "Hstore Hc") as "Hstore".
     iExists _. iFrame. iApply ("HT" with "Hstore").
   Qed.
@@ -680,7 +680,7 @@ Section introduce.
   Proof.
     rewrite /FindCreditStore. iIntros "Ha".
     iDestruct "Ha" as ([c a]) "(Hstore & HT)". simpl.
-    iIntros (??) "#HE HL Hc".
+    iIntros (??) "#CTX #HE HL Hc".
     iPoseProof (credit_store_acc with "Hstore") as "(Hcred & Hat & Hcl)".
     iPoseProof ("Hcl" $! _ (n + a)%nat with "Hcred [Hat Hc]") as "Hstore".
     { rewrite -Nat.add_succ_r. rewrite tr_split. iFrame. }
@@ -700,7 +700,7 @@ Section introduce.
     ⊢ introduce_with_hooks E L (na_own π mask) T.
   Proof.
     rewrite /FindOptNaOwn. iIntros "(%res & Ha)".
-    destruct res as [mask'|]; simpl; iIntros (??) "#HE HL Hna".
+    destruct res as [mask'|]; simpl; iIntros (??) "#CTX #HE HL Hna".
     - iDestruct "Ha" as "(Hna' & % & HT)".
       iExists _; iFrame.
       iApply "HT".
@@ -719,10 +719,10 @@ Section introduce.
   Proof.
     unfold introduce_with_hooks.
     iIntros "HT".
-    iIntros (??) "HE HL Ha".
+    iIntros (??) "CTX HE HL Ha".
     rewrite boringly_exists.
     iDestruct "Ha" as "(%a & Ha)".
-    iApply ("HT" with "[//] HE HL Ha").
+    iApply ("HT" with "[//] CTX HE HL Ha").
   Qed.
   Definition introduce_with_hooks_boringly_exist_inst := [instance @introduce_with_hooks_boringly_exist].
   Global Existing Instance introduce_with_hooks_boringly_exist_inst.
@@ -733,9 +733,9 @@ Section introduce.
   Proof.
     unfold introduce_with_hooks.
     iIntros "HT".
-    iIntros (??) "HE HL Ha".
+    iIntros (??) "CTX HE HL Ha".
     rewrite boringly_sep.
-    iApply ("HT" with "[//] HE HL Ha").
+    iApply ("HT" with "[//] CTX HE HL Ha").
   Qed.
   Definition introduce_with_hooks_boringly_sep_inst := [instance @introduce_with_hooks_boringly_sep].
   Global Existing Instance introduce_with_hooks_boringly_sep_inst.
@@ -746,9 +746,9 @@ Section introduce.
   Proof.
     unfold introduce_with_hooks.
     iIntros "HT".
-    iIntros (??) "HE HL Ha".
+    iIntros (??) "CTX HE HL Ha".
     rewrite boringly_persistent.
-    iApply ("HT" with "[//] HE HL Ha").
+    iApply ("HT" with "[//] CTX HE HL Ha").
   Qed.
   Definition introduce_with_hooks_boringly_persistent_inst := [instance @introduce_with_hooks_boringly_persistent].
   Global Existing Instance introduce_with_hooks_boringly_persistent_inst.
@@ -762,7 +762,7 @@ Section introduce.
   Proof.
     unfold introduce_with_hooks.
     iIntros "(Hb & HT)".
-    iIntros (??) "HE HL Ha".
+    iIntros (??) "CTX HE HL Ha".
     iPoseProof (Hag.(li_agree_to_pred) with "Ha") as "Ha".
     iPoseProof (li_agree_agree with "Ha Hb") as "<-".
     iSpecialize ("HT" with "Ha [//]"). by iFrame.
@@ -776,8 +776,8 @@ Section introduce.
       return introduce_with_hooks E L P2 T.
   Proof.
     iIntros "HT".
-    iIntros (??) "HE HL [(% & ?) | HP]"; first done.
-    iApply ("HT" with "[//] HE HL HP").
+    iIntros (??) "CTX HE HL [(% & ?) | HP]"; first done.
+    iApply ("HT" with "[//] CTX HE HL HP").
   Qed.
   Definition introduce_with_hooks_disj_guard_l_inst := [instance @introduce_with_hooks_disj_guard_l].
   Global Existing Instance introduce_with_hooks_disj_guard_l_inst.
@@ -786,8 +786,8 @@ Section introduce.
       return introduce_with_hooks E L P1 T.
   Proof.
     iIntros "HT".
-    iIntros (??) "HE HL [HP | (% & ?)]"; last done.
-    iApply ("HT" with "[//] HE HL HP").
+    iIntros (??) "CTX HE HL [HP | (% & ?)]"; last done.
+    iApply ("HT" with "[//] CTX HE HL HP").
   Qed.
   Definition introduce_with_hooks_disj_guard_r_inst := [instance @introduce_with_hooks_disj_guard_r].
   Global Existing Instance introduce_with_hooks_disj_guard_r_inst.
@@ -799,12 +799,12 @@ Section introduce.
     introduce_with_hooks E L (guarded false P) T.
   Proof.
     rewrite /guarded/FindCreditStore/fast_lia_hint/=.
-    iIntros "Ha" (??) "HE HL (_ & HP)".
+    iIntros "Ha" (??) "CTX HE HL (_ & HP)".
     iDestruct "Ha" as ([n m]) "(Hc & % & Ha)".
     simpl.
     iPoseProof (credit_store_scrounge 1 with "Hc") as "(Hc1 & Hc)"; first lia.
     iMod (lc_fupd_elim_later with "Hc1 HP") as "HP".
-    iApply ("Ha" with "Hc [//] HE HL HP").
+    iApply ("Ha" with "Hc [//] CTX HE HL HP").
   Qed.
   Definition introduce_with_hooks_guarded_inst := [instance @introduce_with_hooks_guarded].
   Global Existing Instance introduce_with_hooks_guarded_inst.
@@ -814,10 +814,10 @@ Section introduce.
     introduce_with_hooks E L (guarded true P) T.
   Proof.
     rewrite /guarded.
-    iIntros "Ha" (??) "HE HL ((Hcred & Htr) & HP)".
+    iIntros "Ha" (??) "CTX HE HL ((Hcred & Htr) & HP)".
     iDestruct "Hcred" as "(Hc1 & Hcred)".
     iMod (lc_fupd_elim_later with "Hc1 HP") as "HP".
-    iApply ("Ha" with "[//] HE HL").
+    iApply ("Ha" with "[//] CTX HE HL").
     iFrame.
   Qed.
   Definition introduce_with_hooks_guarded_prepaid_inst := [instance @introduce_with_hooks_guarded_prepaid].
@@ -2540,7 +2540,7 @@ Section subsume.
     iApply fupd_place_to_wp.
     iMod ("Hres" with "[] [] CTX HE HL Hl") as "(%L' & %r & %R & %prog & Hstep & HL & HP)"; [done.. | ].
     iMod "Hstep" as "(Hl & HR)".
-    iMod ("HP" with "[] HE HL HR") as "(%L'' & HL & HP)"; first done.
+    iMod ("HP" with "[] CTX HE HL HR") as "(%L'' & HL & HP)"; first done.
     iModIntro. iApply ("HP" with "[//] [//] CTX HE HL Hf Hl").
     iIntros (L1 κs l2 b2 bmin rti tyli ri updcx) "Hl2 Hs HT HL".
     iApply ("HΦ" $! _ _ _ _ _ _ _ _ _ with "Hl2 [Hs] HT HL").
@@ -3050,7 +3050,7 @@ Section subsume.
     iApply (physical_step_intro_tr with "Hat").
     iIntros "!> Hat Hcred2 !> %st Hl Hcl".
     iMod ("Hcl" with "Hl Hv") as "(%L' & %rt' & %ty' & %r' & HL & Hf & Hv & HT)".
-    iMod ("HT" with "[] HE HL [Hat Hcred2]") as "(%L3 & HL & HT)"; first done.
+    iMod ("HT" with "[] [$] HE HL [Hat Hcred2]") as "(%L3 & HL & HT)"; first done.
     { iSplitL "Hat".
       - iApply tr_weaken; last done.
         simpl. unfold num_laters_per_step; lia.
@@ -3126,7 +3126,7 @@ Section subsume.
     (*iDestruct "Hcred'" as "(Hcred2 & Hcred')".*)
     iMod "Hcl_m" as "_".
     iMod ("Hcl" with "Hl") as "(%L'' & HL & Hf & Hs)".
-    iMod ("Hs" with "[] HE HL [Ha Hcred']") as "(%L3 & HL & HT)"; first done.
+    iMod ("Hs" with "[] [$] HE HL [Ha Hcred']") as "(%L3 & HL & HT)"; first done.
     { iSplitL "Ha".
       - iApply tr_weaken; last done. simpl. unfold num_laters_per_step; lia.
       -  iApply lc_weaken; last done. simpl. unfold num_cred, num_laters_per_step; lia. }
@@ -3218,7 +3218,7 @@ Section subsume.
       iApply place_update_kind_max_incl_r. }
     iMod ("Hs" with "HL Hf Hfin") as (upd') "(Hl & %Hst3 & Hcond'' & ? & HR' & ? & HL & Hf & HT)".
     iPoseProof ("HT" with "Hl") as "Hfin".
-    iMod ("Hfin" with "[] HE HL [$]") as "(%L4 & HL & HT)"; first done.
+    iMod ("Hfin" with "[] [$] HE HL [$]") as "(%L4 & HL & HT)"; first done.
     iModIntro. iExists _, _, _, _. iFrame.
   Qed.
 
@@ -3408,7 +3408,7 @@ Section subsume.
       iApply place_update_kind_max_incl_r. }
     iMod ("Hs" with "HL Hf Hfin") as (upd') "(Hl & %Hst3 & Hcond'' & ? & HR' & ? & HL & Hf & Hfin)".
     iPoseProof ("Hfin" with "Hl") as "Hfin".
-    iMod ("Hfin" with "[] HE HL [$]") as "(%L4 & HL & HT)"; first done.
+    iMod ("Hfin" with "[] [$] HE HL [$]") as "(%L4 & HL & HT)"; first done.
     iModIntro. iExists _. iFrame.
   Qed.
 
@@ -3681,7 +3681,7 @@ Section subsume.
     { simpl. done. }
     iMod ("Hs" with "HL Hf HT") as (upd') "(Hl & %Hsteq & Hcond & ? & ? & ? & HL & Hf & HT)".
     iDestruct ("HT" with "Hl") as "HT".
-    iMod ("HT" with "[//] HE HL [$]") as "(%L4 & HL & HT)".
+    iMod ("HT" with "[//] [$] HE HL [$]") as "(%L4 & HL & HT)".
     iModIntro.
     iExists L4, _, tyb, rb. iFrame.
     by iApply "HT".
@@ -3756,7 +3756,7 @@ Section subsume.
       iApply place_update_kind_max_incl_r. }
     iMod ("Hs" with "HL Hf HT") as (upd'') "(Hl & %Hst3 & Hcond'' & ? & HR' & ? & HL & Hf & HT)".
     iPoseProof ("HT" with "Hl") as "Hfin".
-    iMod ("Hfin" with "[] HE HL [$]") as "(%L4 & HL & HT)"; first done.
+    iMod ("Hfin" with "[] [$] HE HL [$]") as "(%L4 & HL & HT)"; first done.
     iModIntro. iExists _. iFrame.
     iL. done.
   Qed.
@@ -3988,7 +3988,7 @@ Section subsume.
 
     iMod ("Hs" with "HL Hf HT") as (?) "(Hl & %Hst3 & Hcond'' & ? & HR' & ? & HL & Hf & HT)".
     iPoseProof ("HT" with "Hl") as "Hfin".
-    iMod ("Hfin" with "[] HE HL [$]") as "(%L4 & HL & HT)"; first done.
+    iMod ("Hfin" with "[] [$] HE HL [$]") as "(%L4 & HL & HT)"; first done.
     iModIntro. iExists _. iFrame.
     iL. done.
   Qed.
@@ -4196,11 +4196,11 @@ Section subsume.
       typed_stmt E L2 f s fn R ϝ)
     ⊢ typed_stmt E L f (Goto b) fn R ϝ.
   Proof.
-    iIntros (HQ) "Hs". iIntros (?) "#LFT #HE HL Hf Hcont".
+    iIntros (HQ) "Hs". iIntros (?) "#CTX #HE HL Hf Hcont".
     iApply wps_goto => //.
     iApply physical_step_intro_lc. iIntros "Hcred". iIntros "!> !>".
-    iMod ("Hs" with "[] HE HL Hcred") as "(%L2 & HL & HT)"; first done.
-    by iApply ("HT" with "LFT HE HL Hf").
+    iMod ("Hs" with "[] CTX HE HL Hcred") as "(%L2 & HL & HT)"; first done.
+    by iApply ("HT" with "CTX HE HL Hf").
   Qed.
 
   (** Goto a block if we have already proved it with a particular precondition [P]. *)
@@ -4236,7 +4236,7 @@ Section subsume.
     iApply (physical_step_step_upd with "HP").
     iApply physical_step_intro. iNext.
     iIntros "HP".
-    iMod ("Hb" with "IH [] HE HL HP") as "(%L2 & HL & Hs)"; first done.
+    iMod ("Hb" with "IH [] CTX HE HL HP") as "(%L2 & HL & Hs)"; first done.
     by iApply ("Hs" with "CTX HE HL Hf").
   Qed.
 
@@ -4364,7 +4364,7 @@ Section subsume.
     iIntros (L' v m rt ty r) "HL Hf Hv Hs".
     iApply wps_exprs.
     iApply physical_step_intro; iNext.
-    iMod ("Hs" with "[] HE HL Hv") as "(%L2 & HL & HT)"; first done.
+    iMod ("Hs" with "[] CTX HE HL Hv") as "(%L2 & HL & HT)"; first done.
     by iApply ("HT" with "CTX HE HL Hf").
   Qed.
 
@@ -4440,7 +4440,7 @@ Section subsume.
       { iExists _. iFrame. done. }
       iApply physical_step_intro. iNext.
       iIntros "Hf Hlocals".
-      iMod ("HT" with "[] HE HL HR") as "(%L3 & HL & HT)"; first done.
+      iMod ("HT" with "[] CTX HE HL HR") as "(%L3 & HL & HT)"; first done.
       iApply ("HT" with "Hlocals CTX HE HL Hf Hpost").
     - unfold LocalDeadSt.
       iIntros (?) "#CTX #HE HL Hf Hpost".
@@ -4500,10 +4500,10 @@ Section subsume.
     introduce_with_hooks E L P T
     ⊢ introduce_with_hooks E L (MaybeInherit None P) T.
   Proof.
-    iIntros "HT" (??) "#HE HL Hinh".
+    iIntros "HT" (??) "#CTX #HE HL Hinh".
     rewrite /MaybeInherit.
     iMod ("Hinh" with "[//]") as "HP".
-    iApply ("HT" with "[//] HE HL HP").
+    iApply ("HT" with "[//] CTX HE HL HP").
   Qed.
   Definition introduce_with_hooks_maybe_inherit_none_inst := [instance @introduce_with_hooks_maybe_inherit_none].
   Global Existing Instance introduce_with_hooks_maybe_inherit_none_inst.
@@ -4527,7 +4527,7 @@ Section subsume.
     T L (IterateFindDead [])
     ⊢ iterate_with_hooks E L (IterateFindDead []) T.
   Proof.
-    iIntros "HT". iIntros (??) "HE HL".
+    iIntros "HT". iIntros (??) "CTX HE HL".
     iModIntro. iFrame.
   Qed.
   Definition iterate_with_hooks_find_dead_nil_inst := [instance @iterate_with_hooks_find_dead_nil].
@@ -4540,13 +4540,13 @@ Section subsume.
       else iterate_with_hooks E L (IterateFindDead (κs)) T)
     ⊢ iterate_with_hooks E L (IterateFindDead (κ :: κs)) T.
   Proof.
-    iIntros "HT". iIntros (??) "HE HL".
+    iIntros "HT". iIntros (??) "CTX HE HL".
     iDestruct "HT" as "(%b & HT)".
     destruct b.
     - iDestruct "HT" as "(Hdead & HT)". iFrame. iExists _.
       iApply ("HT" with "Hdead").
     - iDestruct "HT" as "(_ & HT)" .
-      by iApply ("HT" with "[] HE HL").
+      by iApply ("HT" with "[] CTX HE HL").
   Qed.
   Definition iterate_with_hooks_find_dead_cons_inst := [instance @iterate_with_hooks_find_dead_cons].
   Global Existing Instance iterate_with_hooks_find_dead_cons_inst.
@@ -4563,15 +4563,15 @@ Section subsume.
     ⊢ introduce_with_hooks E L (Inherit κs P) T.
   Proof.
     rewrite /FindOptLftDead/=. iIntros "HT".
-    iIntros (??) "#HE HL HP".
-    iMod ("HT" with "[] HE HL") as "(%L2 & %m' & HL & HT)"; first done.
+    iIntros (??) "#CTX #HE HL HP".
+    iMod ("HT" with "[] CTX HE HL") as "(%L2 & %m' & HL & HT)"; first done.
     destruct m' as [[]].
     - iFrame. by iApply "HT".
     - unfold fast_set_hint. iDestruct "HT" as "(%Helem & % & Hdead & HT)".
       rewrite /Inherit.
       iMod ("HP" with "[//] [Hdead]") as "HP".
       { iApply lft_dead_lft_intersect_list. iFrame. done. }
-      by iApply ("HT" with "[] HE HL").
+      by iApply ("HT" with "[] CTX HE HL").
   Qed.
   Definition introduce_with_hooks_inherit_inst := [instance @introduce_with_hooks_inherit].
   Global Existing Instance introduce_with_hooks_inherit_inst.
@@ -4582,7 +4582,7 @@ Section subsume.
   Proof.
     rewrite /li_tactic /llctx_release_toks_goal.
     iIntros "(%L' & %HL & HT)".
-    iIntros (F ?) "#HE HL Htoks".
+    iIntros (F ?) "#CTX #HE HL Htoks".
     iMod (llctx_return_elt_toks _ _ L' with "HL Htoks") as "HL"; first done.
     eauto with iFrame.
   Qed.
@@ -4601,12 +4601,12 @@ Section subsume.
     ⊢ introduce_with_hooks E L (RelEq (T:=rt) γ1 γ2) T.
   Proof.
     iIntros "(%o & Hobs & HT)".
-    iIntros (??) "HE HL Hrel".
+    iIntros (??) "CTX HE HL Hrel".
     destruct o as [[rt' r] | ]; simpl.
     - iDestruct "HT" as "(%Heq & HT)". destruct Heq.
       iPoseProof (RelEq_use_pobs with "Hobs Hrel") as "Hobs".
       iMod (gvar_obs_persist with "Hobs") as "Hobs".
-      by iApply ("HT" with "[] HE HL Hobs").
+      by iApply ("HT" with "[] CTX HE HL Hobs").
     - iFrame. by iApply "HT".
   Qed.
   Definition introduce_with_hooks_releq_inst := [instance @introduce_with_hooks_releq].
@@ -4625,12 +4625,12 @@ Section subsume.
     ⊢ introduce_with_hooks E L (Rel2 (T1:=rt1)(T2:=rt2) γ1 γ2 R) T.
   Proof.
     iIntros "(%o & Hobs & HT)".
-    iIntros (??) "HE HL Hrel".
+    iIntros (??) "CTX HE HL Hrel".
     destruct o as [[rt' r] | ]; simpl.
     - iDestruct "HT" as "(%Heq & HT)". destruct Heq.
       iPoseProof (Rel2_use_pobs with "Hobs Hrel") as "(%r2 & Hobs & %HR)".
       iMod (gvar_obs_persist with "Hobs") as "Hobs".
-      iApply ("HT" with "[] HE HL [Hobs]"); first done.
+      iApply ("HT" with "[] CTX HE HL [Hobs]"); first done.
       simpl. by iFrame.
     - iFrame. by iApply "HT".
   Qed.
@@ -4653,7 +4653,7 @@ Section subsume.
     iMod (llctx_startlft _ _ κs with "LFT LLCTX HL") as (κ) "HL"; [solve_ndisj.. | ].
     iApply physical_step_intro_lc; iIntros "Hcred"; iModIntro; iNext.
     iApply fupd_wps.
-    iMod ("Hcont" with "[Hnamed] [] HE HL Hcred") as "(%L2 & HL & HT)"; [ | done | ].
+    iMod ("Hcont" with "[Hnamed] [] [$] HE HL Hcred") as "(%L2 & HL & HT)"; [ | done | ].
     { iApply named_lfts_update. done. }
     by iApply ("HT" with "[$LFT $LLCTX] HE HL Hf").
   Qed.
@@ -4687,7 +4687,7 @@ Section subsume.
     T L (IterateEndlftInheritances κ [])
     ⊢ iterate_with_hooks E L (IterateEndlftInheritances κ []) T.
   Proof.
-    iIntros "HT" (??) "HE HL". iFrame. done.
+    iIntros "HT" (??) "CTX HE HL". iFrame. done.
   Qed.
   Definition iterate_with_hooks_endlft_inheritance_nil_inst := [instance @iterate_with_hooks_endlft_inheritance_nil].
   Global Existing Instance iterate_with_hooks_endlft_inheritance_nil_inst.
@@ -4708,12 +4708,12 @@ Section subsume.
     destruct b.
     - iDestruct "HT" as "(% & Hinh & % & Hdead & HT)".
       simpl in *. unfold Inherit.
-      iIntros (??) "#HE HL".
+      iIntros (??) "#CTX #HE HL".
       simpl.
       iMod ("Hinh" with "[//] [Hdead]") as "HP".
       { iApply lft_dead_lft_intersect_list. iFrame. done. }
-      iMod ("HT" with "[] HE HL HP") as "(%L2 & HL & HT)"; first done.
-      by iApply ("HT" with "[] HE HL").
+      iMod ("HT" with "[] CTX HE HL HP") as "(%L2 & HL & HT)"; first done.
+      by iApply ("HT" with "[] CTX HE HL").
     - done.
   Qed.
   Definition iterate_with_hooks_endlft_inheritance_cons_inst := [instance @iterate_with_hooks_endlft_inheritance_cons].
@@ -4786,10 +4786,10 @@ Section subsume.
     iIntros "Ha Hcred !>".
     iIntros "(%L5 & HL & HT)".
 
-    iMod ("HT" with "[] HE HL [$HR2 Hcred Ha]") as "(%L6 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL [$HR2 Hcred Ha]") as "(%L6 & HL & HT)"; first done.
     { iFrame. iApply tr_weaken; last done. simpl. unfold num_laters_per_step; lia. }
     unfold find_inheritances_goal. iDestruct "HT" as "(%ks & HT)".
-    iMod ("HT" with "[] HE HL") as "(%L7 & % & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL") as "(%L7 & % & HL & HT)"; first done.
     by iApply ("HT" with "CTX HE HL Hf").
   Qed.
 
@@ -4818,19 +4818,53 @@ Section subsume.
   Qed.
 
   (** ExtendLft *)
+  Variant iterate_extend_lft :=
+    | IterateExtendLft (κs : list lft)
+  .
+  Lemma iterate_with_hooks_extend_lft_nil E L T :
+    T L (IterateExtendLft [])
+    ⊢ iterate_with_hooks E L (IterateExtendLft []) T.
+  Proof.
+    iIntros "HT". iIntros (??) "CTX HE HL".
+    iModIntro. iFrame.
+  Qed.
+  Definition iterate_with_hooks_extend_lft_nil_inst := [instance @iterate_with_hooks_extend_lft_nil].
+  Global Existing Instance iterate_with_hooks_extend_lft_nil_inst.
+
+  Lemma iterate_with_hooks_extend_lft_cons E L κ κs T :
+    li_tactic (check_lft_is_local_goal E L κ) (λ b,
+    if b then
+      li_tactic (llctx_find_llft_goal L κ LlctxFindLftOwned) (λ '(κs', L'),
+        iterate_with_hooks E ((κ ≡ₗ κs') :: L') (IterateExtendLft (κs' ++ κs)) T)
+    else iterate_with_hooks E L (IterateExtendLft (κs)) T)
+    ⊢ iterate_with_hooks E L (IterateExtendLft (κ :: κs)) T.
+  Proof.
+    iIntros "HT". iIntros (??) "(#LFT & #LCTX) HE HL".
+    rewrite /llctx_find_llft_goal /check_lft_is_local_goal.
+    iDestruct "HT" as "(%b & HT)".
+    destruct b.
+    - iDestruct "HT" as "(%L' & %κs' & %Hfind & HT)".
+      iMod (llctx_extendlft_local_owned with "LFT HL") as "HL"; [done.. | ].
+      iMod ("HT" with "[] [$] HE HL") as "(%L2 & %m & HL & HT)"; first done.
+      by iFrame.
+    - by iApply ("HT" with "[] [$] HE HL").
+  Qed.
+  Definition iterate_with_hooks_extend_lft_cons_inst := [instance @iterate_with_hooks_extend_lft_cons].
+  Global Existing Instance iterate_with_hooks_extend_lft_cons_inst.
+
   Lemma type_extendlft E L f (n : string) s fn R ϝ :
     (∃ M, named_lfts M ∗
       li_tactic (compute_map_lookup_nofail_goal M n) (λ κ,
-      li_tactic (llctx_find_llft_goal L κ LlctxFindLftOwned) (λ '(κs, L'),
-      (named_lfts M -∗ typed_stmt E ((κ ≡ₗ κs) :: L') f s fn R ϝ))))
-    ⊢ typed_stmt E L f (annot{1}: (EndLftAnnot n); s) fn R ϝ.
+      iterate_with_hooks E L (IterateExtendLft [κ]) (λ L' _,
+      (named_lfts M -∗ typed_stmt E L' f s fn R ϝ))))
+    ⊢ typed_stmt E L f (annot{1}: (ExtendLftAnnot n); s) fn R ϝ.
   Proof.
-    rewrite /compute_map_lookup_nofail_goal /llctx_find_llft_goal.
-    iIntros "(%M & Hnamed & %κ & _ & %L' & %κs & %Hfind & Hs)".
-    iIntros (?) "#(LFT & LCTX) #HE HL Hf Hcont".
-    iMod (llctx_extendlft_local_owned with "LFT HL") as "HL"; [done.. | ].
+    rewrite /compute_map_lookup_nofail_goal.
+    iIntros "(%M & Hnamed & %κ & _ & Hs)".
+    iIntros (?) "#CTX #HE HL Hf Hcont".
+    iMod ("Hs" with "[] CTX HE HL") as "(%L2 & % & HL & HT)"; first done.
     iApply wps_annot. iApply physical_step_intro; iNext.
-    by iApply ("Hs" with "Hnamed [$] HE HL Hf").
+    by iApply ("HT" with "Hnamed [$] HE HL Hf").
   Qed.
 
   (** UnconstrainedLftAnnot *)
@@ -5033,7 +5067,7 @@ Section subsume.
     iApply ("He" with "CTX HE HL Hf").
     iIntros (L' v m rt ty r) "HL Hf Hv HR".
     iApply fupd_wpe.
-    iMod ("HR" with "[] HE HL Hv") as "(%L2 & HL & HR)"; first done.
+    iMod ("HR" with "[] CTX HE HL Hv") as "(%L2 & HL & HR)"; first done.
     iDestruct "HR" as "(%locals & Hlocals & %locs & % & HT)".
     iMod ("HT" with "[] [] [] CTX HE HL []") as "(%L3 & %acc & %m' & HL & Hstep & HT)"; [done.. | | ].
     { simpl. iApply logical_step_intro. iSplitR; last done. rewrite /type_ctx_interp. done. }
@@ -5046,7 +5080,7 @@ Section subsume.
     iIntros "Hacc".
     rewrite /typed_context_fold_stratify_interp.
     destruct acc as (ctx & R2).
-    iMod ("HT" with "[] HE HL Hacc") as "(%L4 & HL & HT)"; first done.
+    iMod ("HT" with "[] [$] HE HL Hacc") as "(%L4 & HL & HT)"; first done.
     iMod ("HT" with "[] [] [] [$] HE HL") as "(%L5 & % & %R3 & HP & HL & HT)"; [done.. | ].
     iApply (wpe_maybe_logical_step with "HP"); [done.. | ].
     iModIntro. iApply wp_skip.
@@ -5055,7 +5089,7 @@ Section subsume.
     iApply wps_fupd.
     iApply wps_return.
     unfold li_tactic, llctx_find_llft_goal.
-    iMod ("HT" with "[] HE HL HR2") as "(%L6 & HL & HT)"; first done.
+    iMod ("HT" with "[] [$] HE HL HR2") as "(%L6 & HL & HT)"; first done.
 
     unfold typed_stmt_post_cond.
     iSpecialize ("Hcont" $! _ v with "HL Hf Hlocals").

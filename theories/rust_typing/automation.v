@@ -673,7 +673,7 @@ Section tac.
     iDestruct ("HT" $! lsa) as "(%E' & %Hsub & _ & HT)".
     iPoseProof (elctx_interp_submseteq _ _ Hsub with "HE") as "HE'".
     rewrite /introduce_with_hooks.
-    iMod ("HT" with "Hstore Hna Halloc [] HE' HL [Hinit]") as "(%L2 & HL & HT)"; first done.
+    iMod ("HT" with "Hstore Hna Halloc [] CTX HE' HL [Hinit]") as "(%L2 & HL & HT)"; first done.
     { iDestruct "Hinit" as "($ & $ & $)". }
     iApply ("HT" with "CTX HE' HL Hf").
     iModIntro. unfold typed_stmt_post_cond.
@@ -685,8 +685,8 @@ Section tac.
     iIntros (????) "_ _ HL".
     iMod ("Hcont2" with "[] [] [] [//] [//] HL") as "Hx"; [done.. | ].
     iDestruct "Hx" as "(% &  % & % & ? & ? & HT)". iFrame.
-    iExists []. iModIntro. iIntros (??) "_ HL".
-    iApply ("HT" with "[] [] HL"); done.
+    iExists []. iModIntro. iIntros (??) "_ _ HL".
+    iApply ("HT" with "[] CTX [] HL"); done.
   Qed.
 End tac.
 

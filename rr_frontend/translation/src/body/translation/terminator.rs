@@ -10,11 +10,12 @@ use log::{info, trace, warn};
 use radium::{code, lang, specs};
 use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
+use rr_rustc_interface::type_ir::TypeFolder as _;
 
 use super::TX;
 use crate::base::*;
 use crate::environment::borrowck::facts;
-use crate::{search, types};
+use crate::{regions, search, types};
 
 #[expect(clippy::multiple_inherent_impl)]
 impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
@@ -159,14 +160,30 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             },
 
             mir::TerminatorKind::Return => {
-                // TODO: this requires additional handling for reborrows
+                let return_synty = self.ty_translator.translate_type_to_syn_type(self.return_ty)?;
+
+                // compute which lifetimes depend on local borrows
+                let mut region_folder = regions::TyRegionCollectFolder::new(self.env.tcx());
+                region_folder.fold_ty(self.return_ty);
+                let regions_in_return = region_folder.get_regions();
+
+                let mut lifetimes_to_extend = Vec::new();
+                for r in regions_in_return {
+                    //let atomic = self.info.mk_atomic_region(r);
+                    lifetimes_to_extend.push(self.ty_translator.translate_region_var(r)?);
+                }
+                let stmt_annots: Vec<_> = lifetimes_to_extend.into_iter().map(code::Annotation::ExtendLft).collect();
+                endlfts.insert(0, code::PrimStmt::Annot {
+                    a: stmt_annots,
+                    why: Some("return".to_owned()),
+                });
 
                 // read from the return place
                 // Is this semantics accurate wrt what the intended MIR semantics is?
                 // Possibly handle this differently by making the first argument of a function a dedicated
                 // return place? See also discussion at https://github.com/rust-lang/rust/issues/71117
                 let stmt = code::Stmt::Return(code::Expr::Move {
-                    ot: (&self.return_synty).into(),
+                    ot: (&return_synty).into(),
                     e: Box::new(code::Expr::Var(self.return_name.clone())),
                 });
 

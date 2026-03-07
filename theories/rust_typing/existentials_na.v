@@ -501,7 +501,7 @@ Section na_subtype.
     iApply fupd_place_to_wp.
     iMod (na_ex_plain_t_acc_owned with "Hb") as "(%r & HP & Hb & Hcl)"; first done.
     iPoseProof ("Hcl" with "Hb []") as "Hb"; first done.
-    iMod ("HT" with "[] HE HL HP") as "(%L2 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL HP") as "(%L2 & HL & HT)"; first done.
     iApply ("HT" with "[//] [//] CTX HE HL Hf Hb").
     iModIntro. iIntros (L' κs l2 b2 bmin0 rti ltyi ri updcx) "Hl Hc".
     iApply ("Hcont" with "Hl").
@@ -618,7 +618,7 @@ Section na_subtype.
     iEval (rewrite ltype_own_ofty_unfold /lty_of_ty_own) in "Hl".
     iDestruct "Hl" as (ly Halg Hly) "(#Hsc & #Hlb & (% & <- & Hl))".
 
-    iMod ("HT" with "[] HE HL [$HP Hl Htokcl Hvs Hna']") as "HT"; first solve_ndisj.
+    iMod ("HT" with "[] [$] HE HL [$HP Hl Htokcl Hvs Hna']") as "HT"; first solve_ndisj.
     { rewrite ltype_own_opened_na_unfold /opened_na_ltype_own.
       iFrame.
       iExists ly; repeat iR.

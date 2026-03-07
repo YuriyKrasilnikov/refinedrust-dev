@@ -571,7 +571,7 @@ Section rules.
     iIntros "HT".
     iIntros (????) "#CTX #HE HL".
     iMod ("HT" with "[//] [//] [//] CTX HE HL") as "(%L2 & %κs & %R & >(Hv' & HR) & HL & HT)".
-    iMod ("HT" with "[//] HE HL HR") as "(%L3 & HL & %Hot & <- & HT)".
+    iMod ("HT" with "[//] CTX HE HL HR") as "(%L3 & HL & %Hot & <- & HT)".
     iExists _. iFrame. iModIntro.
     iPoseProof (ty_own_val_sidecond with "Hv'") as "#$".
     iSplitR. { iPureIntro. apply syn_type_size_eq_refl. }

@@ -75,7 +75,7 @@ pub(crate) struct TX<'a, 'def, 'tcx> {
     /// name of the return variable
     return_name: String,
     /// syntactic type of the thing to return
-    return_synty: lang::SynType,
+    return_ty: ty::Ty<'tcx>,
     /// all the other procedures used by this function, and:
     /// `(code_loc_parameter_name, spec_name, type_inst, syntype_of_all_args)`
     collected_procedures: HashMap<TranslationKey<'tcx>, code::UsedProcedure<'def>>,
@@ -131,7 +131,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let debug_info = &body.var_debug_info;
         info!("using debug info: {:?}", debug_info);
 
-        let mut return_synty = lang::SynType::Unit; // default
+        let empty_args = env.tcx().mk_type_list(&[]);
+        let mut return_ty = env.tcx().mk_ty_from_kind(ty::TyKind::Tuple(empty_args));
         let mut fn_locals = Vec::new();
         let mut opt_return_name =
             Err(TranslationError::UnknownError("could not find local for return value".to_owned()));
@@ -172,7 +173,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 },
                 mir::LocalKind::Temp => (),
                 mir::LocalKind::ReturnPointer => {
-                    return_synty = st.clone();
+                    return_ty = ty;
                     opt_return_name = Ok(name);
                 },
             }
@@ -200,7 +201,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             variable_map,
             translated_fn,
             return_name,
-            return_synty,
+            return_ty,
             inclusion_tracker,
             collected_procedures: HashMap::new(),
             procedure_registry,
