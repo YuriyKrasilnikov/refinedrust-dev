@@ -397,6 +397,10 @@
             src = ./case_studies/minivec;
           }
           {
+            pname = "linkedlist";
+            src = ./case_studies/linkedlist;
+          }
+          {
             pname = "paper-examples";
             src = ./case_studies/paper_examples;
           }
