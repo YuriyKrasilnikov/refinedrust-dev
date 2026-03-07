@@ -1816,7 +1816,7 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
         ty: ty::Ty<'tcx>,
         variant: Option<abi::VariantIdx>,
         scope: InFunctionState<'_, 'def, 'tcx>,
-    ) -> Result<Option<specs::types::LiteralUse<'def>>, TranslationError<'tcx>> {
+    ) -> Result<specs::types::LiteralUse<'def>, TranslationError<'tcx>> {
         match ty.kind() {
             ty::TyKind::Adt(adt, args) => {
                 if adt.is_struct() {
@@ -1828,7 +1828,7 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
                     if let Some(variant) = variant {
                         self.register_adt(*adt)?;
                         let v = &adt.variants()[variant];
-                        self.generate_enum_variant_use(v.def_id, args, scope).map(Some)
+                        self.generate_enum_variant_use(v.def_id, args, scope)
                     } else {
                         Err(TranslationError::UnknownError(
                             "a non-downcast enum is not a structlike".to_owned(),
@@ -1840,14 +1840,12 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
                     })
                 }
             },
-            ty::TyKind::Tuple(args) => {
-                self.generate_tuple_use(*args, &mut STInner::InFunction(scope)).map(Some)
-            },
+            ty::TyKind::Tuple(args) => self.generate_tuple_use(*args, &mut STInner::InFunction(scope)),
             ty::TyKind::Closure(_, args) => {
                 // use the upvar tuple
                 let closure_args = args.as_closure();
                 let upvars = closure_args.upvar_tys();
-                self.generate_tuple_use(upvars, &mut STInner::InFunction(scope)).map(Some)
+                self.generate_tuple_use(upvars, &mut STInner::InFunction(scope))
             },
             _ => Err(TranslationError::UnknownError("not a structlike".to_owned())),
         }
@@ -1892,7 +1890,7 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
         variant_id: DefId,
         args: ty::GenericArgsRef<'tcx>,
         scope: InFunctionState<'_, 'def, 'tcx>,
-    ) -> Result<Option<specs::types::LiteralUse<'def>>, TranslationError<'tcx>> {
+    ) -> Result<specs::types::LiteralUse<'def>, TranslationError<'tcx>> {
         info!("generating struct use for {:?}", variant_id);
 
         let params = self.trait_registry().compute_scope_inst_in_state(
@@ -1910,7 +1908,7 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
 
         scope.shim_uses.entry(key).or_insert_with(|| struct_use.clone());
 
-        Ok(Some(struct_use))
+        Ok(struct_use)
     }
 
     /// Generate an enum use.

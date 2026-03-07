@@ -10,13 +10,15 @@
 
 #![rr::include("sized")]
 
+use std::marker::PhantomData;
+
 #[rr::export_as(core::clone::Clone)]
 pub trait Clone: Sized {
     #[rr::returns("self")]
     fn clone(&self) -> Self;
 
     #[rr::observe("self.ghost": "($#@{{ {rt_of Self} }} source)")]
-    fn clone_from(&mut self, source: &Self) 
+    fn clone_from(&mut self, source: &Self)
     {
         *self = source.clone();
     }
@@ -44,7 +46,7 @@ impl_clone! {
     usize u8 u16 u32 u64 u128
     isize i8 i16 i32 i64 i128
     //f16 f32 f64 f128
-    bool 
+    bool
     char
 }
 
@@ -80,4 +82,14 @@ impl<T: ?Sized> Clone for *mut T {
 
 impl<T: ?Sized> Copy for *mut T { }
 impl<T: ?Sized> Copy for *const T { }
+
+impl<T: ?Sized> Copy for PhantomData<T> {}
+
+// TODO: see issue #35
+#[rr::only_spec]
+impl<T: ?Sized> Clone for PhantomData<T> {
+    fn clone(&self) -> Self {
+        Self
+    }
+}
 

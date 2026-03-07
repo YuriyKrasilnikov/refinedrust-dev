@@ -59,11 +59,6 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     let variant = adt_def.variant(variant);
                     let struct_use = self.ty_translator.generate_struct_use(variant.def_id, args)?;
 
-                    let Some(struct_use) = struct_use else {
-                        // if not, it's replaced by unit
-                        return Ok(code::Expr::Literal(code::Literal::ZST));
-                    };
-
                     let sl = struct_use.generate_raw_syn_type_term();
                     let initializers: Vec<_> = translated_ops
                         .into_iter()

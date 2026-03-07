@@ -5,7 +5,7 @@
 // file, You can obtain one at https://opensource.org/license/bsd-3-clause/.
 
 use log::info;
-use radium::{code, lang};
+use radium::code;
 use rr_rustc_interface::abi;
 use rr_rustc_interface::middle::{mir, ty};
 
@@ -67,7 +67,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     // `t` is the type of the field we are accessing!
                     let lit = self.ty_translator.generate_structlike_use(cur_ty.ty, cur_ty.variant_index)?;
                     // TODO: does not do the right thing for accesses to fields of zero-sized objects.
-                    let struct_sls = lit.map_or(lang::SynType::Unit, |x| x.generate_raw_syn_type_term());
+                    let struct_sls = lit.generate_raw_syn_type_term();
                     let name = self.ty_translator.translator.get_field_name_of(
                         *f,
                         cur_ty.ty,
