@@ -399,11 +399,12 @@ Proof.
 Qed.
 
 
-Global Instance simpl_and_fmap {A B} (f1 f2 : A → B) (l1 : list A) l2 :
-  SimplAndUnsafe (fmap f1 l1 = fmap f2 l2) (λ T, l1 = l2 ∧ (∀ x : A, x ∈ l1 → f1 x = f2 x) ∧ T).
+Global Instance simpl_and_fmap {A B} (f1 f2 : A → B) (l1 : list A) l2 `{!TCDone ((∀ x : A, x ∈ l1 → f1 x = f2 x))}:
+  SimplAndUnsafe (fmap f1 l1 = fmap f2 l2) (λ T, l1 = l2 ∧ T).
 Proof.
   unfold SimplAndUnsafe. intros T.
-  intros (-> & Hext & ?). split; last done.
+  unfold TCDone in *.
+  intros (-> & ?). split; last done.
   apply list_fmap_ext'; done.
 Qed.
 

@@ -23,7 +23,7 @@ Section find.
     {| rt_fic := FindValP v |}.
 
   Global Instance related_to_named_lfts M : RelatedTo (named_lfts M) | 100 :=
-{| rt_fic:= FindNamedLfts |}.
+    {| rt_fic:= FindNamedLfts |}.
 
   Global Instance related_to_gvar_pobs {rt} γ (r : rt) : RelatedTo (gvar_pobs γ r) | 100 :=
     {| rt_fic := FindGvarPobsP γ |}.
@@ -40,7 +40,7 @@ Section find.
   Global Instance related_to_loc_in_bounds l pre suf : RelatedTo (loc_in_bounds l pre suf) | 100 :=
     {| rt_fic := FindLocInBounds l |}.
 
-Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) | 100 :=
+  Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) | 100 :=
     {| rt_fic := FindLocal f x |}.
 
   Global Instance related_to_alloc_locals f locals : RelatedTo (allocated_locals f locals) | 100 :=
@@ -434,6 +434,37 @@ Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) 
   Qed.
   Definition find_in_context_opt_gvar_pobs_dummy_inst := [instance @find_in_context_opt_gvar_pobs_dummy with FICSyntactic].
   Global Existing Instance find_in_context_opt_gvar_pobs_dummy_inst | 10.
+
+  (** FindOptObsList *)
+  Lemma find_in_context_opt_obs_list γs T :
+    (∃ rt (rs : list rt), ObsList γs rs ∗ T (inl (existT rt rs)))
+    ⊢ find_in_context (FindOptObsList γs) T.
+  Proof.
+    iIntros "(%rt & %r & Hobs & HT)".
+    iExists _ => /=. iFrame.
+  Qed.
+  Definition find_in_context_opt_obs_list_inst := [instance @find_in_context_opt_obs_list with FICSyntactic].
+  Global Existing Instance find_in_context_opt_obs_list_inst | 1.
+  (* we have a dummy instance with lower priority for the case that we cannot find an observation in the context *)
+  Lemma find_in_context_opt_obs_list_dummy γ T :
+    (True ∗ T (inr ())) ⊢ find_in_context (FindOptObsList γ) T.
+  Proof.
+    iIntros "[_ HT]".
+    iExists _ => /=. iFrame.
+  Qed.
+  Definition find_in_context_opt_obs_list_dummy_inst := [instance @find_in_context_opt_obs_list_dummy with FICSyntactic].
+  Global Existing Instance find_in_context_opt_obs_list_dummy_inst | 10.
+
+  (** FindObsList *)
+  Lemma find_in_context_obs_list γs T :
+    (∃ rt (rs : list rt), ObsList γs rs ∗ T ((existT rt rs)))
+    ⊢ find_in_context (FindObsList γs) T.
+  Proof.
+    iIntros "(%rt & %r & Hobs & HT)".
+    iExists _ => /=. iFrame.
+  Qed.
+  Definition find_in_context_obs_list_inst := [instance @find_in_context_obs_list with FICSyntactic].
+  Global Existing Instance find_in_context_obs_list_inst | 1.
 
   (** FindOptInheritGvarPobs *)
   Lemma find_in_context_opt_inherit_gvar_pobs γ T :
@@ -1856,52 +1887,26 @@ Section subsume.
   Global Instance resolve_ghost_id_inst {rt} π E L l (lt : ltype rt) rm lb k r :
     ResolveGhost π E L rm lb l lt k r | 200 := λ T, i2p (resolve_ghost_id π E L l lt rm lb k r T).
 
-  Lemma resolve_ghost_ofty_Owned {rt} π E L l (ty : type rt) γ rm lb T :
+  Lemma resolve_ghost_ofty {rt} π E L l (ty : type rt) γ rm lb b T :
     find_observation rt γ FindObsModeDirect (λ or,
       match or with
       | None =>
           ⌜fast_eq_hint (rm = ResolveTry)⌝ ∗ T L (PlaceGhost γ) True false
       | Some r =>
           (* try again in case we should descend into the type or we have still got a PlaceGhost *)
-          resolve_ghost π E L rm lb l (◁ ty)%I (Owned) r T
+          resolve_ghost π E L rm lb l (◁ ty)%I b r T
       end)
-    ⊢ resolve_ghost π E L rm lb l (◁ ty)%I (Owned) (PlaceGhost γ) T.
+    ⊢ resolve_ghost π E L rm lb l (◁ ty)%I b (PlaceGhost γ) T.
   Proof.
     iIntros "HT". iIntros (F ??) "#CTX #HE HL Hl".
     iMod ("HT" with "[//]") as "HT". iDestruct "HT" as "[(%r & Hobs & HT) | (-> & HT)]".
-    - rewrite ltype_own_ofty_unfold /lty_of_ty_own.
-      iDestruct "Hl" as "(%ly & ? & ? & ? & ? & %r' & Hrfn & Hb)".
-      iPoseProof (place_rfn_interp_owned_find_observation with "Hrfn Hobs") as "Hobs".
-      iMod ("HT" with "[] [] CTX HE HL [-]") as "Ha"; [done.. | | ].
-      { rewrite ltype_own_ofty_unfold /lty_of_ty_own. eauto with iFrame. }
+    - iPoseProof (ltype_own_ofty_use_obs with "Hl Hobs") as "Hl".
+      iMod ("HT" with "[] [] CTX HE HL [$]") as "Ha"; [done.. | ].
       done.
     - iExists L, _, True%I, _. iFrame. iApply maybe_logical_step_intro. eauto with iFrame.
   Qed.
-  Definition resolve_ghost_ofty_Owned_inst := [instance @resolve_ghost_ofty_Owned].
-  Global Existing Instance resolve_ghost_ofty_Owned_inst | 7.
-
-  Lemma resolve_ghost_ofty_Uniq {rt} π E L l (ty : type rt) γ rm lb κ γ' T :
-    find_observation rt γ FindObsModeDirect (λ or,
-      match or with
-      | None => ⌜fast_eq_hint (rm = ResolveTry)⌝ ∗ T L (PlaceGhost γ) True false
-      | Some r =>
-          (* try again in case we should descend into the type or we have still got a PlaceGhost *)
-          resolve_ghost π E L rm lb l (◁ ty)%I (Uniq κ γ') r T
-      end)
-    ⊢ resolve_ghost π E L rm lb l (◁ ty)%I (Uniq κ γ') (PlaceGhost γ) T.
-  Proof.
-    iIntros "HT". iIntros (F ??) "#CTX #HE HL Hl".
-    iMod ("HT" with "[//]") as "HT". iDestruct "HT" as "[(%r & Hobs & HT) | (-> & HT)]".
-    - rewrite ltype_own_ofty_unfold /lty_of_ty_own.
-      iDestruct "Hl" as "(%ly & ? & ? & ? & ? & ? & Hrfn & Hb)".
-      iPoseProof (place_rfn_interp_mut_find_observation with "Hrfn Hobs") as "Hrfn".
-      iMod ("HT" with "[] [] CTX HE HL [-]") as "Ha"; [done.. | | ].
-      { rewrite ltype_own_ofty_unfold /lty_of_ty_own. eauto with iFrame. }
-      done.
-    - iExists L, _, True%I, _. iFrame. iApply maybe_logical_step_intro. eauto with iFrame.
-  Qed.
-  Definition resolve_ghost_ofty_Uniq_inst := [instance @resolve_ghost_ofty_Uniq].
-  Global Existing Instance resolve_ghost_ofty_Uniq_inst | 7.
+  Definition resolve_ghost_ofty_inst := [instance @resolve_ghost_ofty].
+  Global Existing Instance resolve_ghost_ofty_inst | 7.
 
   (* Low-priority default instance. Can be overridden in case we want to descend into the type for deeper resolution, for instance for ADTs. See the instances in [existentials.v]. *)
   Lemma resolve_ghost_ofty_default {rt} (ty : type rt) π E L l r rm lb bk T :
