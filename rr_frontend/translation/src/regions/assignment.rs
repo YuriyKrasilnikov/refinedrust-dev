@@ -14,7 +14,6 @@ use rr_rustc_interface::middle::ty::TypeFoldable as _;
 use rr_rustc_interface::middle::{mir, ty};
 
 use crate::base::*;
-use crate::environment::Environment;
 use crate::environment::borrowck::facts;
 use crate::regions::inclusion_tracker::{self, InclusionTracker};
 use crate::{regions, types};
@@ -97,10 +96,10 @@ fn get_assignment_weak_update_constraints(
 
 /// Get all region variables mentioned in a place type.
 fn find_region_variables_of_place_type<'tcx>(
-    env: &Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     ty: mir::PlaceTy<'tcx>,
 ) -> BTreeSet<Region> {
-    let mut collector = regions::TyRegionCollectFolder::new(env.tcx());
+    let mut collector = regions::TyRegionCollectFolder::new(tcx);
     if ty.variant_index.is_some() {
         panic!("find_region_variables_of_place_type: don't support enums");
     }
@@ -153,7 +152,7 @@ pub(crate) struct RegionInfo {
 /// annotations to prepend to the statement, and a list of annotations to put after the
 /// statement.
 pub(crate) fn get_assignment_annots<'tcx>(
-    env: &Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     inclusion_tracker: &mut InclusionTracker<'_, 'tcx>,
     ty_translator: &types::LocalTX<'_, 'tcx>,
     loc: mir::Location,
@@ -176,7 +175,7 @@ pub(crate) fn get_assignment_annots<'tcx>(
         // for each of the variables, issue a barrier.
         // also track them together with the PlaceItems needed to reach them.
         // from the latter, we can generate the necessary annotations
-        let regions = find_region_variables_of_place_type(env, lhs_ty);
+        let regions = find_region_variables_of_place_type(tcx, lhs_ty);
 
         // put up a barrier at the Mid point
         let pre_barrier_point_index = info.interner.get_point_index(&facts::Point {

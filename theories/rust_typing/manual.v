@@ -255,7 +255,7 @@ Section updateable_rules.
       specialize (syn_type_has_layout_untyped_inv _ _ Hst) as (-> & _).
       done. }
     rewrite /introduce_with_hooks.
-    iMod ("HT" with "[] HE HL [$Ha $HR]") as "(%L3 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL [$Ha $HR]") as "(%L3 & HL & HT)"; first done.
     by iFrame.
   Qed.
 
@@ -281,7 +281,7 @@ Section updateable_rules.
     iMod ("HT" with "[] [] [] CTX HE HL Ha") as "(%L2 & %R2 & >(Hl & HR) & HL & %Hlt & HT)"; [done.. | ].
     iMod (array_t_ofty_split _ _ _ k (n - k) with "Hl") as "(Hl1 & Hl2)"; [done | lia | ].
     unfold introduce_with_hooks.
-    iPoseProof  ("HT" with "Hl1 Hl2 [//] HE HL HR") as "HT".
+    iPoseProof  ("HT" with "Hl1 Hl2 [//] CTX HE HL HR") as "HT".
     iMod (fupd_mask_mono with "HT") as "(%L3 & HL & HT)"; first done.
     by iFrame.
   Qed.
@@ -308,7 +308,7 @@ Section updateable_rules.
     iMod ("HT" with "[] [] [] CTX HE HL Ha") as "(%L2 & %R2 & >(Hl & HR) & HL & -> & % & HT)"; [done.. | ].
     iMod (array_t_ofty_reshape _ _ _ _ _ _ size num with "Hl") as "Hl"; [done | lia | lia | ].
     unfold introduce_with_hooks.
-    iPoseProof  ("HT" with "Hl [//] HE HL HR") as "HT".
+    iPoseProof  ("HT" with "Hl [//] CTX HE HL HR") as "HT".
     iMod (fupd_mask_mono with "HT") as "(%L3 & HL & HT)"; first done.
     by iFrame.
   Qed.
@@ -331,7 +331,7 @@ Section updateable_rules.
     iMod ("Hb" with "[] [] [] CTX HE HL Ha") as "(%L2 & %R2 & Hs & HL & HT)"; [done.. | ].
     simpl. iMod "Hs" as "Hs".
     rewrite /introduce_with_hooks.
-    iMod ("HT" with "[] HE HL Hs") as "(%L3 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL Hs") as "(%L3 & HL & HT)"; first done.
     by iFrame.
   Qed.
 
@@ -372,7 +372,7 @@ Section updateable_rules.
     iIntros "HT". unshelve iApply add_updateable; first apply _.
     iIntros "#CTX HE HL".
     unfold iterate_with_hooks.
-    iMod ("HT" with "[] HE HL") as "(%L2 & % & HL & Ha)"; first done.
+    iMod ("HT" with "[] CTX HE HL") as "(%L2 & % & HL & Ha)"; first done.
     by iFrame.
   Qed.
 
@@ -517,7 +517,7 @@ Proof.
   iApply ("He" with "CTX HE HL Hf").
   iIntros (L' v m rt ty r) "HL Hf Hv Hcont'".
   rewrite /introduce_with_hooks.
-  iMod ("Hcont'" with "[] HE HL Hv") as "(%L2 & HL & Hcont')"; first done.
+  iMod ("Hcont'" with "[] CTX HE HL Hv") as "(%L2 & HL & Hcont')"; first done.
   iApply ("Hcont'" with "CTX HE HL Hf"). done.
 Qed.
 Lemma tac_typed_val_expr_bind `{!typeGS Σ} E L f e Ks e' T :
@@ -563,7 +563,7 @@ Proof.
     rewrite expr_wp_unfold. iApply "He".
     iIntros (L' v m rt ty r) "HL Hf Hv Hcont".
     rewrite /introduce_with_hooks.
-    iMod ("Hcont" with "[] HE HL Hv") as "(%L2 & HL & Hcont)"; first done.
+    iMod ("Hcont" with "[] CTX HE HL Hv") as "(%L2 & HL & Hcont)"; first done.
     iApply ("Hcont" with "CTX HE HL Hf"). }
   iIntros (v) "HWP".
   rewrite -(HKs' (W.Val _)) /W.to_expr.

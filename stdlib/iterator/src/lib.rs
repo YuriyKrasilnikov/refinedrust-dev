@@ -2,6 +2,7 @@
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
 #![feature(stmt_expr_attributes)]
+#![allow(unused)]
 
 #![feature(try_trait_v2)]
 #![feature(unboxed_closures)]

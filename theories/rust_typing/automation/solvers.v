@@ -408,6 +408,27 @@ Ltac solve_find_implied_dying_lifetimes ::=
       unfold find_implied_dying_lifetimes_pure_goal; done)
   end.
 
+(** [check_lft_is_local_pure_goal] *)
+Ltac check_lft_is_local L κ cont :=
+  match L with
+  (* bottom out if we reach the function lifetime *)
+  | [?ϝ ⊑ₗ{_} []] =>
+    cont constr:(false)
+  | (?κ' ⊑ₗ{_} ?κs') :: ?L' =>
+    first [
+      unify κ κ'; cont constr:(true)
+    | check_lft_is_local L' κ cont]
+  | (?κ' ≡ₗ ?κs') :: ?L' =>
+      check_lft_is_local L' κ cont
+  end.
+
+Ltac solve_check_lft_is_local_goal ::=
+  match goal with
+  | |- check_lft_is_local_pure_goal _ ?L ?κ ?b =>
+      check_lft_is_local L κ ltac:(fun res => unify b res; unfold check_lft_is_local_pure_goal; done)
+  end.
+
+
 (** Check if an element is contained in a list *)
 Ltac solve_check_list_elem_of ::=
   match goal with

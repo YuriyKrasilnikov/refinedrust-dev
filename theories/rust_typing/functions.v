@@ -259,7 +259,7 @@ Section call.
     simpl. iIntros "HT (-> & %fn & -> & He & %Halg & Hfn) Htys" (Φ) "#CTX #HE HL Hf HΦ".
     rewrite /li_tactic/ensure_evars_instantiated_goal.
     iDestruct "HT" as (mask) "(Hna & -> & -> & HT) /=".
-    iMod ("HT" with "[] HE HL Htys") as "(%L' & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL Htys") as "(%L' & HL & HT)"; first done.
     iDestruct "HT" as "(%aκs & %stys & %Heq & %x & HP)".
     (*set (aκs := list_to_tup eκs).*)
     cbn.
@@ -391,7 +391,7 @@ Section call.
       iMod ("HT" with "[] [] [] [] HE' HL") as "(%L3 & %κs1 & %R4 & Hp & HL & HT)"; [done.. |  | ].
       { rewrite /rrust_ctx. iFrame "#". }
       iMod "Hp" as "(Hret & HR)".
-      iMod ("HT" with "[] HE' HL HR") as "(%L6 & HL & HT)"; first done.
+      iMod ("HT" with "[] [$] HE' HL HR") as "(%L6 & HL & HT)"; first done.
       rewrite /llctx_find_llft_goal.
       iDestruct "HT" as "(%HL6 & %κs' & %Hfind & HT)".
       destruct Hfind as (L9 & L10 & ? & -> & -> & Hoc).
@@ -415,7 +415,7 @@ Section call.
       iPoseProof ("HL_cl" with "HL") as "HL".
        (*we currently don't actually kill the lifetime, as we don't conceptually need that. *)
       iDestruct ("HPr") as (?) "(Hty & HR2 & _)".
-      iMod ("Hr" with "[] HE HL [Hat Hcred Hna HR2 Hty HR]") as "(%L3 & HL & Hr)"; first done.
+      iMod ("Hr" with "[] [$] HE HL [Hat Hcred Hna HR2 Hty HR]") as "(%L3 & HL & Hr)"; first done.
       { iFrame. simpl. unfold num_laters_per_step.
         iSplitL "Hcred".
         - iApply lc_weaken; last done. unfold num_cred. lia.
@@ -748,11 +748,11 @@ Section function_subsume.
     iModIntro.
     simpl. iExists L2, [], R. iFrame.
     iSplitR "Hintro"; first done.
-    iIntros (??) "HE HL HP".
+    iIntros (??) "_ HE HL HP".
     iPoseProof ("HEincl" with "HE") as "HE".
     rewrite /llctx_find_llft_goal.
     rewrite /FindCreditStore.
-    iMod ("Hintro" with "[//] HE HL HP") as "(%L3 & HL & %L4 & %κs3 & % & % & Hc & HT)".
+    iMod ("Hintro" with "[//] CTX HE HL HP") as "(%L3 & HL & %L4 & %κs3 & % & % & Hc & HT)".
     simpl.
     iModIntro. iExists L3. iFrame.
     by iExists _, _.

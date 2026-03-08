@@ -7,12 +7,13 @@
 use std::collections::HashMap;
 
 use log::{debug, trace};
+use rr_rustc_interface::hir::def_id::LocalDefId;
 use rr_rustc_interface::middle::ty::TypeFolder as _;
 use rr_rustc_interface::middle::{mir, ty};
 use rr_rustc_interface::{data_structures, polonius_engine};
 
-use crate::environment::Environment;
 use crate::environment::borrowck::facts;
+use crate::environment::mir_storage;
 use crate::environment::procedure::Procedure;
 use crate::environment::region_folder::*;
 
@@ -113,9 +114,9 @@ pub(crate) fn compute_transitive_closure(
 pub(crate) struct PoloniusInfo<'a, 'tcx> {
     pub(crate) tcx: ty::TyCtxt<'tcx>,
     pub(crate) mir: &'a mir::Body<'tcx>,
-    pub(crate) borrowck_in_facts: facts::AllInput,
+    pub(crate) borrowck_in_facts: &'tcx facts::AllInput,
     pub(crate) borrowck_out_facts: facts::AllOutput,
-    pub(crate) interner: facts::Interner,
+    pub(crate) interner: facts::Interner<'tcx>,
     /// Position at which a specific loan was created.
     pub(crate) loan_position: HashMap<facts::Loan, mir::Location>,
     pub(crate) loan_at_position: HashMap<mir::Location, facts::Loan>,
@@ -123,18 +124,29 @@ pub(crate) struct PoloniusInfo<'a, 'tcx> {
 }
 
 impl<'a, 'tcx: 'a> PoloniusInfo<'a, 'tcx> {
-    pub(crate) fn new(env: &'a Environment<'tcx>, procedure: &'a Procedure<'tcx>) -> Self {
+    /// Get Polonius facts of a local procedure.
+    fn local_mir_borrowck_facts(tcx: ty::TyCtxt<'tcx>, def_id: LocalDefId) -> facts::Borrowck<'tcx> {
+        let body_with_facts = mir_storage::retrieve_mir_body(tcx, def_id);
+        let body_with_facts = body_with_facts.as_ref().unwrap();
+
+        facts::Borrowck {
+            input_facts: &body_with_facts.input_facts,
+            location_table: &body_with_facts.location_table,
+        }
+    }
+
+    pub(crate) fn new(procedure: &'a Procedure<'tcx>) -> Self {
         let tcx = procedure.get_tcx();
         let def_id = procedure.get_id();
         let mir = procedure.get_mir();
 
         // Read Polonius facts.
-        let facts = env.local_mir_borrowck_facts(def_id.expect_local());
+        let facts = Self::local_mir_borrowck_facts(tcx, def_id.expect_local());
 
-        let interner = facts::Interner::new(facts.location_table.take().unwrap());
-        let all_facts = facts.input_facts.take().unwrap();
+        let interner = facts::Interner::new(facts.location_table.as_ref().unwrap());
+        let all_facts = facts.input_facts.as_ref().unwrap();
 
-        let output = polonius_engine::Output::compute(&all_facts, polonius_engine::Algorithm::Naive, true);
+        let output = polonius_engine::Output::compute(all_facts, polonius_engine::Algorithm::Naive, true);
 
         let loan_position: HashMap<_, _> = all_facts
             .loan_issued_at
@@ -153,12 +165,12 @@ impl<'a, 'tcx: 'a> PoloniusInfo<'a, 'tcx> {
             })
             .collect();
 
-        let additional_facts = AdditionalFacts::new(&all_facts, &output);
+        let additional_facts = AdditionalFacts::new(all_facts, &output);
 
         Self {
             tcx,
             mir,
-            borrowck_in_facts: *all_facts,
+            borrowck_in_facts: all_facts,
             borrowck_out_facts: output,
             interner,
             loan_position,

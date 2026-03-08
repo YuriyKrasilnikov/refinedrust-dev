@@ -39,6 +39,7 @@ with inputs; rec {
     cargoRefinedRust = import ./cargoRefinedRust.nix {inherit craneLib hostPlatform rrPkgs pkgs;};
     cargoWorkspaceUnused = import ./cargoWorkspaceUnused.nix {inherit craneLib pkgs;};
 
+    availableTargets = import ./availableTargets.nix {inherit pkgs rust-overlay;};
     mkToolchain = import ./mkRustToolchain.nix {inherit hostPlatform pkgs;};
   };
 }

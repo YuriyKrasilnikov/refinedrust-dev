@@ -47,12 +47,12 @@ impl<T, R> RwLock<T, R> {
 impl<T, R: RelaxStrategy> RwLock<T, R> {
 
     #[rr::verify]
-    pub fn read(&self) -> RwLockReadGuard<T> {
+    pub fn read(&self) -> RwLockReadGuard<'_, T> {
         unimplemented!();
     }
 
     #[rr::verify]
-    pub fn write(&self) -> RwLockWriteGuard<T, R> {
+    pub fn write(&self) -> RwLockWriteGuard<'_, T, R> {
         unimplemented!();
     }
 }

@@ -10,10 +10,9 @@ use rr_rustc_interface::hir::intravisit::Visitor;
 use rr_rustc_interface::middle::ty;
 use rr_rustc_interface::{hir, middle};
 
-use crate::environment::Environment;
+use crate::environment;
 
-pub(crate) struct CollectPrustiSpecVisitor<'a, 'tcx> {
-    env: &'a Environment<'tcx>,
+pub(crate) struct CollectPrustiSpecVisitor<'tcx> {
     tcx: ty::TyCtxt<'tcx>,
     functions: Vec<LocalDefId>,
     modules: Vec<LocalDefId>,
@@ -23,11 +22,10 @@ pub(crate) struct CollectPrustiSpecVisitor<'a, 'tcx> {
     trait_impls: Vec<LocalDefId>,
 }
 
-impl<'a, 'tcx> CollectPrustiSpecVisitor<'a, 'tcx> {
-    pub(crate) const fn new(env: &'a Environment<'tcx>) -> Self {
+impl<'tcx> CollectPrustiSpecVisitor<'tcx> {
+    pub(crate) const fn new(tcx: ty::TyCtxt<'tcx>) -> Self {
         CollectPrustiSpecVisitor {
-            env,
-            tcx: env.tcx(),
+            tcx,
             functions: Vec::new(),
             modules: Vec::new(),
             statics: Vec::new(),
@@ -61,41 +59,60 @@ impl<'a, 'tcx> CollectPrustiSpecVisitor<'a, 'tcx> {
     }
 }
 
-impl<'tcx> Visitor<'tcx> for CollectPrustiSpecVisitor<'_, 'tcx> {
+impl<'tcx> Visitor<'tcx> for CollectPrustiSpecVisitor<'tcx> {
     fn visit_item(&mut self, i: &hir::Item<'_>) {
-        //let attrs = self.tcx.get_attrs(i.def_id.to_def_id());
-        if let hir::ItemKind::Fn { .. } = i.kind {
-            let def_id = i.hir_id().owner.def_id;
-            let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-            trace!("Add fn item {} to result", item_def_path);
-            self.functions.push(def_id);
-        } else if let hir::ItemKind::Const(_, _, _, _) = i.kind {
-            let def_id = i.hir_id().owner.def_id;
-            let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-            trace!("Add const {} to result", item_def_path);
-            self.consts.push(def_id);
-        } else if let hir::ItemKind::Static(..) = i.kind {
-            let def_id = i.hir_id().owner.def_id;
-            let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-            trace!("Add static {} to result", item_def_path);
-            self.statics.push(def_id);
-        } else if let hir::ItemKind::Mod(..) = i.kind {
-            let def_id = i.hir_id().owner.def_id;
-            let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-            trace!("Add module {} to result", item_def_path);
-            self.modules.push(def_id);
-        } else if let hir::ItemKind::Trait(..) = i.kind {
-            let def_id = i.hir_id().owner.def_id;
-            let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-            trace!("Add trait {} to result", item_def_path);
-            self.traits.push(def_id);
-        } else if let hir::ItemKind::Impl(item) = i.kind {
-            let def_id = i.hir_id().owner.def_id;
-            if item.of_trait.is_some() {
-                let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-                trace!("Add trait impl {} to result", item_def_path);
-                self.trait_impls.push(def_id);
-            }
+        match i.kind {
+            hir::ItemKind::Fn { .. } => {
+                let def_id = i.hir_id().owner.def_id;
+                trace!(
+                    "Add fn item {} to result",
+                    environment::get_item_def_path(self.tcx, def_id.to_def_id())
+                );
+                self.functions.push(def_id);
+            },
+            hir::ItemKind::Const(_, _, _, _) => {
+                let def_id = i.hir_id().owner.def_id;
+                trace!(
+                    "Add const {} to result",
+                    environment::get_item_def_path(self.tcx, def_id.to_def_id())
+                );
+                self.consts.push(def_id);
+            },
+            hir::ItemKind::Static(..) => {
+                let def_id = i.hir_id().owner.def_id;
+                trace!(
+                    "Add static {} to result",
+                    environment::get_item_def_path(self.tcx, def_id.to_def_id())
+                );
+                self.statics.push(def_id);
+            },
+            hir::ItemKind::Mod(..) => {
+                let def_id = i.hir_id().owner.def_id;
+                trace!(
+                    "Add module {} to result",
+                    environment::get_item_def_path(self.tcx, def_id.to_def_id())
+                );
+                self.modules.push(def_id);
+            },
+            hir::ItemKind::Trait(..) => {
+                let def_id = i.hir_id().owner.def_id;
+                trace!(
+                    "Add trait {} to result",
+                    environment::get_item_def_path(self.tcx, def_id.to_def_id())
+                );
+                self.traits.push(def_id);
+            },
+            hir::ItemKind::Impl(item) => {
+                let def_id = i.hir_id().owner.def_id;
+                if item.of_trait.is_some() {
+                    trace!(
+                        "Add trait impl {} to result",
+                        environment::get_item_def_path(self.tcx, def_id.to_def_id())
+                    );
+                    self.trait_impls.push(def_id);
+                }
+            },
+            _ => (),
         }
     }
 
@@ -113,8 +130,10 @@ impl<'tcx> Visitor<'tcx> for CollectPrustiSpecVisitor<'_, 'tcx> {
 
         let def_id = ti.hir_id().owner.def_id;
 
-        let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-        trace!("Add trait-fn-item {} to result", item_def_path);
+        trace!(
+            "Add trait-fn-item {} to result",
+            environment::get_item_def_path(self.tcx, def_id.to_def_id())
+        );
         self.functions.push(def_id);
     }
 
@@ -126,8 +145,7 @@ impl<'tcx> Visitor<'tcx> for CollectPrustiSpecVisitor<'_, 'tcx> {
 
         let def_id = ii.hir_id().owner.def_id;
 
-        let item_def_path = self.env.get_item_def_path(def_id.to_def_id());
-        trace!("Add impl-fn-item {} to result", item_def_path);
+        trace!("Add impl-fn-item {} to result", environment::get_item_def_path(self.tcx, def_id.to_def_id()));
         self.functions.push(def_id);
     }
 }

@@ -705,7 +705,7 @@ Section stratify.
     iApply fupd_place_to_wp.
     iMod (ex_plain_t_destruct_owned with "Hb") as "(%r & HP & Hb)"; first done.
     (*iPoseProof ("Hcl" with "Hb []") as "Hb"; first done.*)
-    iMod ("HT" with "[] HE HL HP") as "(%L2 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL HP") as "(%L2 & HL & HT)"; first done.
     iApply ("HT" with "[//] [//] CTX HE HL Hf Hb").
     iModIntro. iIntros (L' κs l2 b2 bmin0 rti ltyi ri updcx) "Hl Hc".
     iApply ("Hcont" with "Hl").
@@ -740,7 +740,7 @@ Section stratify.
     iMod "Hcl_F" as "_".
     iMod (ex_plain_t_open_uniq with "CTX Htok Hcl_tok Hb") as "(%r & HP & Hb & Hcl)"; first done.
     iPoseProof ("Hcl" with "Hb []") as "Hb"; first done.
-    iMod ("HT" with "[] HE HL HP") as "(%L2 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL HP") as "(%L2 & HL & HT)"; first done.
     iApply ("HT" with "[//] [//] CTX HE HL Hf Hb").
     iModIntro. iIntros (L'' κs' l2 b2 bmin0 rti ltyi ri updcx) "Hl Hc".
     iApply ("Hcont" with "Hl").
@@ -768,7 +768,7 @@ Section stratify.
     iIntros "HT". iIntros (F ???) "#CTX #HE HL Hf Hb Hcont".
     iApply fupd_place_to_wp.
     iMod (ex_plain_t_open_shared with "Hb") as "(%r & HP & Hb)"; first done.
-    iMod ("HT" with "[] HE HL HP") as "(%L2 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL HP") as "(%L2 & HL & HT)"; first done.
     iApply ("HT" with "[//] [//] CTX HE HL Hf Hb").
     iModIntro. iIntros (L'' κs' l2 b2 bmin0 rti ltyi ri updcx) "Hl Hc".
     iApply ("Hcont" with "Hl").

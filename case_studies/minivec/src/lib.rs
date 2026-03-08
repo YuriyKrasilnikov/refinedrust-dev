@@ -38,7 +38,7 @@ mod rralloc {
         // will return null on alloc failure due to
         // - memory exhaustion (but abortion is also allowed behavior in this case)
         // - `ly` not meeting the allocator's size or alignment constraints
-        let ptr = alloc::alloc(ly);
+        let ptr = unsafe { alloc::alloc(ly) };
         if ptr.is_null() {
             // due to our assumption, this will abort.
             alloc::handle_alloc_error(ly);
@@ -69,7 +69,7 @@ mod rralloc {
         //   does not account for any padding to handle alignment
         //   => we also handle it that way for now
 
-        let ptr = alloc::realloc(ptr as *mut u8, old_layout, new_layout.size());
+        let ptr = unsafe { alloc::realloc(ptr as *mut u8, old_layout, new_layout.size()) };
         if ptr.is_null() {
             // due to our assumption, this will abort.
             alloc::handle_alloc_error(new_layout);
@@ -79,7 +79,7 @@ mod rralloc {
 
     #[rr::shim("dealloc_array", "type_of_dealloc_array", "trait_incl_of_dealloc_array")]
     pub unsafe fn dealloc_array<T>(len: usize, ptr: *mut T) {
-        alloc::dealloc(ptr as *mut u8, Layout::array::<T>(len).unwrap());
+        unsafe { alloc::dealloc(ptr as *mut u8, Layout::array::<T>(len).unwrap()) };
     }
 
     /// Check that an array of `T` with length `len` is layoutable.

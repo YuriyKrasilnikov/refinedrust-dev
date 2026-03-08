@@ -135,7 +135,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 },
             }
             // update cur_ty
-            cur_ty = cur_ty.projection_ty(self.env.tcx(), it);
+            cur_ty = cur_ty.projection_ty(self.tcx, it);
         }
         info!("translating place {:?} to {:?}", pl, acc_expr);
         Ok(acc_expr)

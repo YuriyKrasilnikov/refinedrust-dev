@@ -23,7 +23,7 @@ pub struct DirPath(pub Vec<String>);
 
 impl From<Vec<&str>> for DirPath {
     fn from(v: Vec<&str>) -> Self {
-        Self(v.into_iter().map(ToString::to_string).collect())
+        Self(v.into_iter().map(str::to_owned).collect())
     }
 }
 

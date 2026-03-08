@@ -16,7 +16,7 @@ rustflags = [
     "-Dderef_into_dyn_supertrait",
     "-Dffi_unwind_calls",
     "-Dimpl_trait_redundant_captures",
-    # "-Dlinker_messages",
+    "-Dlinker_messages",
     "-Dmacro_use_extern_crate",
     "-Dmeta_variable_misuse",
     "-Dmissing_copy_implementations",
@@ -65,8 +65,6 @@ rustflags = [
     # === POTENTIAL LINTS (See: #7) ===
 
     # clippy::pedantic
-    "-Aclippy::map_unwrap_or", # this one seems buggy
-    "-Aclippy::cast_possible_truncation",
     "-Aclippy::manual_assert",
     "-Aclippy::missing_errors_doc",
     "-Aclippy::missing_panics_doc",
@@ -74,13 +72,13 @@ rustflags = [
     "-Aclippy::wildcard_imports",
 
     # clippy::restriction
-    "-Aclippy::str_to_string", # this one seems buggy
     "-Aclippy::arithmetic_side_effects",
     "-Aclippy::as_conversions",
-    "-Aclippy::clone_on_ref_ptr",
+    "-Aclippy::doc_paragraphs_missing_punctuation",
     "-Aclippy::exit",
     "-Aclippy::expect_used",
     "-Aclippy::field_scoped_visibility_modifiers",
+    "-Aclippy::format_push_string",
     "-Aclippy::indexing_slicing",
     "-Aclippy::missing_assert_message",
     "-Aclippy::missing_asserts_for_indexing",
@@ -89,7 +87,6 @@ rustflags = [
     "-Aclippy::pattern_type_mismatch",
     "-Aclippy::print_stderr",
     "-Aclippy::print_stdout",
-    "-Aclippy::string_slice",
     "-Aclippy::unimplemented",
     "-Aclippy::unwrap_used",
     "-Aclippy::use_debug",
@@ -112,22 +109,17 @@ rustflags = [
     "-Aclippy::struct_field_names",
 
     # clippy::restriction
-    "-Aclippy::doc_paragraphs_missing_punctuation",
     "-Aclippy::allow_attributes_without_reason",
     "-Aclippy::arbitrary_source_item_ordering",
     "-Aclippy::default_numeric_fallback",
     "-Aclippy::else_if_without_else",
     "-Aclippy::exhaustive_enums",
     "-Aclippy::exhaustive_structs",
-    "-Aclippy::format_push_string",
     "-Aclippy::implicit_return",
-    "-Aclippy::integer_division",
-    "-Aclippy::integer_division_remainder_used",
     "-Aclippy::min_ident_chars",
     "-Aclippy::missing_inline_in_public_items",
     "-Aclippy::missing_trait_methods",
     "-Aclippy::question_mark_used",
-    "-Aclippy::return_and_then",
     "-Aclippy::shadow_reuse",
     "-Aclippy::shadow_same",
     "-Aclippy::shadow_unrelated",

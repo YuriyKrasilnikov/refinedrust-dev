@@ -1,6 +1,5 @@
 output_dir = "output"
 lib_load_paths = ["../../stdlib"]
 extra_specs = "extra_specs.v"
-dump_borrowck_info = true
+dump_borrowck_info = false
 log_dir = "log"
-post_generation_hook = "patch output/minivec/generated/generated_code_minivec.v annotation_patch.patch"

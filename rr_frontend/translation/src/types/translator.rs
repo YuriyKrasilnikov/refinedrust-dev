@@ -18,7 +18,6 @@ use rr_rustc_interface::{abi, ast, span};
 use typed_arena::Arena;
 
 use crate::base::*;
-use crate::environment::Environment;
 use crate::environment::borrowck::facts;
 use crate::environment::polonius_info::PoloniusInfo;
 use crate::regions::{EarlyLateRegionMap, LftConstr, format_atomic_region_direct};
@@ -30,7 +29,7 @@ use crate::spec_parsers::struct_spec_parser::{self, InvariantSpecParser as _, St
 use crate::spec_parsers::verbose_function_spec_parser::TraitReqHandler;
 use crate::traits::registry;
 use crate::types::scope;
-use crate::{attrs, error, search};
+use crate::{attrs, environment, error, search, spec_parsers};
 
 /// A scope tracking the type translation state when translating the body of a function.
 /// This also includes the state needed for tracking trait constraints, as type translation for
@@ -97,7 +96,7 @@ impl<'tcx, 'def> FunctionState<'tcx, 'def> {
     /// incorporating the trait environment.
     pub(crate) fn new_with_traits(
         did: DefId,
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         ty_params: ty::GenericArgsRef<'tcx>,
         lifetimes: EarlyLateRegionMap<'def>,
         type_translator: &TX<'def, 'tcx>,
@@ -105,9 +104,9 @@ impl<'tcx, 'def> FunctionState<'tcx, 'def> {
         info: Option<&'def PoloniusInfo<'def, 'tcx>>,
     ) -> Result<Self, TranslationError<'tcx>> {
         info!("Entering procedure with ty_params {:?} and lifetimes {:?}", ty_params, lifetimes);
-        let mut generics = scope::Params::new_from_generics(env.tcx(), ty_params, Some(did));
+        let mut generics = scope::Params::new_from_generics(tcx, ty_params, Some(did));
 
-        generics.add_param_env(did, env, type_translator, trait_registry)?;
+        generics.add_param_env(did, tcx, type_translator, trait_registry)?;
 
         let mut t = Self {
             did,
@@ -119,7 +118,7 @@ impl<'tcx, 'def> FunctionState<'tcx, 'def> {
         };
 
         // add lifetime constraints to the lifetime scope
-        let param_env = env.tcx().param_env(did);
+        let param_env = tcx.param_env(did);
         let clauses = param_env.caller_bounds();
         info!("looking for outlives clauses");
         for cl in clauses {
@@ -277,16 +276,16 @@ impl<'def, 'tcx> STInner<'_, 'def, 'tcx> {
 
     pub(crate) fn register_adt_use(
         &mut self,
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         did: DefId,
         lit_ref: Option<specs::types::LiteralRef<'def>>,
         params: &specs::GenericScopeInst<'def>,
     ) {
-        self.register_dep_on(OrderedDefId::new(env.tcx(), did));
+        self.register_dep_on(OrderedDefId::new(tcx, did));
 
         if let Self::InFunction(state) = self {
             let lit_ref = lit_ref.unwrap();
-            let ordered_did = OrderedDefId::new(env.tcx(), did);
+            let ordered_did = OrderedDefId::new(tcx, did);
             let key = scope::AdtUseKey::new_from_inst(ordered_did, params);
             let lit_uses = &mut state.shim_uses;
             lit_uses
@@ -361,7 +360,7 @@ impl<'def, 'tcx> STInner<'_, 'def, 'tcx> {
 
     /// Lookup a type parameter in the current state
     fn lookup_ty_param(&self, param_ty: ty::ParamTy) -> Result<specs::Type<'def>, TranslationError<'tcx>> {
-        let ty = self.param_scope().lookup_ty_param_idx(param_ty.index as usize).ok_or_else(|| {
+        let ty = self.param_scope().lookup_ty_param_idx(param_ty.index).ok_or_else(|| {
             TranslationError::UnknownVar(format!("unknown generic parameter {:?}", param_ty))
         })?;
         Ok(specs::Type::LiteralParam(ty.clone()))
@@ -480,7 +479,7 @@ impl<'def, 'tcx> STInner<'_, 'def, 'tcx> {
 }
 
 pub(crate) struct TX<'def, 'tcx> {
-    env: &'def Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
 
     trait_registry: Cell<Option<&'def registry::TR<'tcx, 'def>>>,
 
@@ -524,13 +523,13 @@ pub(crate) struct TX<'def, 'tcx> {
 //
 impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
     pub(crate) const fn new(
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         struct_arena: &'def Arena<RefCell<Option<specs::structs::Abstract<'def>>>>,
         enum_arena: &'def Arena<RefCell<Option<specs::enums::Abstract<'def>>>>,
         shim_arena: &'def Arena<specs::types::Literal>,
     ) -> Self {
         TX {
-            env,
+            tcx,
             trait_registry: Cell::new(None),
             adt_deps: RefCell::new(BTreeMap::new()),
             adt_shims: RefCell::new(BTreeMap::new()),
@@ -556,8 +555,8 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         self.shim_arena.alloc(lit)
     }
 
-    pub(crate) const fn env(&self) -> &'def Environment<'tcx> {
-        self.env
+    pub(crate) const fn tcx(&self) -> ty::TyCtxt<'tcx> {
+        self.tcx
     }
 
     /// Register a shim for an ADT.
@@ -568,9 +567,9 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
     ) -> Result<(), TranslationError<'tcx>> {
         let lit_ref = self.intern_literal(lit.clone());
         let mut shims = self.adt_shims.borrow_mut();
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+        let ordered_did = OrderedDefId::new(self.tcx, did);
         if let Some(_old) = shims.insert(ordered_did, lit_ref) {
-            Err(self.env.tcx().dcx().err(error::Message::OverriddenAdtShim(did)).into())
+            Err(self.tcx.dcx().err(error::Message::OverriddenAdtShim(did)).into())
         } else {
             Ok(())
         }
@@ -578,13 +577,13 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
     /// Lookup a shim for an ADT.
     fn lookup_adt_shim(&self, did: DefId) -> Option<specs::types::LiteralRef<'def>> {
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+        let ordered_did = OrderedDefId::new(self.tcx, did);
         self.adt_shims.borrow().get(&ordered_did).copied()
     }
 
     /// Check whether this is an ADT that was registered as part of this crate.
     fn is_registered_local_adt(&self, did: DefId) -> bool {
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+        let ordered_did = OrderedDefId::new(self.tcx, did);
         self.variant_registry.borrow().contains_key(&ordered_did)
             || self.enum_registry.borrow().contains_key(&ordered_did)
     }
@@ -601,7 +600,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
     /// Check whether an ADT variant has `#[rr::mode(atomic)]` in its spec.
     pub(crate) fn is_variant_atomic(&self, variant_did: DefId) -> bool {
-        let ordered = OrderedDefId::new(self.env.tcx(), variant_did);
+        let ordered = OrderedDefId::new(self.tcx, variant_did);
         let reg = self.variant_registry.borrow();
         let Some((_, abstract_ref, _, _)) = reg.get(&ordered) else {
             return false;
@@ -761,7 +760,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         (specs::structs::AbstractRef<'def>, Option<specs::types::LiteralRef<'def>>),
         TranslationError<'tcx>,
     > {
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+        let ordered_did = OrderedDefId::new(self.tcx, did);
         if let Some((_n, st, _, _)) = self.variant_registry.borrow().get(&ordered_did) {
             let lit = self.lookup_adt_shim(did);
             Ok((*st, lit))
@@ -778,7 +777,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         (specs::enums::AbstractRef<'def>, Option<specs::types::LiteralRef<'def>>),
         TranslationError<'tcx>,
     > {
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+        let ordered_did = OrderedDefId::new(self.tcx, did);
         if let Some((_n, st, _)) = self.enum_registry.borrow().get(&ordered_did) {
             let lit = self.lookup_adt_shim(did);
             Ok((*st, lit))
@@ -857,7 +856,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         let (enum_ref, lit_ref) = self.lookup_enum(adt_def.did())?;
         let params = self.trait_registry().compute_scope_inst_in_state(state, adt_def.did(), args)?;
 
-        state.register_adt_use(self.env, adt_def.did(), lit_ref, &params);
+        state.register_adt_use(self.tcx, adt_def.did(), lit_ref, &params);
 
         Ok(specs::enums::AbstractUse::new(enum_ref, params))
     }
@@ -877,7 +876,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         let params = self.trait_registry().compute_scope_inst_in_state(state, variant_id, args)?;
         info!("struct use has params: {params:?}");
 
-        state.register_adt_use(self.env, variant_id, lit_ref, &params);
+        state.register_adt_use(self.tcx, variant_id, lit_ref, &params);
 
         let struct_use = specs::structs::AbstractUse::new(struct_ref, params, specs::structs::TypeIsRaw::No);
         Ok(struct_use)
@@ -904,7 +903,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
         let params = self.trait_registry().compute_scope_inst_in_state(state, adt_id, args)?;
 
-        state.register_adt_use(self.env, adt_id, lit_ref, &params);
+        state.register_adt_use(self.tcx, adt_id, lit_ref, &params);
 
         let struct_use = specs::structs::AbstractUse::new(struct_ref, params, specs::structs::TypeIsRaw::No);
 
@@ -921,7 +920,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         F: IntoIterator<Item = ty::Ty<'tcx>>,
     {
         let args: Vec<ty::GenericArg<'tcx>> = tys.into_iter().map(ty::GenericArg::from).collect();
-        let args = self.env().tcx().mk_args(&args);
+        let args = self.tcx.mk_args(&args);
         let params = self.trait_registry().compute_scope_inst_in_state_without_traits(state, args)?;
 
         let num_components = params.get_direct_ty_params().len();
@@ -993,21 +992,21 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         }
         info!("registering struct {:?}", ty);
 
-        let generics: &'tcx ty::Generics = self.env.tcx().generics_of(adt.did());
+        let generics: &'tcx ty::Generics = self.tcx.generics_of(adt.did());
         let mut deps = BTreeSet::new();
         let mut scope = scope::Params::from(generics.own_params.as_slice());
-        scope.add_param_env(adt.did(), self.env(), self, self.trait_registry())?;
+        scope.add_param_env(adt.did(), self.tcx, self, self.trait_registry())?;
 
-        let tcx = self.env.tcx();
+        let tcx = self.tcx;
         let typing_env = ty::TypingEnv::post_analysis(tcx, adt.did());
 
         // to account for recursive structs and enable establishing circular references,
         // we first generate a dummy struct (None)
         let struct_def_init = self.struct_arena.alloc(RefCell::new(None));
 
-        let struct_name = strip_coq_ident(&self.env.get_item_name(ty.def_id));
+        let struct_name = strip_coq_ident(&environment::get_item_name(self.tcx, ty.def_id));
 
-        let ordered_did = OrderedDefId::new(self.env.tcx(), ty.def_id);
+        let ordered_did = OrderedDefId::new(self.tcx, ty.def_id);
         self.variant_registry
             .borrow_mut()
             .insert(ordered_did, (struct_name.clone(), &*struct_def_init, ty, false));
@@ -1032,8 +1031,19 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
             Ok(mut struct_def) => {
                 let lit = self.intern_literal(struct_def.make_literal_type());
 
+                // check for extra annotated dependencies
+                let attrs = environment::get_attributes(self.tcx, ty.def_id);
+                let attrs = attrs::filter_for_tool(attrs);
+                let extra_deps =
+                    spec_parsers::get_depends_on_attrs(&attrs).map_err(TranslationError::AttributeError)?;
+                for dep in extra_deps {
+                    if let Some(did) = search::try_resolve_did(self.tcx, dep.path.as_slice()) {
+                        deps.insert(OrderedDefId::new(self.tcx, did));
+                    }
+                }
+
                 // check the deps
-                let is_rec_type = deps.contains(&OrderedDefId::new(self.env.tcx(), adt.did()));
+                let is_rec_type = deps.contains(&OrderedDefId::new(self.tcx, adt.did()));
                 if is_rec_type {
                     if !struct_def.has_invariant() {
                         // this is an error, we need an invariant on recursive types
@@ -1042,7 +1052,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                     }
 
                     // remove it
-                    deps.remove(&OrderedDefId::new(self.env.tcx(), adt.did()));
+                    deps.remove(&OrderedDefId::new(self.tcx, adt.did()));
                     struct_def.set_is_recursive();
                 }
 
@@ -1051,7 +1061,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                 *struct_def_ref = Some(struct_def);
 
                 let mut deps_ref = self.adt_deps.borrow_mut();
-                deps_ref.insert(OrderedDefId::new(self.env.tcx(), adt.did()), deps);
+                deps_ref.insert(OrderedDefId::new(self.tcx, adt.did()), deps);
 
                 // also add the entry for the literal
                 self.register_adt_shim(ty.def_id, lit)?;
@@ -1082,14 +1092,12 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
     > {
         info!("adt variant: {:?}", ty);
 
-        let tcx = self.env.tcx();
-
         // check for representation flags
         let repr = Self::get_struct_representation(&adt.repr())?;
         let mut builder = specs::structs::VariantBuilder::new(struct_name.to_owned(), repr);
 
         // parse attributes
-        let outer_attrs = self.env.get_attributes(ty.def_id);
+        let outer_attrs = environment::get_attributes(self.tcx, ty.def_id);
 
         let expect_refinement;
         let mut invariant_spec;
@@ -1110,12 +1118,12 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         // assemble the field definition
         let mut field_refinements = Vec::new();
         for f in &ty.fields {
-            let f_name = f.ident(tcx).to_string();
+            let f_name = f.ident(self.tcx).to_string();
 
-            let attrs = self.env.get_attributes(f.did);
+            let attrs = environment::get_attributes(self.tcx, f.did);
             let attrs = attrs::filter_for_tool(attrs);
 
-            let f_ty = self.env.tcx().type_of(f.did).instantiate_identity();
+            let f_ty = self.tcx.type_of(f.did).instantiate_identity();
             let ty = self.translate_type_in_state(f_ty, state)?;
 
             let mut parser = struct_spec_parser::VerboseStructFieldSpecParser::new(
@@ -1181,7 +1189,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         mir::interpret::GlobalId {
             instance: ty::Instance {
                 def: ty::InstanceKind::Item(did),
-                args: self.env.tcx().mk_args(env),
+                args: self.tcx.mk_args(env),
             },
             promoted: None,
         }
@@ -1214,8 +1222,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                 ty::VariantDiscr::Explicit(did) => {
                     // we try to const-evaluate the discriminant
                     let evaluated_discr = self
-                        .env
-                        .tcx()
+                        .tcx
                         .const_eval_global_id_for_typeck(
                             typing_env,
                             self.make_global_id_for_discr(did, &[]),
@@ -1251,7 +1258,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
     }
 
     fn does_did_match(&self, did: DefId, path: &[&str]) -> bool {
-        let lookup_did = search::try_resolve_did(self.env.tcx(), path);
+        let lookup_did = search::try_resolve_did(self.tcx, path);
         if let Some(lookup_did) = lookup_did
             && lookup_did == did
         {
@@ -1292,7 +1299,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
         for v in def.variants() {
             let registry = self.variant_registry.borrow();
-            let ordered_did = OrderedDefId::new(self.env.tcx(), v.def_id);
+            let ordered_did = OrderedDefId::new(self.tcx, v.def_id);
             let (variant_name, coq_def, variant_def, _) = registry.get(&ordered_did).unwrap();
             let coq_def = coq_def.borrow();
             let coq_def = coq_def.as_ref().unwrap();
@@ -1337,14 +1344,12 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         }
         info!("Registering enum {:?}", def.did());
 
-        let tcx = self.env.tcx();
-
-        let generics: &'tcx ty::Generics = self.env.tcx().generics_of(def.did());
+        let generics: &'tcx ty::Generics = self.tcx.generics_of(def.did());
         let mut scope = scope::Params::from(generics.own_params.as_slice());
-        scope.add_param_env(def.did(), self.env(), self, self.trait_registry())?;
+        scope.add_param_env(def.did(), self.tcx, self, self.trait_registry())?;
 
         let mut deps = BTreeSet::new();
-        let typing_env = ty::TypingEnv::post_analysis(tcx, def.did());
+        let typing_env = ty::TypingEnv::post_analysis(self.tcx, def.did());
 
         // pre-register the enum for recursion
         let enum_def_init = self.enum_arena.alloc(RefCell::new(None));
@@ -1353,7 +1358,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         let enum_name = strip_coq_ident(format!("{:?}", def).as_str());
 
         // insert partial definition for recursive occurrences
-        let ordered_did = OrderedDefId::new(self.env.tcx(), def.did());
+        let ordered_did = OrderedDefId::new(self.tcx, def.did());
         self.enum_registry
             .borrow_mut()
             .insert(ordered_did, (enum_name.clone(), &*enum_def_init, def));
@@ -1364,8 +1369,8 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                 // now generate the variant
                 let struct_def_init = self.struct_arena.alloc(RefCell::new(None));
 
-                let struct_name = strip_coq_ident(format!("{}_{}", enum_name, v.ident(tcx)).as_str());
-                let ordered_vdid = OrderedDefId::new(self.env.tcx(), v.def_id);
+                let struct_name = strip_coq_ident(format!("{}_{}", enum_name, v.ident(self.tcx)).as_str());
+                let ordered_vdid = OrderedDefId::new(self.tcx, v.def_id);
                 self.variant_registry
                     .borrow_mut()
                     .insert(ordered_vdid, (struct_name.clone(), &*struct_def_init, v, true));
@@ -1383,7 +1388,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                 }
 
                 // also remember the attributes for additional processing
-                let outer_attrs = self.env.get_attributes(v.def_id);
+                let outer_attrs = environment::get_attributes(self.tcx, v.def_id);
                 let outer_attrs = attrs::filter_for_tool(outer_attrs);
                 variant_attrs.push(outer_attrs);
 
@@ -1412,8 +1417,8 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
             let enum_spec;
             let mut inductive_decl = None;
 
-            if self.env.has_tool_attribute(def.did(), "refined_by") {
-                let attributes = self.env.get_attributes(def.did());
+            if environment::has_tool_attribute(self.tcx, def.did(), "refined_by") {
+                let attributes = environment::get_attributes(self.tcx, def.did());
                 let attributes = attrs::filter_for_tool(attributes);
 
                 let mut parser = VerboseEnumSpecParser::new(&scope);
@@ -1425,9 +1430,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                 // generate a specification
 
                 // get name for the inductive
-                let ind_name = self
-                    .env
-                    .get_tool_attribute(def.did(), "refine_as")
+                let ind_name = environment::get_tool_attribute(self.tcx, def.did(), "refine_as")
                     .map_or_else(
                         || Ok(Some(enum_name.clone())),
                         |args| parse_enum_refine_as(args).map_err(TranslationError::FatalError),
@@ -1440,10 +1443,10 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
             }
 
             // check the deps
-            let is_rec_type = deps.contains(&OrderedDefId::new(self.env.tcx(), def.did()));
+            let is_rec_type = deps.contains(&OrderedDefId::new(self.tcx, def.did()));
             if is_rec_type {
                 // remove it
-                deps.remove(&OrderedDefId::new(self.env.tcx(), def.did()));
+                deps.remove(&OrderedDefId::new(self.tcx, def.did()));
             }
 
             let mut enum_builder =
@@ -1452,7 +1455,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
             // now build the enum itself
             for v in def.variants() {
                 let (variant_ref, _) = self.lookup_adt_variant(v.def_id)?;
-                let variant_name = strip_coq_ident(&v.ident(tcx).to_string());
+                let variant_name = strip_coq_ident(&v.ident(self.tcx).to_string());
                 let discriminant = discrs[&variant_name];
                 enum_builder.add_variant(&variant_name, variant_ref, discriminant);
             }
@@ -1470,7 +1473,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                 self.register_adt_shim(def.did(), lit)?;
 
                 let mut deps_ref = self.adt_deps.borrow_mut();
-                deps_ref.insert(OrderedDefId::new(self.env.tcx(), def.did()), deps);
+                deps_ref.insert(OrderedDefId::new(self.tcx, def.did()), deps);
                 Ok(())
             },
             Err(err) => {
@@ -1496,7 +1499,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
         let params = self.trait_registry().compute_scope_inst_in_state(state, adt.did(), substs)?;
 
-        state.register_adt_use(self.env, adt.did(), Some(shim), &params);
+        state.register_adt_use(self.tcx, adt.did(), Some(shim), &params);
         let shim_use = specs::types::LiteralUse::new(shim, params);
         Ok(specs::Type::Literal(shim_use))
     }
@@ -1634,7 +1637,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
             ty::TyKind::Alias(kind, alias_ty) => {
                 // TODO do we get a problem because we are erasing regions?
-                if let Ok(normalized_ty) = state.normalize_type_erasing_regions(self.env.tcx(), ty)
+                if let Ok(normalized_ty) = state.normalize_type_erasing_regions(self.tcx, ty)
                     && !matches!(normalized_ty.kind(), ty::TyKind::Alias(_, _))
                 {
                     // if we managed to normalize it, translate the normalized type
@@ -1648,9 +1651,9 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
                             alias_ty.def_id, alias_ty.args
                         );
 
-                        let trait_did = self.env.tcx().parent(alias_ty.def_id);
-                        let entry = &state.lookup_trait_use(self.env.tcx(), trait_did, alias_ty.args)?;
-                        let assoc_type = entry.get_associated_type_use(self.env, alias_ty.def_id)?;
+                        let trait_did = self.tcx.parent(alias_ty.def_id);
+                        let entry = &state.lookup_trait_use(self.tcx, trait_did, alias_ty.args)?;
+                        let assoc_type = entry.get_associated_type_use(self.tcx, alias_ty.def_id)?;
 
                         info!("Resolved projection to {assoc_type:?}");
 
@@ -1748,7 +1751,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         ty: ty::Ty<'tcx>,
         variant: Option<usize>,
     ) -> Result<String, TranslationError<'tcx>> {
-        let tcx = self.env.tcx();
+        let tcx = self.tcx;
         match ty.kind() {
             ty::TyKind::Adt(def, _) => {
                 info!("getting field name of {:?} at {} (variant {:?})", f, ty, variant);
@@ -1887,13 +1890,13 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
 
         let enum_ref: specs::types::LiteralRef<'def> = self
             .lookup_adt_shim(adt_def.did())
-            .ok_or_else(|| self.env.tcx().dcx().err(error::Message::UnknownAdt(adt_def.did())))?;
+            .ok_or_else(|| self.tcx.dcx().err(error::Message::UnknownAdt(adt_def.did())))?;
         let params = self.trait_registry().compute_scope_inst_in_state(
             &mut STInner::InFunction(state),
             adt_def.did(),
             args,
         )?;
-        let ordered_did = OrderedDefId::new(self.env.tcx(), adt_def.did());
+        let ordered_did = OrderedDefId::new(self.tcx, adt_def.did());
         let key = scope::AdtUseKey::new_from_inst(ordered_did, &params);
         let enum_use = specs::types::LiteralUse::new(enum_ref, params);
 
@@ -1921,12 +1924,12 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
             variant_id,
             args,
         )?;
-        let ordered_did = OrderedDefId::new(self.env.tcx(), variant_id);
+        let ordered_did = OrderedDefId::new(self.tcx, variant_id);
         let key = scope::AdtUseKey::new_from_inst(ordered_did, &params);
 
         let struct_ref: specs::types::LiteralRef<'def> = self
             .lookup_adt_shim(variant_id)
-            .ok_or_else(|| self.env.tcx().dcx().err(error::Message::UnknownAdt(variant_id)))?;
+            .ok_or_else(|| self.tcx.dcx().err(error::Message::UnknownAdt(variant_id)))?;
         let struct_use = specs::types::LiteralUse::new(struct_ref, params);
 
         scope.shim_uses.entry(key).or_insert_with(|| struct_use.clone());
@@ -1952,7 +1955,7 @@ impl<'def, 'tcx> TX<'def, 'tcx> {
 
         let struct_ref: specs::types::LiteralRef<'def> = self
             .lookup_adt_shim(variant_id)
-            .ok_or_else(|| self.env.tcx().dcx().err(error::Message::UnknownAdt(variant_id)))?;
+            .ok_or_else(|| self.tcx.dcx().err(error::Message::UnknownAdt(variant_id)))?;
         let struct_use = specs::types::LiteralUse::new(struct_ref, params);
 
         // TODO: track?

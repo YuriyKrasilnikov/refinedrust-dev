@@ -17,9 +17,9 @@ use typed_arena::Arena;
 
 use crate::base::*;
 use crate::body::translation;
+use crate::environment::dump_borrowck_info;
 use crate::environment::polonius_info::PoloniusInfo;
 use crate::environment::procedure::Procedure;
-use crate::environment::{Environment, dump_borrowck_info};
 use crate::regions::inclusion_tracker::InclusionTracker;
 use crate::regions::region_bi_folder::RegionBiFolder as _;
 use crate::spec_parsers::verbose_function_spec_parser::{
@@ -27,10 +27,10 @@ use crate::spec_parsers::verbose_function_spec_parser::{
     VerboseFunctionSpecParser,
 };
 use crate::traits::registry::{self, RegionUnifier};
-use crate::{consts, procedures, regions, types};
+use crate::{consts, environment, procedures, regions, types};
 
 pub(crate) struct TX<'a, 'def, 'tcx> {
-    env: &'def Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     /// this needs to be annotated with the right borrowck things
     proc: &'def Procedure<'tcx>,
     /// the Caesium function buildder
@@ -60,7 +60,7 @@ pub(crate) struct TX<'a, 'def, 'tcx> {
 impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     /// Generate a spec for a trait method.
     pub(crate) fn spec_for_trait_method(
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         proc_did: DefId,
         name: &str,
         spec_name: &str,
@@ -72,29 +72,29 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // use a dummy name as we're never going to use the code.
         let mut translated_fn = code::FunctionBuilder::new(name, "dummy", spec_name, trait_req_incl_name);
 
-        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = env.tcx().type_of(proc_did);
+        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = tcx.type_of(proc_did);
         let ty = ty.instantiate_identity();
         // substs are the generic args of this function (including lifetimes)
         // sig is the function signature
         let sig = match ty.kind() {
             ty::TyKind::FnDef(_def, _args) => {
                 assert!(ty.is_fn());
-                ty.fn_sig(env.tcx())
+                ty.fn_sig(tcx)
             },
             _ => panic!("can not handle non-fns"),
         };
         info!("Function signature: {:?}", sig);
 
-        let params = Self::get_proc_ty_params(env.tcx(), proc_did);
+        let params = Self::get_proc_ty_params(tcx, proc_did);
         info!("Function generic args: {:?}", params);
 
-        let num_late_bounds = sig.bound_vars().len() as u32;
+        let num_late_bounds = sig.bound_vars().len();
         let num_early_bounds =
-            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
         // + 1 for static, + 1 for function lifetime
         let num_universal_regions = num_late_bounds + num_early_bounds + 2;
         let (inputs, output, region_substitution) = regions::init::replace_fnsig_args_with_polonius_vars(
-            env,
+            tcx,
             params,
             proc_did,
             num_universal_regions,
@@ -105,7 +105,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         info!("inputs: {:?}, output: {:?}", inputs, output);
 
         let type_scope = Self::setup_local_scope(
-            env,
+            tcx,
             ty_translator,
             trait_registry,
             proc_did,
@@ -117,13 +117,11 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let type_translator = types::LocalTX::new(ty_translator, type_scope);
 
         // get argument names
-        let arg_names: &'tcx [Option<span::symbol::Ident>] = env.tcx().fn_arg_idents(proc_did);
+        let arg_names: &'tcx [Option<span::symbol::Ident>] = tcx.fn_arg_idents(proc_did);
         let arg_names: Vec<_> = arg_names
             .iter()
             .enumerate()
-            .map(|(i, maybe_name)| {
-                maybe_name.map(|x| x.as_str().to_owned()).unwrap_or_else(|| format!("_arg_{i}"))
-            })
+            .map(|(i, maybe_name)| maybe_name.map_or_else(|| format!("_arg_{i}"), |x| x.as_str().to_owned()))
             .collect();
         info!("arg names: {arg_names:?}");
 
@@ -150,7 +148,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         input_tuple_ty: ty::Ty<'tcx>,
         region_substitution: &mut regions::EarlyLateRegionMap<'def>,
         info: &PoloniusInfo<'def, 'tcx>,
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
     ) -> (ty::Ty<'tcx>, Vec<ty::Ty<'tcx>>, ty::Ty<'tcx>, Option<specs::LftParam>) {
         // Process the lifetime parameters that come from the captures
         // Sideeffect: adds the regions that come from the captures (which may be local to the
@@ -160,7 +158,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let mut fixed_upvars_tys = Vec::new();
         for ty in upvars_tys {
             let fixed_ty =
-                regions::arg_folder::rename_closure_capture_regions(ty, env.tcx(), region_substitution, info);
+                regions::arg_folder::rename_closure_capture_regions(ty, tcx, region_substitution, info);
             fixed_upvars_tys.push(fixed_ty);
         }
 
@@ -168,7 +166,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // regions in lieu of early bounds.
         let fixed_closure_args = regions::arg_folder::rename_closure_capture_regions(
             input_tuple_ty,
-            env.tcx(),
+            tcx,
             region_substitution,
             info,
         );
@@ -178,7 +176,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // NOTE: we rely on adding this lifetime last when generating the `call_*` fn shims.
         let fixed_closure_arg_ty = regions::arg_folder::rename_closure_capture_regions(
             closure_arg.ty,
-            env.tcx(),
+            tcx,
             region_substitution,
             info,
         );
@@ -199,7 +197,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
     /// Create a translation instance for a closure.
     pub(crate) fn new_closure(
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         meta: &procedures::Meta,
         proc: Procedure<'tcx>,
         attrs: &'a [&'a hir::AttrItem],
@@ -221,7 +219,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let body = proc.get_mir();
         Self::dump_body(body);
 
-        let clos_args = env.get_closure_args(proc.get_id());
+        let clos_args = environment::get_closure_args(tcx, proc.get_id());
         let closure_kind = clos_args.kind();
         let tupled_upvars_tys = clos_args.tupled_upvars_ty();
         let parent_args = clos_args.parent_args();
@@ -229,7 +227,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let sig = unnormalized_sig;
         // Note: `captures` contains the late bounds of this closure, i.e., lifetimes that just this
         // closure is generic over.
-        let captures = env.tcx().closure_captures(proc.get_id().as_local().unwrap());
+        let captures = tcx.closure_captures(proc.get_id().as_local().unwrap());
         info!("closure sig: {:?}", sig);
         info!("Closure has captures: {:?}", captures);
         info!("Closure arg upvar_tys: {:?}", tupled_upvars_tys);
@@ -240,7 +238,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // the closure arg, containing the captures
         let closure_arg = local_decls.get(mir::Local::from_usize(1)).unwrap();
 
-        let info = PoloniusInfo::new(env, proc);
+        let info = PoloniusInfo::new(proc);
 
         // TODO: avoid leak
         let info: &'def PoloniusInfo<'_, '_> = &*Box::leak(Box::new(info));
@@ -252,14 +250,14 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         info!("Function generic args: {:?}", params);
 
         if rrconfig::dump_borrowck_info() {
-            dump_borrowck_info(env, proc.get_id(), info);
+            dump_borrowck_info(tcx, proc.get_id(), info);
         }
 
         // Note: this only treats the formal arguments of the closure, but not the closure captures
         let num_universals = info.borrowck_in_facts.universal_region.len();
-        let mut num_late_bounds = sig.bound_vars().len() as u32;
+        let mut num_late_bounds = sig.bound_vars().len();
         let num_early_bounds =
-            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+            params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
         // closures don't have early bounds: only late bounds and external lifetimes from the
         // surrounding scope.
         assert!(num_early_bounds == 0);
@@ -269,10 +267,10 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         }
         let (tupled_inputs, output, mut region_substitution) =
             regions::init::replace_fnsig_args_with_polonius_vars(
-                env,
+                tcx,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 sig,
@@ -293,7 +291,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 input_tuple_ty,
                 &mut region_substitution,
                 info,
-                env,
+                tcx,
             );
         let maybe_outer_lifetime = maybe_outer_lifetime.map(|x| x.lft().to_owned());
 
@@ -309,7 +307,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         info!("inputs({}): {:?}, output: {:?}", inputs.len(), inputs, output);
 
         let type_scope = Self::setup_local_scope(
-            env,
+            tcx,
             ty_translator,
             trait_registry,
             proc.get_id(),
@@ -328,7 +326,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         all_inputs.insert(0, fixed_closure_arg_ty);
 
         let mut t = Self {
-            env,
+            tcx,
             proc,
             info,
             translated_fn,
@@ -356,7 +354,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         };
 
         // get argument names
-        let arg_names: &'tcx [Option<span::symbol::Ident>] = env.tcx().fn_arg_idents(proc.get_id());
+        let arg_names: &'tcx [Option<span::symbol::Ident>] = tcx.fn_arg_idents(proc.get_id());
         let arg_names: Vec<_> = arg_names
             .iter()
             .enumerate()
@@ -373,7 +371,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         // compute the info needed to assemble the trait impls for this closure
         let self_var_ty = t.ty_translator.translate_type(fixed_closure_arg_ty)?;
-        let self_ty = Environment::get_closure_self_ty_from_var_ty(fixed_closure_arg_ty, closure_kind);
+        let self_ty = environment::get_closure_self_ty_from_var_ty(fixed_closure_arg_ty, closure_kind);
         let args_ty = t.ty_translator.translate_type(input_tuple_ty)?;
         let output_ty = t.ty_translator.translate_type(output)?;
         let mut args_tys: Vec<specs::Type<'def>> = Vec::new();
@@ -408,18 +406,18 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         Ok((t, info))
     }
 
-    fn function_has_nontrivial_annotations(env: &'def Environment<'tcx>, did: DefId) -> bool {
-        env.has_tool_attribute(did, "params")
-            || env.has_tool_attribute(did, "ensures")
-            || env.has_tool_attribute(did, "requires")
-            || env.has_tool_attribute(did, "returns")
-            || env.has_tool_attribute(did, "observe")
-            || env.has_tool_attribute(did, "args")
+    fn function_has_nontrivial_annotations(tcx: ty::TyCtxt<'tcx>, did: DefId) -> bool {
+        environment::has_tool_attribute(tcx, did, "params")
+            || environment::has_tool_attribute(tcx, did, "ensures")
+            || environment::has_tool_attribute(tcx, did, "requires")
+            || environment::has_tool_attribute(tcx, did, "returns")
+            || environment::has_tool_attribute(tcx, did, "observe")
+            || environment::has_tool_attribute(tcx, did, "args")
     }
 
     /// Translate the body of a function.
     pub(crate) fn new(
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         meta: &procedures::Meta,
         proc: Procedure<'tcx>,
         attrs: &'a [&'a hir::AttrItem],
@@ -442,30 +440,29 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let body = proc.get_mir();
         Self::dump_body(body);
 
-        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = env.tcx().type_of(proc.get_id());
+        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = tcx.type_of(proc.get_id());
         info!("Function type: {ty:?}");
 
-        let params = Self::get_proc_ty_params(env.tcx(), proc.get_id());
+        let params = Self::get_proc_ty_params(tcx, proc.get_id());
         info!("Function generic args: {:?}", params);
 
         let ty = ty.instantiate_identity();
         // substs are the generic args of this function (including lifetimes)
         // sig is the function signature
         assert!(ty.is_fn());
-        let sig = ty.fn_sig(env.tcx());
+        let sig = ty.fn_sig(tcx);
         info!("sig: {sig:?}");
 
-        let info = PoloniusInfo::new(env, proc);
+        let info = PoloniusInfo::new(proc);
         // TODO: avoid leak
         let info: &'def PoloniusInfo<'_, '_> = &*Box::leak(Box::new(info));
 
         if rrconfig::dump_borrowck_info() {
-            dump_borrowck_info(env, proc.get_id(), info);
+            dump_borrowck_info(tcx, proc.get_id(), info);
         }
 
-        let (inputs, output, region_substitution) = if let Some(impl_did) =
-            env.tcx().impl_of_assoc(proc.get_id())
-            && env.tcx().impl_is_of_trait(impl_did)
+        let (inputs, output, region_substitution) = if let Some(impl_did) = tcx.impl_of_assoc(proc.get_id())
+            && tcx.impl_is_of_trait(impl_did)
         {
             // If this is a function in a trait impl, we need to do some extra fixing up, because
             // lifetime elision behaves strangely.
@@ -476,15 +473,15 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
             // Important: use the fn's sig here.
             let num_universals = info.borrowck_in_facts.universal_region.len();
-            let num_late_bounds = sig.bound_vars().len() as u32;
+            let num_late_bounds = sig.bound_vars().len();
             let num_early_bounds =
-                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
 
             let (direct_inputs, direct_output, _) = regions::init::replace_fnsig_args_with_polonius_vars(
-                env,
+                tcx,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 sig,
@@ -493,18 +490,18 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             info!("direct signature: {direct_inputs:?} -> {direct_output:?}");
 
             let (inputs, output, mut mapping) = regions::init::replace_fnsig_args_with_polonius_vars(
-                env,
+                tcx,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 expected_sig,
             );
 
             // Now unify the two signatures.
-            let typing_env = ty::TypingEnv::post_analysis(env.tcx(), proc.get_id());
-            let mut unifier = RegionUnifier::new(env.tcx(), typing_env);
+            let typing_env = ty::TypingEnv::post_analysis(tcx, proc.get_id());
+            let mut unifier = RegionUnifier::new(tcx, typing_env);
             // Since we cannot reliably normalize here without erasing regions, ignore aliases for now.
             unifier.ignore_aliases();
 
@@ -524,15 +521,15 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             (inputs, output, mapping)
         } else {
             let num_universals = info.borrowck_in_facts.universal_region.len();
-            let num_late_bounds = sig.bound_vars().len() as u32;
+            let num_late_bounds = sig.bound_vars().len();
             let num_early_bounds =
-                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count() as u32;
+                params.iter().filter(|x| matches!(x.kind(), ty::GenericArgKind::Lifetime(_))).count();
 
             regions::init::replace_fnsig_args_with_polonius_vars(
-                env,
+                tcx,
                 params,
                 proc.get_id(),
-                num_universals as u32,
+                num_universals,
                 num_early_bounds,
                 num_late_bounds,
                 sig,
@@ -541,7 +538,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         info!("normalized signature: {inputs:?} -> {output:?}");
 
         let type_scope = Self::setup_local_scope(
-            env,
+            tcx,
             ty_translator,
             trait_registry,
             proc.get_id(),
@@ -556,18 +553,16 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let type_translator = types::LocalTX::new(ty_translator, type_scope);
 
         // get argument names
-        let arg_names: &'tcx [Option<span::symbol::Ident>] = env.tcx().fn_arg_idents(proc.get_id());
+        let arg_names: &'tcx [Option<span::symbol::Ident>] = tcx.fn_arg_idents(proc.get_id());
         let arg_names: Vec<_> = arg_names
             .iter()
             .enumerate()
-            .map(|(i, maybe_name)| {
-                maybe_name.map(|x| x.as_str().to_owned()).unwrap_or_else(|| format!("_arg_{i}"))
-            })
+            .map(|(i, maybe_name)| maybe_name.map_or_else(|| format!("_arg_{i}"), |x| x.as_str().to_owned()))
             .collect();
         info!("arg names: {arg_names:?}");
 
         let mut t = Self {
-            env,
+            tcx,
             proc,
             info,
             translated_fn,
@@ -583,8 +578,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         // If this is an impl of a trait, and there are no explicit annotations, use the default specification
         // of the trait (instead of the Rust implied safety contract)
-        if env.trait_impl_of_method(proc.get_id()).is_some()
-            && !Self::function_has_nontrivial_annotations(env, proc.get_id())
+        if environment::trait_impl_of_method(tcx, proc.get_id()).is_some()
+            && !Self::function_has_nontrivial_annotations(tcx, proc.get_id())
         {
             // Use the default spec annotated on the trait
             let spec = t.make_trait_instance_spec()?;
@@ -625,7 +620,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         spec_arena: &'def Arena<specs::functions::Spec<'def, specs::functions::InnerSpec<'def>>>,
     ) -> Result<code::Function<'def>, TranslationError<'tcx>> {
         let translator = translation::TX::new(
-            self.env,
+            self.tcx,
             self.procedure_registry,
             self.const_registry,
             self.trait_registry,
@@ -661,7 +656,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     /// Set up the local generic scope of the function, including type parameters, lifetime
     /// parameters, and trait constraints.
     fn setup_local_scope(
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         ty_translator: &'def types::TX<'def, 'tcx>,
         trait_registry: &'def registry::TR<'tcx, 'def>,
         proc_did: DefId,
@@ -673,8 +668,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // enter the procedure
         let type_scope = types::FunctionState::new_with_traits(
             proc_did,
-            env,
-            env.tcx().mk_args(params),
+            tcx,
+            tcx.mk_args(params),
             region_substitution,
             ty_translator,
             trait_registry,
@@ -837,20 +832,20 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     > {
         let did = self.proc.get_id();
 
-        let Some(impl_did) = self.env.tcx().impl_of_assoc(did) else {
+        let Some(impl_did) = self.tcx.impl_of_assoc(did) else {
             return Ok(None);
         };
 
-        if !self.env.tcx().impl_is_of_trait(impl_did) {
+        if !self.tcx.impl_is_of_trait(impl_did) {
             return Ok(None);
         }
-        let trait_did = self.env.tcx().impl_trait_id(impl_did);
+        let trait_did = self.tcx.impl_trait_id(impl_did);
 
         self.trait_registry
             .lookup_trait(trait_did)
             .ok_or_else(|| TranslationError::TraitResolution(format!("{trait_did:?}")))?;
 
-        let fn_name = strip_coq_ident(self.env.tcx().item_name(self.proc.get_id()).as_str());
+        let fn_name = strip_coq_ident(self.tcx.item_name(self.proc.get_id()).as_str());
 
         let (trait_info, _, context_items) = self.trait_registry.get_trait_impl_info(impl_did)?;
         Ok(Some((specs::traits::InstantiatedFunctionSpec::new(trait_info, fn_name), context_items)))

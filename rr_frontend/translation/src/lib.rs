@@ -39,16 +39,14 @@ use std::{fs, io, process};
 
 use log::{info, trace, warn};
 use radium::{code, coq, lang, specs};
-use rr_rustc_interface::borrowck::consumers::BodyWithBorrowckFacts;
 use rr_rustc_interface::hir::def_id::{DefId, LocalDefId};
-use rr_rustc_interface::middle::ty;
+use rr_rustc_interface::middle::{queries, ty};
 use rr_rustc_interface::{hir, span};
 use typed_arena::Arena;
 
 use crate::base::OrderedDefId;
 use crate::body::signature;
 use crate::closure_impl_generator::ClosureImplGenerator;
-use crate::environment::Environment;
 use crate::shims::registry as shim_registry;
 use crate::spec_parsers::const_attr_parser::{ConstAttrParser as _, VerboseConstAttrParser};
 use crate::spec_parsers::crate_attr_parser::{CrateAttrParser as _, VerboseCrateAttrParser};
@@ -57,7 +55,7 @@ use crate::traits::registry;
 use crate::types::{normalize_in_function, scope};
 
 pub struct VerificationCtxt<'tcx, 'rcx> {
-    env: &'rcx Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     procedure_registry: procedures::Scope<'tcx, 'rcx>,
     const_registry: consts::Scope<'rcx>,
     type_translator: &'rcx types::TX<'rcx, 'tcx>,
@@ -91,7 +89,7 @@ pub struct VerificationCtxt<'tcx, 'rcx> {
 
 impl<'rcx> VerificationCtxt<'_, 'rcx> {
     fn get_path_for_shim(&self, did: DefId) -> (Vec<&str>, bool) {
-        let path = shims::flat::get_export_path_for_did(self.env, did);
+        let path = shims::flat::get_export_path_for_did(self.tcx, did);
         let interned_path = self.shim_registry.intern_path(path.path.path);
         (interned_path, path.as_method)
     }
@@ -108,7 +106,7 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
             return None;
         }
 
-        if self.env.tcx().visibility(did) != ty::Visibility::Public {
+        if self.tcx.visibility(did) != ty::Visibility::Public {
             // don't export
             return None;
         }
@@ -117,7 +115,7 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         let (interned_path, as_method) = self.get_path_for_shim(did);
         let is_method = as_method;
 
-        let name = base::strip_coq_ident(&self.env.get_item_name(did));
+        let name = base::strip_coq_ident(&environment::get_item_name(self.tcx, did));
         info!("Found function path {:?} for did {:?} with name {:?}", interned_path, did, name);
 
         Some(shim_registry::FunctionShim {
@@ -136,9 +134,9 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         decl: &specs::traits::ImplSpec<'rcx>,
     ) -> Option<shim_registry::TraitImplShim> {
         info!("making shim entry for impl {did:?}");
-        let impl_ref: ty::EarlyBinder<'_, ty::TraitRef<'_>> = self.env.tcx().impl_trait_ref(did);
+        let impl_ref: ty::EarlyBinder<'_, ty::TraitRef<'_>> = self.tcx.impl_trait_ref(did);
 
-        let impl_ref = normalize_in_function(did, self.env.tcx(), impl_ref.skip_binder()).unwrap();
+        let impl_ref = normalize_in_function(did, self.tcx, impl_ref.skip_binder()).unwrap();
         trace!("normalized impl_ref: {impl_ref:?}");
 
         let args = impl_ref.args;
@@ -150,11 +148,11 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         let impl_for = args[0].expect_ty();
 
         // flatten the trait reference
-        let trait_path = shims::flat::PathWithArgs::from_item(self.env, trait_did, trait_args)?;
+        let trait_path = shims::flat::PathWithArgs::from_item(self.tcx, trait_did, trait_args)?;
         trace!("got trait path: {:?}", trait_path);
 
         // flatten the self type.
-        let Some(for_type) = shims::flat::convert_ty_to_flat_type(self.env, impl_for) else {
+        let Some(for_type) = shims::flat::convert_ty_to_flat_type(self.tcx, impl_for) else {
             trace!("leave make_impl_shim_entry (failed transating self type)");
             return None;
         };
@@ -190,7 +188,7 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         decl: specs::traits::LiteralSpecRef<'rcx>,
     ) -> Option<shim_registry::TraitShim<'_>> {
         info!("making shim entry for {did:?}");
-        if ty::Visibility::Public == self.env.tcx().visibility(did.to_def_id()) {
+        if ty::Visibility::Public == self.tcx.visibility(did.to_def_id()) {
             let (interned_path, _) = self.get_path_for_shim(did.into());
             let a = shim_registry::TraitShim {
                 path: interned_path,
@@ -211,10 +209,10 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         lit: specs::types::Literal,
     ) -> Option<shim_registry::AdtShim<'_>> {
         info!("making shim entry for {did:?}");
-        if did.is_local() && ty::Visibility::Public == self.env.tcx().visibility(did) {
+        if did.is_local() && ty::Visibility::Public == self.tcx.visibility(did) {
             // only export public items
             let (interned_path, _) = self.get_path_for_shim(did);
-            let name = base::strip_coq_ident(&self.env.get_item_name(did));
+            let name = base::strip_coq_ident(&environment::get_item_name(self.tcx, did));
 
             info!("Found adt path {:?} for did {:?} with name {:?}", interned_path, did, name);
 
@@ -277,9 +275,9 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
         // functions and methods
         for (did, _) in self.procedure_registry.iter_code() {
-            if let Some(impl_did) = self.env.tcx().impl_of_assoc(did.def_id) {
+            if let Some(impl_did) = self.tcx.impl_of_assoc(did.def_id) {
                 info!("found impl method: {:?}", did);
-                if self.env.tcx().impl_is_of_trait(impl_did) {
+                if self.tcx.impl_is_of_trait(impl_did) {
                     info!("found trait method: {:?}", did);
                     continue;
                 }
@@ -290,9 +288,9 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         }
 
         for (did, _) in self.procedure_registry.iter_only_spec() {
-            if let Some(impl_did) = self.env.tcx().impl_of_assoc(did.def_id) {
+            if let Some(impl_did) = self.tcx.impl_of_assoc(did.def_id) {
                 info!("found impl method: {:?}", did);
-                if self.env.tcx().impl_is_of_trait(impl_did) {
+                if self.tcx.impl_is_of_trait(impl_did) {
                     info!("found trait method: {:?}", did);
                     continue;
                 }
@@ -363,18 +361,18 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
         // write trait attrs
         let trait_deps = self.trait_registry.get_registered_trait_deps();
-        let dep_order = base::order_defs_with_deps(self.env.tcx(), &trait_deps);
+        let dep_order = base::order_defs_with_deps(self.tcx, &trait_deps);
         let trait_decls = self.trait_registry.get_trait_decls();
 
         for did in &dep_order {
-            let ordered_did = OrderedDefId::new(self.env.tcx(), *did);
+            let ordered_did = OrderedDefId::new(self.tcx, *did);
             let decl = &trait_decls[&ordered_did];
             write!(spec_file, "{}\n", decl.make_attr_record_decl()).unwrap();
         }
 
         // write semantic interps
         for did in &dep_order {
-            let ordered_did = OrderedDefId::new(self.env.tcx(), *did);
+            let ordered_did = OrderedDefId::new(self.tcx, *did);
             let decl = &trait_decls[&ordered_did];
             if let Some(decl) = decl.make_semantic_decl() {
                 write!(spec_file, "{decl}\n").unwrap();
@@ -390,11 +388,11 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
             adt_deps.append(&mut self.trait_impl_deps.clone());
 
-            let ordered = base::order_defs_with_deps(self.env.tcx(), &adt_deps);
+            let ordered = base::order_defs_with_deps(self.tcx, &adt_deps);
             info!("ordered ADT defns: {:?}", ordered);
 
             for did in &ordered {
-                let ordered_did = OrderedDefId::new(self.env.tcx(), *did);
+                let ordered_did = OrderedDefId::new(self.tcx, *did);
                 if let Some(su_ref) = struct_defs.get(&ordered_did) {
                     let su_ref = su_ref.borrow();
                     info!("writing struct {:?}, {:?}", did, su_ref);
@@ -459,21 +457,21 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
         // write trait specs
         for did in &dep_order {
-            let ordered_did = OrderedDefId::new(self.env.tcx(), *did);
+            let ordered_did = OrderedDefId::new(self.tcx, *did);
             let decl = &trait_decls[&ordered_did];
             write!(spec_file, "{}\n", decl.make_spec_record_decl()).unwrap();
         }
 
         // write remaining trait things
         for did in &dep_order {
-            let ordered_did = OrderedDefId::new(self.env.tcx(), *did);
+            let ordered_did = OrderedDefId::new(self.tcx, *did);
             let decl = &trait_decls[&ordered_did];
             write!(spec_file, "{decl}\n").unwrap();
         }
 
         // write trait req incls
         for did in &dep_order {
-            let ordered_did = OrderedDefId::new(self.env.tcx(), *did);
+            let ordered_did = OrderedDefId::new(self.tcx, *did);
             let decl = &trait_decls[&ordered_did];
             write!(spec_file, "{}\n", decl.make_trait_req_incls()).unwrap();
         }
@@ -800,7 +798,7 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
     /// Write Coq files for this verification unit.
     pub fn write_coq_files(&self) {
         // use the crate_name for naming
-        let crate_name: span::symbol::Symbol = self.env.tcx().crate_name(span::def_id::LOCAL_CRATE);
+        let crate_name: span::symbol::Symbol = self.tcx.crate_name(span::def_id::LOCAL_CRATE);
         let stem = crate_name.as_str();
 
         // create output directory
@@ -999,9 +997,9 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
 fn resolve_shim(vcx: &VerificationCtxt<'_, '_>, path: &[&str], is_method: bool) -> Option<DefId> {
     if is_method {
-        search::try_resolve_method_did(vcx.env.tcx(), path.iter().map(ToString::to_string).collect())
+        search::try_resolve_method_did(vcx.tcx, path.iter().map(ToString::to_string).collect())
     } else {
-        search::try_resolve_did(vcx.env.tcx(), path)
+        search::try_resolve_did(vcx.tcx, path)
     }
 }
 
@@ -1032,7 +1030,7 @@ fn register_shims<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(), base
     }
 
     for shim in vcx.shim_registry.get_adt_shims() {
-        let Some(did) = search::try_resolve_did(vcx.env.tcx(), &shim.path) else {
+        let Some(did) = search::try_resolve_did(vcx.tcx, &shim.path) else {
             println!("Warning: cannot find defid for shim {:?}, skipping", shim.path);
             continue;
         };
@@ -1053,7 +1051,7 @@ fn register_shims<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(), base
     }
 
     for shim in vcx.shim_registry.get_trait_shims() {
-        if let Some(did) = search::try_resolve_did(vcx.env.tcx(), &shim.path) {
+        if let Some(did) = search::try_resolve_did(vcx.tcx, &shim.path) {
             let assoc_tys = vcx.trait_registry.get_associated_type_names(did);
             let spec = specs::traits::LiteralSpec {
                 assoc_tys,
@@ -1072,23 +1070,23 @@ fn register_shims<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(), base
 
     for shim in vcx.shim_registry.get_trait_impl_shims() {
         // resolve the trait
-        let Some((trait_did, args)) = shim.trait_path.to_item(vcx.env.tcx()) else {
+        let Some((trait_did, args)) = shim.trait_path.to_item(vcx.tcx) else {
             println!("Warning: cannot resolve {:?} as a trait, skipping shim", shim.trait_path);
             continue;
         };
 
-        if !vcx.env.tcx().is_trait(trait_did) {
+        if !vcx.tcx.is_trait(trait_did) {
             println!("Warning: This is not a trait: {:?}", shim.trait_path);
             continue;
         }
 
         // resolve the type
-        let Some(for_type) = shim.for_type.to_type(vcx.env.tcx()) else {
+        let Some(for_type) = shim.for_type.to_type(vcx.tcx) else {
             println!("Warning: cannot resolve {:?} as a type, skipping shim", shim.for_type);
             continue;
         };
 
-        let trait_impl_did = search::try_resolve_trait_impl_did(vcx.env.tcx(), trait_did, &args, for_type);
+        let trait_impl_did = search::try_resolve_trait_impl_did(vcx.tcx, trait_did, &args, for_type);
 
         let Some(did) = trait_impl_did else {
             println!(
@@ -1101,11 +1099,11 @@ fn register_shims<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(), base
         vcx.trait_registry.register_impl_shim(did, shim.specs.clone())?;
 
         // now register all the method shims
-        let impl_assoc_items: &ty::AssocItems = vcx.env.tcx().associated_items(did);
+        let impl_assoc_items: &ty::AssocItems = vcx.tcx.associated_items(did);
         for (method_name, (name, spec_name, trait_req_incl_name)) in &shim.method_specs {
             // find the right item
             if let Some(item) = impl_assoc_items.find_by_ident_and_kind(
-                vcx.env.tcx(),
+                vcx.tcx,
                 span::symbol::Ident::from_str(method_name),
                 ty::AssocTag::Fn,
                 trait_did,
@@ -1148,10 +1146,10 @@ fn is_only_spec_function(vcx: &VerificationCtxt<'_, '_>, did: DefId) -> bool {
     // Check if `did` is an impl of `Debug::fmt`. These impls use unsupported features like strings
     // and trait objects, but don't do anything functionally interesting.
 
-    if let Some(impl_did) = vcx.env.trait_impl_of_method(did) {
-        let subject = vcx.env.tcx().impl_trait_header(impl_did);
+    if let Some(impl_did) = environment::trait_impl_of_method(vcx.tcx, did) {
+        let subject = vcx.tcx.impl_trait_header(impl_did);
         let trait_ref = subject.trait_ref.skip_binder();
-        let debug_did = search::try_resolve_did(vcx.env.tcx(), &["core", "fmt", "Debug"]);
+        let debug_did = search::try_resolve_did(vcx.tcx, &["core", "fmt", "Debug"]);
         if rrconfig::trust_debug() && debug_did == Some(trait_ref.def_id) {
             println!("Warning: automatically trusting implementation of `Debug::fmt`: {did:?}");
             return true;
@@ -1163,7 +1161,8 @@ fn is_only_spec_function(vcx: &VerificationCtxt<'_, '_>, did: DefId) -> bool {
 
 /// Get the most restrictive function mode arising from annotations on a function.
 fn get_most_restrictive_function_mode(vcx: &VerificationCtxt<'_, '_>, did: DefId) -> procedures::Mode {
-    let attrs = vcx.env.get_attributes_of_function(did, &spec_parsers::propagate_method_attr_from_impl);
+    let attrs =
+        environment::get_attributes_of_function(vcx.tcx, did, &spec_parsers::propagate_method_attr_from_impl);
 
     // check if this is a purely spec function; if so, skip.
     if attrs::has_tool_attr_filtered(attrs.as_slice(), "shim") {
@@ -1206,14 +1205,14 @@ fn register_functions<'tcx>(
 
         let mut mode = get_most_restrictive_function_mode(vcx, f.to_def_id());
 
-        let fname = base::strip_coq_ident(&vcx.env.get_item_name(f.to_def_id()));
+        let fname = base::strip_coq_ident(&environment::get_item_name(vcx.tcx, f.to_def_id()));
         //let fname = format!("{stem}_{fname}");
         let spec_name = format!("type_of_{}", fname);
         let code_name = format!("{}_def", fname);
         let trait_req_incl_name = format!("trait_incl_of_{}", fname);
 
         // check whether this is part of a trait decl
-        let is_default_trait_impl = vcx.env.tcx().trait_of_assoc(f.to_def_id()).is_some();
+        let is_default_trait_impl = vcx.tcx.trait_of_assoc(f.to_def_id()).is_some();
 
         if mode == procedures::Mode::Shim && is_default_trait_impl {
             warn!("ignoring rr::shim attribute on default trait impl");
@@ -1221,7 +1220,7 @@ fn register_functions<'tcx>(
         }
         if mode == procedures::Mode::Shim {
             // TODO better error message
-            let attrs = vcx.env.get_attributes(f.to_def_id());
+            let attrs = environment::get_attributes(vcx.tcx, f.to_def_id());
             let v = attrs::filter_for_tool(attrs);
             let annot = spec_parsers::get_shim_attrs(v.as_slice()).unwrap();
 
@@ -1246,7 +1245,7 @@ fn register_functions<'tcx>(
         }
         if mode == procedures::Mode::CodeShim {
             // TODO better error message
-            let attrs = vcx.env.get_attributes(f.to_def_id());
+            let attrs = environment::get_attributes(vcx.tcx, f.to_def_id());
             let v = attrs::filter_for_tool(attrs);
             let annot = spec_parsers::get_code_shim_attrs(v.as_slice()).unwrap();
 
@@ -1266,7 +1265,7 @@ fn register_functions<'tcx>(
         }
 
         if mode == procedures::Mode::Prove
-            && let Some(impl_did) = vcx.env.tcx().impl_of_assoc(f.to_def_id())
+            && let Some(impl_did) = vcx.tcx.impl_of_assoc(f.to_def_id())
         {
             mode = get_most_restrictive_function_mode(vcx, impl_did);
         }
@@ -1277,7 +1276,7 @@ fn register_functions<'tcx>(
         }
 
         // also register it under the export path, if annotated.
-        if let Some(export_path) = shims::flat::get_external_export_path_for_did(vcx.env, f.to_def_id()) {
+        if let Some(export_path) = shims::flat::get_external_export_path_for_did(vcx.tcx, f.to_def_id()) {
             let interned_path = vcx.shim_registry.intern_path(export_path.path.path);
             info!("Looking up annotated shim {interned_path:?} for is_method={:?}", export_path.as_method);
             if let Some(export_did) = resolve_shim(vcx, &interned_path, export_path.as_method) {
@@ -1325,13 +1324,15 @@ fn translate_functions(vcx: &mut VerificationCtxt<'_, '_>) {
 }
 
 fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId) -> bool {
-    let proc = vcx.env.get_procedure(f.to_def_id());
-    let fname = vcx.env.get_item_name(f.to_def_id());
+    let proc = environment::get_procedure(vcx.tcx, f.to_def_id());
+    let fname = environment::get_item_name(vcx.tcx, f.to_def_id());
     let meta = vcx.procedure_registry.lookup_function(f.to_def_id()).unwrap();
 
-    let filtered_attrs = vcx
-        .env
-        .get_attributes_of_function(f.to_def_id(), &spec_parsers::propagate_method_attr_from_impl);
+    let filtered_attrs = environment::get_attributes_of_function(
+        vcx.tcx,
+        f.to_def_id(),
+        &spec_parsers::propagate_method_attr_from_impl,
+    );
 
     let mode = meta.get_mode();
     if mode.is_shim() {
@@ -1343,13 +1344,13 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
 
     info!("\nTranslating function {}", fname);
 
-    let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = vcx.env.tcx().type_of(proc.get_id());
+    let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = vcx.tcx.type_of(proc.get_id());
     let ty = ty.instantiate_identity();
 
     let non_sc_spans = &mut vcx.non_sc_atomic_spans;
     let translator = match ty.kind() {
         ty::TyKind::FnDef(_def, _args) => signature::TX::new(
-            vcx.env,
+            vcx.tcx,
             &meta,
             proc,
             &filtered_attrs,
@@ -1362,7 +1363,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
         .map(|x| (x, None)),
         ty::TyKind::Closure(_, _) => {
             let translator = signature::TX::new_closure(
-                vcx.env,
+                vcx.tcx,
                 &meta,
                 proc,
                 &filtered_attrs,
@@ -1392,7 +1393,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
         // Only generate a spec
         match translator.and_then(|(tx, info)| tx.generate_spec().map(|x| (x, info))) {
             Ok((spec, info)) => {
-                if vcx.env.tcx().dcx().has_errors().is_some() {
+                if vcx.tcx.dcx().has_errors().is_some() {
                     return false;
                 }
 
@@ -1400,7 +1401,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
                 vcx.procedure_registry.provide_specced_function(f.to_def_id(), spec_ref);
 
                 if let Some(info) = info {
-                    let ordered_did = OrderedDefId::new(vcx.env.tcx(), f.to_def_id());
+                    let ordered_did = OrderedDefId::new(vcx.tcx, f.to_def_id());
                     vcx.procedure_registry.closure_info.insert(ordered_did, info);
                 }
                 true
@@ -1426,7 +1427,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
         // Fully translate the function
         match translator.and_then(|(tx, info)| tx.translate(vcx.fn_arena).map(|x| (x, info))) {
             Ok((fun, info)) => {
-                if vcx.env.tcx().dcx().has_errors().is_some() {
+                if vcx.tcx.dcx().has_errors().is_some() {
                     return false;
                 }
 
@@ -1434,7 +1435,7 @@ fn translate_function<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>, f: LocalDefId)
                 vcx.procedure_registry.provide_translated_function(f.to_def_id(), fun);
 
                 if let Some(info) = info {
-                    let ordered_did = OrderedDefId::new(vcx.env.tcx(), f.to_def_id());
+                    let ordered_did = OrderedDefId::new(vcx.tcx, f.to_def_id());
                     vcx.procedure_registry.closure_info.insert(ordered_did, info);
                 }
                 true
@@ -1470,19 +1471,18 @@ fn check_consider_function<'tcx>(
     vcx: &VerificationCtxt<'tcx, '_>,
     id: LocalDefId,
 ) -> Result<bool, base::TranslationError<'tcx>> {
-    let env = vcx.env;
-    if env.has_tool_attribute(id.to_def_id(), "skip") {
+    if environment::has_tool_attribute(vcx.tcx, id.to_def_id(), "skip") {
         warn!("Function {:?} will be skipped due to a rr::skip annotation", id);
         return Ok(false);
     }
-    let has_any_attribute = env.has_any_tool_attribute(id.to_def_id());
+    let has_any_attribute = environment::has_any_tool_attribute(vcx.tcx, id.to_def_id());
 
     // check if this is an impl with a skip annotation
-    let Some(impl_did) = env.tcx().impl_of_assoc(id.to_def_id()) else {
+    let Some(impl_did) = vcx.tcx.impl_of_assoc(id.to_def_id()) else {
         return Ok(has_any_attribute);
     };
 
-    if env.has_tool_attribute(impl_did, "skip") {
+    if environment::has_tool_attribute(vcx.tcx, impl_did, "skip") {
         warn!("Function {:?} will be skipped due to a rr::skip annotation on impl", id);
         return Ok(false);
     }
@@ -1493,22 +1493,22 @@ fn check_consider_function<'tcx>(
     }
 
     // check if this is an impl of a trait
-    if !env.tcx().impl_is_of_trait(impl_did) {
+    if !vcx.tcx.impl_is_of_trait(impl_did) {
         return Ok(false);
     }
-    let trait_ref = env.tcx().impl_trait_ref(impl_did).skip_binder();
+    let trait_ref = vcx.tcx.impl_trait_ref(impl_did).skip_binder();
     let trait_did = trait_ref.def_id;
 
     // check if the impl has any attributes declared on it
-    if env.has_any_tool_attribute(impl_did) {
+    if environment::has_any_tool_attribute(vcx.tcx, impl_did) {
         return Ok(true);
     }
 
     // Check if this is part of an impl of a derive trait for an ADT
-    if !vcx.env.tcx().impl_is_of_trait(impl_did) {
+    if !vcx.tcx.impl_is_of_trait(impl_did) {
         return Err(traits::Error::NotATraitImpl(impl_did).into());
     }
-    let trait_ref = vcx.env.tcx().impl_trait_ref(impl_did).skip_binder();
+    let trait_ref = vcx.tcx.impl_trait_ref(impl_did).skip_binder();
 
     let self_ty = trait_ref.self_ty();
     let ty::TyKind::Adt(def, _) = self_ty.kind() else {
@@ -1516,21 +1516,21 @@ fn check_consider_function<'tcx>(
     };
 
     // ADT has a skip annotation?
-    if env.has_tool_attribute(def.did(), "skip") {
+    if environment::has_tool_attribute(vcx.tcx, def.did(), "skip") {
         return Ok(false);
     }
     // if there are no annotations, also skip
-    if !env.has_any_tool_attribute(def.did()) {
+    if !environment::has_any_tool_attribute(vcx.tcx, def.did()) {
         return Ok(false);
     }
 
     // otherwise, check if this is a Derive trait for which we have special support
-    if traits::is_derive_trait_with_no_annotations(env.tcx(), trait_did) == Some(true) {
+    if traits::is_derive_trait_with_no_annotations(vcx.tcx, trait_did) == Some(true) {
         return Ok(true);
     }
 
     // otherwise, check if this is for an ADT with derive annotations.
-    if traits::is_derive_trait_with_annotations(env.tcx(), trait_did) == Some(true)
+    if traits::is_derive_trait_with_annotations(vcx.tcx, trait_did) == Some(true)
         && vcx.trait_registry.check_for_derive_trait_attrs(impl_did)?.is_some()
     {
         return Ok(true);
@@ -1541,26 +1541,26 @@ fn check_consider_function<'tcx>(
 
 /// Get constants in the current scope.
 pub fn register_consts<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(), String> {
-    let statics = vcx.env.get_statics();
+    let statics = environment::get_statics(vcx.tcx);
 
     for s in &statics {
-        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = vcx.env.tcx().type_of(s.to_def_id());
+        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = vcx.tcx.type_of(s.to_def_id());
 
-        let const_attrs = attrs::filter_for_tool(vcx.env.get_attributes(s.to_def_id()));
+        let const_attrs = attrs::filter_for_tool(environment::get_attributes(vcx.tcx, s.to_def_id()));
         if const_attrs.is_empty() {
             continue;
         }
 
         let ty = ty.skip_binder();
         let scope = scope::Params::default();
-        let typing_env = ty::TypingEnv::post_analysis(vcx.env.tcx(), s.to_def_id());
+        let typing_env = ty::TypingEnv::post_analysis(vcx.tcx, s.to_def_id());
         match vcx
             .type_translator
             .translate_type_in_scope(&scope, typing_env, ty)
             .map_err(|x| format!("{:?}", x))
         {
             Ok(translated_ty) => {
-                let _full_name = base::strip_coq_ident(&vcx.env.get_item_name(s.to_def_id()));
+                let _full_name = base::strip_coq_ident(&environment::get_item_name(vcx.tcx, s.to_def_id()));
 
                 let mut const_parser = VerboseConstAttrParser::new();
                 let const_spec = const_parser.parse_const_attrs(*s, &const_attrs)?;
@@ -1573,7 +1573,7 @@ pub fn register_consts<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(),
                     loc_name,
                     ty: translated_ty,
                 };
-                let ordered_did = OrderedDefId::new(vcx.env.tcx(), s.to_def_id());
+                let ordered_did = OrderedDefId::new(vcx.tcx, s.to_def_id());
                 vcx.const_registry.register_static(ordered_did, meta);
             },
             Err(e) => {
@@ -1586,11 +1586,11 @@ pub fn register_consts<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(),
 
 /// Register traits.
 fn register_traits(vcx: &mut VerificationCtxt<'_, '_>) -> Result<(), String> {
-    let traits = vcx.env.get_traits();
+    let traits = environment::get_traits(vcx.tcx);
 
     // order according to dependencies first
     let deps = vcx.trait_registry.get_trait_deps(traits.as_slice());
-    let ordered_traits = base::order_defs_with_deps(vcx.env.tcx(), &deps);
+    let ordered_traits = base::order_defs_with_deps(vcx.tcx, &deps);
 
     let mut registered_traits = Vec::new();
     // first pre-register them to enable mutually recursive traits
@@ -1601,12 +1601,12 @@ fn register_traits(vcx: &mut VerificationCtxt<'_, '_>) -> Result<(), String> {
         let mut all_have_annots = true;
         let mut some_has_annot = false;
         // check that all children have a specification
-        let children = vcx.env.tcx().module_children_local(t);
+        let children = vcx.tcx.module_children_local(t);
         for c in children {
             if let hir::def::Res::Def(def_kind, def_id) = c.res
                 && def_kind == hir::def::DefKind::AssocFn
             {
-                if vcx.env.has_any_tool_attribute(def_id) {
+                if environment::has_any_tool_attribute(vcx.tcx, def_id) {
                     some_has_annot = true;
                 } else {
                     all_have_annots = false;
@@ -1640,20 +1640,20 @@ fn register_traits(vcx: &mut VerificationCtxt<'_, '_>) -> Result<(), String> {
 /// Register trait impls of all registered traits.
 /// Precondition: traits have already been registered.
 fn register_trait_impls(vcx: &VerificationCtxt<'_, '_>) -> Result<(), String> {
-    let trait_impl_ids = vcx.env.get_trait_impls();
+    let trait_impl_ids = environment::get_trait_impls(vcx.tcx);
     info!("Found trait impls: {:?}", trait_impl_ids);
 
     for trait_impl_id in trait_impl_ids {
         let did = trait_impl_id.to_def_id();
-        let trait_ref = vcx.env.tcx().impl_trait_ref(did).skip_binder();
+        let trait_ref = vcx.tcx.impl_trait_ref(did).skip_binder();
         let trait_did = trait_ref.def_id;
 
         // check if this trait has been registered
         if let Some(registered) = vcx.trait_registry.lookup_trait(trait_did) {
             // make sure all functions have a spec; otherwise, this is not a complete trait impl
-            let assoc_items: &ty::AssocItems = vcx.env.tcx().associated_items(did);
+            let assoc_items: &ty::AssocItems = vcx.tcx.associated_items(did);
             let mut all_specced = true;
-            let assoc_items = traits::sort_assoc_items(vcx.env, assoc_items);
+            let assoc_items = traits::sort_assoc_items(vcx.tcx, assoc_items);
             for x in assoc_items {
                 if x.tag() == ty::AssocTag::Fn {
                     // check if all functions have a specification
@@ -1670,7 +1670,7 @@ fn register_trait_impls(vcx: &VerificationCtxt<'_, '_>) -> Result<(), String> {
 
             // make names for the spec and inclusion proof
             let impl_lit = specs::traits::LiteralImpl::new(
-                base::strip_coq_ident(&vcx.env.get_item_name(did)),
+                base::strip_coq_ident(&environment::get_item_name(vcx.tcx, did)),
                 registered.has_semantic_interp,
             );
 
@@ -1687,9 +1687,9 @@ fn register_trait_impls(vcx: &VerificationCtxt<'_, '_>) -> Result<(), String> {
 fn are_closures_available(vcx: &VerificationCtxt<'_, '_>) -> bool {
     // let's check first if the closure library has been imported
     let check_clos = || -> Option<()> {
-        let fnmut_did = search::get_closure_trait_did(vcx.env.tcx(), ty::ClosureKind::FnMut)?;
-        let fn_did = search::get_closure_trait_did(vcx.env.tcx(), ty::ClosureKind::Fn)?;
-        let fnonce_did = search::get_closure_trait_did(vcx.env.tcx(), ty::ClosureKind::FnOnce)?;
+        let fnmut_did = search::get_closure_trait_did(vcx.tcx, ty::ClosureKind::FnMut)?;
+        let fn_did = search::get_closure_trait_did(vcx.tcx, ty::ClosureKind::Fn)?;
+        let fnonce_did = search::get_closure_trait_did(vcx.tcx, ty::ClosureKind::FnOnce)?;
 
         vcx.trait_registry.lookup_trait(fnmut_did)?;
         vcx.trait_registry.lookup_trait(fn_did)?;
@@ -1721,13 +1721,13 @@ fn register_closure_impls(vcx: &VerificationCtxt<'_, '_>) -> Result<(), String> 
         }
 
         // check what kind of closure this is
-        let clos_args = vcx.env.get_closure_args(closure_did.to_def_id());
+        let clos_args = environment::get_closure_args(vcx.tcx, closure_did.to_def_id());
         let kind = clos_args.kind();
 
         let make_impl = |kind| -> Result<(), String> {
             // make names for the spec and inclusion proof
             let impl_lit = specs::traits::LiteralImpl::new(
-                base::strip_coq_ident(&format!("{}_{kind:?}", vcx.env.get_item_name(did))),
+                base::strip_coq_ident(&format!("{}_{kind:?}", environment::get_item_name(vcx.tcx, did))),
                 false,
             );
 
@@ -1783,10 +1783,10 @@ fn assemble_closure_impls<'tcx, 'rcx>(vcx: &mut VerificationCtxt<'tcx, 'rcx>) {
     }
 
     let generator =
-        ClosureImplGenerator::new(vcx.env, vcx.trait_registry, vcx.type_translator, vcx.fn_arena).unwrap();
+        ClosureImplGenerator::new(vcx.tcx, vcx.trait_registry, vcx.type_translator, vcx.fn_arena).unwrap();
 
     for closure_did in vcx.closures {
-        let closure_args = vcx.env.get_closure_args(closure_did.to_def_id());
+        let closure_args = environment::get_closure_args(vcx.tcx, closure_did.to_def_id());
         let kind = closure_args.kind();
 
         let Some(_) = vcx.trait_registry.lookup_closure_impl(closure_did.to_def_id(), kind) else {
@@ -1843,7 +1843,7 @@ fn assemble_closure_impls<'tcx, 'rcx>(vcx: &mut VerificationCtxt<'tcx, 'rcx>) {
         };
 
         let mut register_impl = |to_impl| {
-            let ordered_did = OrderedDefId::new(vcx.env.tcx(), closure_did.to_def_id());
+            let ordered_did = OrderedDefId::new(vcx.tcx, closure_did.to_def_id());
             let info = vcx.procedure_registry.closure_info.get_mut(&ordered_did).unwrap();
             let spec = process_impl(to_impl, &info.info);
             match spec {
@@ -1885,38 +1885,36 @@ fn assemble_closure_impls<'tcx, 'rcx>(vcx: &mut VerificationCtxt<'tcx, 'rcx>) {
 
 /// Generate trait instances.
 fn assemble_trait_impls<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) {
-    let trait_impl_ids = vcx.env.get_trait_impls();
+    let trait_impl_ids = environment::get_trait_impls(vcx.tcx);
 
     for trait_impl_id in trait_impl_ids {
         let did = trait_impl_id.to_def_id();
-        let trait_ref = vcx.env.tcx().impl_trait_ref(did).skip_binder();
+        let trait_ref = vcx.tcx.impl_trait_ref(did).skip_binder();
         let trait_did = trait_ref.def_id;
 
         // check if we registered this impl previously
         let Some(_) = vcx.trait_registry.lookup_impl(did) else { continue };
 
-        if !vcx.env.tcx().impl_is_of_trait(did) {
+        if !vcx.tcx.impl_is_of_trait(did) {
             continue;
         }
-
-        let tcx = vcx.env.tcx();
 
         trace!("Assembling trait impl {trait_impl_id:?}");
 
         let process_impl = || -> Result<(specs::traits::ImplSpec<'_>, BTreeSet<OrderedDefId>), base::TranslationError<'tcx>> {
             let (impl_info, deps, context_items) = vcx.trait_registry.get_trait_impl_info(did)?;
-            let assoc_items: &'tcx ty::AssocItems = tcx.associated_items(did);
+            let assoc_items: &'tcx ty::AssocItems = vcx.tcx.associated_items(did);
             trace!("impl assoc items: {assoc_items:?}");
 
-            let trait_assoc_items: &'tcx ty::AssocItems = tcx.associated_items(trait_did);
+            let trait_assoc_items: &'tcx ty::AssocItems = vcx.tcx.associated_items(trait_did);
 
             let mut methods = BTreeMap::new();
 
-            let sorted_trait_assoc_items = traits::sort_assoc_items(vcx.env, trait_assoc_items);
+            let sorted_trait_assoc_items = traits::sort_assoc_items(vcx.tcx, trait_assoc_items);
             for x in sorted_trait_assoc_items {
                 if x.tag() == ty::AssocTag::Fn {
                     let fn_item = assoc_items.filter_by_name_unhygienic_and_kind(
-                        x.ident(tcx).name,
+                        x.ident(vcx.tcx).name,
                         ty::AssocTag::Fn,
                     ).find(|y| y.trait_item_def_id() == Some(x.def_id));
                     trace!("Translating item {x:?}, fn_item = {fn_item:?}");
@@ -1930,21 +1928,21 @@ fn assemble_trait_impls<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) {
                         }
                     } else {
                         // this uses a default impl
-                        let fn_name = base::strip_coq_ident(tcx.item_name(x.def_id).as_str());
+                        let fn_name = base::strip_coq_ident(vcx.tcx.item_name(x.def_id).as_str());
                         let spec = specs::traits::InstantiatedFunctionSpec::new(impl_info.clone(), fn_name);
 
-                        let assoc_item = trait_assoc_items.find_by_ident_and_kind(tcx, x.ident(tcx), ty::AssocTag::Fn, trait_did).unwrap();
+                        let assoc_item = trait_assoc_items.find_by_ident_and_kind(vcx.tcx, x.ident(vcx.tcx), ty::AssocTag::Fn, trait_did).unwrap();
 
                         trace!("assemble_trait_impls: trait_assoc_item = {:?}", assoc_item.def_id);
                         trace!("assemble_trait_impls: default spec: {spec:?}");
                         if let Some(default_meta) = vcx.procedure_registry.lookup_function(assoc_item.def_id) {
                             // now build the generic scope for this item.
-                            let ty = tcx.type_of(assoc_item.def_id).instantiate_identity();
+                            let ty = vcx.tcx.type_of(assoc_item.def_id).instantiate_identity();
                             let ty::TyKind::FnDef(_, params) = ty.kind() else {
                                 unimplemented!();
                             };
-                            let mut generics = scope::Params::new_from_generics(tcx, params, Some(assoc_item.def_id));
-                            generics.add_param_env(assoc_item.def_id, vcx.env, vcx.type_translator, vcx.trait_registry)?;
+                            let mut generics = scope::Params::new_from_generics(vcx.tcx, params, Some(assoc_item.def_id));
+                            generics.add_param_env(assoc_item.def_id, vcx.tcx, vcx.type_translator, vcx.trait_registry)?;
                             // TODO: We don't respect dependencies of the direct scope on the
                             // surrounding scope here. For instance for assoc type constraints.
                             //
@@ -1955,13 +1953,13 @@ fn assemble_trait_impls<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) {
                             // But how do I do that? This seems a bit difficult.
 
                             // add late bounds
-                            let sig = ty.fn_sig(vcx.env.tcx());
+                            let sig = ty.fn_sig(vcx.tcx);
                             let bound_vars = sig.bound_vars();
                             let mut bound_regions = Vec::new();
                             for x in bound_vars {
                                 bound_regions.push(x.expect_region());
                             }
-                            drop(generics.translate_bound_regions(tcx, &bound_regions));
+                            drop(generics.translate_bound_regions(vcx.tcx, &bound_regions));
 
                             let scope: specs::GenericScope<'_> = generics.into();
 
@@ -1986,7 +1984,7 @@ fn assemble_trait_impls<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) {
         let spec = process_impl();
         match spec {
             Ok((spec, deps)) => {
-                let ordered_did = OrderedDefId::new(vcx.env.tcx(), did);
+                let ordered_did = OrderedDefId::new(vcx.tcx, did);
                 vcx.trait_impls.insert(ordered_did, spec);
                 vcx.trait_impl_deps.insert(ordered_did, deps);
             },
@@ -2003,16 +2001,16 @@ fn assemble_trait_impls<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) {
 }
 
 /// Get and parse all module attributes.
-fn get_module_attributes(env: &Environment<'_>) -> Result<BTreeMap<OrderedDefId, ModuleAttrs>, String> {
-    let modules = env.get_modules();
+fn get_module_attributes(tcx: ty::TyCtxt<'_>) -> Result<BTreeMap<OrderedDefId, ModuleAttrs>, String> {
+    let modules = environment::get_modules(tcx);
     let mut attrs = BTreeMap::new();
     info!("collected modules: {:?}", modules);
 
     for m in &modules {
-        let module_attrs = attrs::filter_for_tool(env.get_attributes(m.to_def_id()));
+        let module_attrs = attrs::filter_for_tool(environment::get_attributes(tcx, m.to_def_id()));
         let mut module_parser = VerboseModuleAttrParser::new();
         let module_spec = module_parser.parse_module_attrs(*m, &module_attrs)?;
-        let ordered_did = OrderedDefId::new(env.tcx(), m.to_def_id());
+        let ordered_did = OrderedDefId::new(tcx, m.to_def_id());
         attrs.insert(ordered_did, module_spec);
     }
 
@@ -2036,9 +2034,6 @@ pub fn generate_coq_code<'tcx, F>(tcx: ty::TyCtxt<'tcx>, continuation: F) -> Res
 where
     F: Fn(VerificationCtxt<'tcx, '_>),
 {
-    let env = Environment::new(tcx);
-    let env: &Environment<'_> = &*Box::leak(Box::new(env));
-
     // get crate attributes
     let crate_attrs = tcx.hir_krate_attrs();
     let crate_attrs = attrs::filter_for_tool(crate_attrs);
@@ -2054,7 +2049,7 @@ where
     info!("Setting dune package: {:?}", package);
 
     // get module attributes
-    let module_attrs = get_module_attributes(env)?;
+    let module_attrs = get_module_attributes(tcx)?;
 
     // process exports
     let mut exports: BTreeSet<coq::module::Export> = BTreeSet::new();
@@ -2084,8 +2079,8 @@ where
         .count();
     info!("Exporting RefinedRust modules: {:?}", export_includes);
 
-    let functions = env.get_procedures();
-    let closures = env.get_closures();
+    let functions = environment::get_procedures(tcx);
+    let closures = environment::get_closures(tcx);
     info!("Found {} function(s) and {} closure(s)", functions.len(), closures.len());
 
     let struct_arena = Arena::new();
@@ -2095,9 +2090,9 @@ where
     let trait_impl_arena = Arena::new();
     let trait_use_arena = Arena::new();
     let fn_spec_arena = Arena::new();
-    let type_translator = types::TX::new(env, &struct_arena, &enum_arena, &shim_arena);
+    let type_translator = types::TX::new(tcx, &struct_arena, &enum_arena, &shim_arena);
     let trait_registry =
-        registry::TR::new(env, &trait_arena, &trait_impl_arena, &trait_use_arena, &fn_spec_arena);
+        registry::TR::new(tcx, &trait_arena, &trait_impl_arena, &trait_use_arena, &fn_spec_arena);
     // establish the cycle
     type_translator.provide_trait_registry(&trait_registry);
     trait_registry.provide_type_translator(&type_translator);
@@ -2162,7 +2157,7 @@ where
 
     // first register names for all the procedures, to resolve mutual dependencies
     let mut vcx = VerificationCtxt {
-        env,
+        tcx,
         functions: functions.as_slice(),
         closures: closures.as_slice(),
         type_translator: &type_translator,
@@ -2201,8 +2196,7 @@ where
     if !vcx.non_sc_atomic_spans.is_empty() {
         let spans: Vec<_> = vcx.non_sc_atomic_spans.drain(..).collect();
         let mut warn = vcx
-            .env
-            .tcx()
+            .tcx
             .dcx()
             .struct_warn("[RefinedRust] atomic operations verified under sequential consistency");
         warn.span_labels(spans, "non-SeqCst ordering");
@@ -2224,16 +2218,6 @@ where
     Ok(())
 }
 
-/// # Safety
-///
-/// See the module level comment in `crate::environment::mir_storage`.
-pub unsafe fn store_mir_body<'tcx>(
-    tcx: ty::TyCtxt<'tcx>,
-    def_id: LocalDefId,
-    body_with_facts: BodyWithBorrowckFacts<'tcx>,
-) {
-    // SAFETY: See the module level comment.
-    unsafe {
-        environment::mir_storage::store_mir_body(tcx, def_id, body_with_facts);
-    }
+pub fn mir_borrowck(tcx: ty::TyCtxt<'_>, def_id: LocalDefId) -> queries::mir_borrowck::ProvidedValue<'_> {
+    environment::mir_storage::mir_borrowck(tcx, def_id)
 }

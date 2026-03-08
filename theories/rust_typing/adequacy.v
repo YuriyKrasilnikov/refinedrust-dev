@@ -187,7 +187,7 @@ Proof.
     + by iApply big_sepL2_nil.
     + iExists ⊤ => /=.
       iFrame. do 2 iR.
-      iIntros (??) "_ HL _". iModIntro. iFrame. iExists *[], -[].
+      iIntros (??) "_ _ HL _". iModIntro. iFrame. iExists *[], -[].
       rewrite /li_tactic/ensure_evars_instantiated_goal.
       iR. iExists tt.
       iIntros (????) "#CTX #HE HL".

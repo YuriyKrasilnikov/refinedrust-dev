@@ -815,13 +815,13 @@ Section judgments.
   (** * Introduce a proposition containing tokens that we want to directly return *)
   (* TODO also thread na tokens through here *)
   Definition introduce_with_hooks (E : elctx) (L : llctx) (P : iProp Σ) (T : llctx → iProp Σ) : iProp Σ :=
-    ∀ F, ⌜lftE ⊆ F⌝ -∗ elctx_interp E -∗ llctx_interp L -∗ P ={F}=∗ ∃ L', llctx_interp L' ∗ T L'.
+    ∀ F, ⌜lftE ⊆ F⌝ -∗ rrust_ctx -∗ elctx_interp E -∗ llctx_interp L -∗ P ={F}=∗ ∃ L', llctx_interp L' ∗ T L'.
   Class IntroduceWithHooks (E : elctx) (L : llctx) (P : iProp Σ) : Type :=
     introduce_with_hooks_proof T : iProp_to_Prop (introduce_with_hooks E L P T).
 
   (** Do a custom iteration in the type system, determined by rules for specific M *)
   Definition iterate_with_hooks (E : elctx) (L : llctx) {M} (m : M) (T : llctx → M → iProp Σ) : iProp Σ :=
-    ∀ F, ⌜lftE ⊆ F⌝ -∗ elctx_interp E -∗ llctx_interp L ={F}=∗ ∃ L' m', llctx_interp L' ∗ T L' m'.
+    ∀ F, ⌜lftE ⊆ F⌝ -∗ rrust_ctx -∗ elctx_interp E -∗ llctx_interp L ={F}=∗ ∃ L' m', llctx_interp L' ∗ T L' m'.
   Class IterateWithHooks (E : elctx) (L : llctx) {M} (m : M) : Type :=
     iterate_with_hooks_proof T : iProp_to_Prop (iterate_with_hooks E L m T).
 
@@ -3587,6 +3587,29 @@ Ltac solve_check_lctx_lft_incl_goal := fail "implement solve_check_lctx_lft_incl
 #[global] Hint Extern 10 (LiTactic (check_lctx_lft_incl_goal _ _ _ _)) =>
     refine (check_lctx_lft_incl_goal_hint _ _ _ _ _ _); solve_check_lctx_lft_incl_goal : typeclass_instances.
 
+(** Check whether a lifetime is locally owned (not an alias and not the function lifetime) *)
+Definition check_lft_is_local_goal `{!typeGS Σ} (E : elctx) (L : llctx) (κ : lft) (T : bool → iProp Σ) : iProp Σ :=
+  ∃ b : bool, T b.
+Definition check_lft_is_local_pure_goal `{!typeGS Σ} (E : elctx) (L : llctx) (κ : lft) (b : bool) : Prop :=
+  True.
+
+Program Definition check_lft_is_local_goal_hint `{!typeGS Σ} (E : elctx) (L : llctx) (κ : lft) (b : bool) :
+  check_lft_is_local_pure_goal E L κ b →
+  LiTactic (check_lft_is_local_goal E L κ) := λ a, {|
+    li_tactic_P T := T b;
+  |}.
+Next Obligation.
+  unfold check_lft_is_local_pure_goal.
+  iIntros (????? b Ha T) "HT".
+  iExists b. done.
+Qed.
+
+Global Typeclasses Opaque check_lft_is_local_goal.
+Global Typeclasses Opaque check_lft_is_local_pure_goal.
+Ltac solve_check_lft_is_local_goal := fail "implement solve_check_lft_is_local_goal".
+#[global] Hint Extern 10 (LiTactic (check_lft_is_local_goal _ _ _)) =>
+    refine (check_lft_is_local_goal_hint _ _ _ _ _); solve_check_lft_is_local_goal : typeclass_instances.
+
 (** ** Generic context folding mechanism *)
 Section folding.
   Context `{!typeGS Σ}.
@@ -3707,7 +3730,7 @@ Section folding.
     iIntros "Hs". iIntros (????) "#(LFT & LLCTX) #HE HL Hstep".
     iApply logical_step_fupd.
     iApply (logical_step_wand with "Hstep").
-    iIntros "Hacc". iMod ("Hs" with "[//] HE HL Hacc") as "(%L3 & HL & HT)".
+    iIntros "Hacc". iMod ("Hs" with "[//] [$] HE HL Hacc") as "(%L3 & HL & HT)".
     eauto with iFrame.
   Qed.
 

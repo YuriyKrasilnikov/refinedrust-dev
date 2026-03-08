@@ -19,15 +19,15 @@ use rr_rustc_interface::type_ir::TypeFoldable as _;
 
 use crate::base::*;
 use crate::environment::borrowck::facts;
-use crate::environment::{Environment, polonius_info};
+use crate::environment::polonius_info;
 use crate::regions::TyRegionCollectFolder;
 use crate::regions::region_bi_folder::RegionBiFolder as _;
-use crate::traits;
 use crate::traits::registry::ResolvedTraitReq;
 use crate::traits::resolution;
 use crate::types::translator::{FunctionState, STInner, TX};
 use crate::types::tyvars::TyVarFolder;
 use crate::types::{self, scope};
+use crate::{environment, traits};
 
 /// Information we compute when calling a function from another function.
 /// Determines how to specialize the callee's generics in our spec assumption.
@@ -175,18 +175,18 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
     /// Split the params of a trait method into params of the trait and params of the method
     /// itself.
     pub(crate) fn split_trait_method_args(
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         trait_did: DefId,
         ty_params: ty::GenericArgsRef<'tcx>,
     ) -> (ty::GenericArgsRef<'tcx>, ty::GenericArgsRef<'tcx>) {
         // split args
-        let trait_generics: &'tcx ty::Generics = env.tcx().generics_of(trait_did);
+        let trait_generics: &'tcx ty::Generics = tcx.generics_of(trait_did);
         let trait_generic_count = trait_generics.own_params.len();
 
         let trait_args = &ty_params.as_slice()[..trait_generic_count];
         let method_args = &ty_params.as_slice()[trait_generic_count..];
 
-        (env.tcx().mk_args(trait_args), env.tcx().mk_args(method_args))
+        (tcx.mk_args(trait_args), tcx.mk_args(method_args))
     }
 
     /// Register a procedure use of a trait method.
@@ -197,7 +197,7 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
     /// - the arguments of the method
     pub(crate) fn register_use_trait_procedure(
         &self,
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         trait_method_did: DefId,
         ty_params: ty::GenericArgsRef<'tcx>,
     ) -> Result<
@@ -209,33 +209,30 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         ),
         TranslationError<'tcx>,
     > {
-        let trait_did = env
-            .tcx()
-            .trait_of_assoc(trait_method_did)
-            .ok_or(traits::Error::NotATrait(trait_method_did))?;
+        let trait_did =
+            tcx.trait_of_assoc(trait_method_did).ok_or(traits::Error::NotATrait(trait_method_did))?;
 
         // get name of the method
-        let method_name = env.get_assoc_item_name(trait_method_did).unwrap();
+        let method_name = environment::get_assoc_item_name(tcx, trait_method_did).unwrap();
 
         // split args
-        let (trait_args, method_args) = Self::split_trait_method_args(env, trait_did, ty_params);
+        let (trait_args, method_args) = Self::split_trait_method_args(tcx, trait_did, ty_params);
 
         // restrict the scope of the borrow
         let (trait_use_ref, bound_regions_inst, mapped_early_regions) = {
             let mut scope = self.scope.borrow_mut();
-            let entry = scope.generic_scope.trait_scope().lookup_trait_use(
-                env.tcx(),
-                trait_did,
-                trait_args.as_slice(),
-            )?;
+            let entry =
+                scope
+                    .generic_scope
+                    .trait_scope()
+                    .lookup_trait_use(tcx, trait_did, trait_args.as_slice())?;
             let trait_use_ref = entry.trait_use;
 
-            let typing_env = ty::TypingEnv::post_analysis(env.tcx(), scope.did);
+            let typing_env = ty::TypingEnv::post_analysis(tcx, scope.did);
 
             // compute the instantiation of this trait use's params by unifying the args
             // this instantiation will be used as the instantiation hint in the function
-            let mut unifier =
-                traits::registry::LateBoundUnifier::new(env.tcx(), typing_env, &entry.bound_regions);
+            let mut unifier = traits::registry::LateBoundUnifier::new(tcx, typing_env, &entry.bound_regions);
             unifier.map_generic_args(entry.trait_ref.args, trait_args);
             let (bound_regions_inst, early_regions_inst) = unifier.get_result();
 
@@ -301,8 +298,8 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         );
 
         // STEP 1: get all the regions and type variables appearing in the instantiation of generics
-        let mut tyvar_folder = TyVarFolder::new(self.translator.env());
-        let mut lft_folder = TyRegionCollectFolder::new(self.translator.env().tcx());
+        let mut tyvar_folder = TyVarFolder::new(self.translator.tcx());
+        let mut lft_folder = TyRegionCollectFolder::new(self.translator.tcx());
         // HACK(see #32): We typically don't want lifetimes which just appear in the closure input/output
         // signature, but not in the closure upvars, since these lifetimes often are locally
         // universally quantified.
@@ -385,7 +382,7 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         for (late_bound_idx, late_bound) in late_bounds.iter().enumerate() {
             match late_bound {
                 ty::BoundVariableKind::Region(r) => {
-                    let name = r.get_name(self.translator.env().tcx()).map_or_else(
+                    let name = r.get_name(self.translator.tcx()).map_or_else(
                         || coq::Ident::new(&format!("late_lft_{}", late_bound_idx)),
                         |x| coq::Ident::new(&format!("lft_{}", x)),
                     );
@@ -433,11 +430,11 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         }
         // Also bind surrounding associated types we use
         for alias_ty in projections {
-            let env = self.translator.env();
-            let trait_did = env.tcx().parent(alias_ty.def_id);
+            let tcx = self.translator.tcx();
+            let trait_did = tcx.parent(alias_ty.def_id);
             let param_scope = self.scope.borrow().make_params_scope();
-            let entry = param_scope.trait_scope().lookup_trait_use(env.tcx(), trait_did, alias_ty.args)?;
-            let assoc_type = entry.get_associated_type_use(env, alias_ty.def_id)?;
+            let entry = param_scope.trait_scope().lookup_trait_use(tcx, trait_did, alias_ty.args)?;
+            let assoc_type = entry.get_associated_type_use(tcx, alias_ty.def_id)?;
             if let specs::Type::LiteralParam(mut lit) = assoc_type {
                 lit.set_origin(specs::TyParamOrigin::Direct);
                 scope.add_ty_param(lit.clone());
@@ -454,7 +451,7 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         //
         // TODO: probably we should make the same distinction also for lifetimes?
         let num_surrounding_params =
-            scope::Params::determine_number_of_surrounding_params(callee_did, self.translator.env().tcx());
+            scope::Params::determine_number_of_surrounding_params(callee_did, self.translator.tcx());
         info!("num_surrounding_params={num_surrounding_params:?}, method_params={method_params:?}");
 
         // figure out instantiation for the function's generics
@@ -489,7 +486,7 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
             // translate type in scope with HRTB binders
             let mut scope = self.scope.borrow_mut();
 
-            let tcx = self.translator.env().tcx();
+            let tcx = self.translator.tcx();
 
             let mut params = scope.make_params_scope();
             params.add_trait_req_scope(&req.req_inst.scope);

@@ -436,7 +436,7 @@ Section at_subtype.
     iApply fupd_place_to_wp.
     iMod (at_ex_plain_t_acc_owned with "Hb") as "(%r & HP & Hb & Hcl)"; first done.
     iPoseProof ("Hcl" with "Hb []") as "Hb"; first done.
-    iMod ("HT" with "[] HE HL HP") as "(%L2 & HL & HT)"; first done.
+    iMod ("HT" with "[] CTX HE HL HP") as "(%L2 & HL & HT)"; first done.
     iApply ("HT" with "[//] [//] CTX HE HL Hf Hb").
     iModIntro. iIntros (L' κs l2 b2 bmin0 rti ltyi ri updcx) "Hl Hc".
     iApply ("Hcont" with "Hl").

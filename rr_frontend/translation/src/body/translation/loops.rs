@@ -14,7 +14,7 @@ use super::TX;
 use crate::base::*;
 use crate::environment::mir_analyses::initialization;
 use crate::spec_parsers::loop_attr_parser::{LoopAttrParser as _, LoopIteratorInfo, VerboseLoopAttrParser};
-use crate::{attrs, search, types};
+use crate::{attrs, environment, search, types};
 
 #[expect(clippy::multiple_inherent_impl)]
 impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
@@ -80,12 +80,12 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let fn_ty = self.get_type_of_operand(func);
         let call_dest = self.check_operand_call_dest(func).unwrap();
 
-        let iterator_did = search::try_resolve_did(self.env.tcx(), &["core", "iter", "Iterator"]).unwrap();
-        let iterator_items: &ty::AssocItems = self.env.tcx().associated_items(iterator_did);
+        let iterator_did = search::try_resolve_did(self.tcx, &["core", "iter", "Iterator"]).unwrap();
+        let iterator_items: &ty::AssocItems = self.tcx.associated_items(iterator_did);
         let next_symbol = span::Symbol::intern("next");
         let next_ident = span::Ident::with_dummy_span(next_symbol);
         let next_item = iterator_items
-            .find_by_ident_and_kind(self.env.tcx(), next_ident, ty::AssocTag::Fn, iterator_did)
+            .find_by_ident_and_kind(self.tcx, next_ident, ty::AssocTag::Fn, iterator_did)
             .unwrap();
 
         if next_item.def_id != call_dest {
@@ -184,11 +184,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         //
         let iterator_info = self.check_is_for_loop(loop_head)?;
 
-        let init_result = initialization::compute_definitely_initialized(
-            self.proc.get_id(),
-            self.proc.get_mir(),
-            self.env.tcx(),
-        );
+        let init_result =
+            initialization::compute_definitely_initialized(self.proc.get_id(), self.proc.get_mir(), self.tcx);
         let init_places = init_result.get_before_block(loop_head);
 
         // get locals
@@ -217,7 +214,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let mut parser = VerboseLoopAttrParser::new(locals_with_initialization, &*scope, iterator_info);
 
         if let Some(did) = did {
-            let attrs = self.env.get_attributes(did);
+            let attrs = environment::get_attributes(self.tcx, did);
             let attrs = attrs::filter_for_tool(attrs);
             info!("attrs for loop {:?}: {:?}", loop_head, attrs);
             parser.parse_loop_attrs(attrs.as_slice()).map_err(TranslationError::LoopSpec)

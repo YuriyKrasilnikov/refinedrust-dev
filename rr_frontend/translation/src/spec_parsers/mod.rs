@@ -77,6 +77,40 @@ pub(crate) fn get_export_as_attr(attrs: &[&hir::AttrItem]) -> Result<ExportAs, S
     Err("Did not find export_as annotation".to_owned())
 }
 
+/// For parsing of `rr::depends_on` annotations
+#[derive(Debug)]
+pub(crate) struct DependsOn {
+    pub paths: Vec<RustPath>,
+}
+impl<F> Parse<F> for DependsOn {
+    fn parse(stream: parse::Stream<'_>, meta: &F) -> parse::Result<Self> {
+        let paths: parse::Punctuated<RustPath, MToken![,]> =
+            parse::Punctuated::parse_separated_nonempty(stream, meta)?;
+
+        let paths = paths.into_iter().collect();
+
+        let export = Self { paths };
+        Ok(export)
+    }
+}
+
+pub(crate) fn get_depends_on_attrs(attrs: &[&hir::AttrItem]) -> Result<Vec<RustPath>, String> {
+    let mut deps = Vec::new();
+    for &it in attrs {
+        let path_segs = &it.path.segments;
+
+        if let Some(seg) = path_segs.get(1) {
+            let buffer = parse::Buffer::new(&parse_utils::attr_args_tokens(&it.args));
+
+            if seg.as_str() == "depends_on" {
+                let mut path = DependsOn::parse(&buffer, &()).map_err(parse_utils::str_err)?;
+                deps.append(&mut path.paths);
+            }
+        }
+    }
+    Ok(deps)
+}
+
 /// Parser for getting shim attributes
 #[derive(Debug)]
 pub(crate) struct ShimAnnot {

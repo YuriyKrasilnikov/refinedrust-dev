@@ -12,7 +12,6 @@ use radium::code;
 use rr_rustc_interface::middle::ty::TypeFolder as _;
 use rr_rustc_interface::middle::{mir, ty};
 
-use crate::environment::Environment;
 use crate::environment::borrowck::facts;
 use crate::environment::region_folder::*;
 use crate::regions::inclusion_tracker::InclusionTracker;
@@ -21,7 +20,7 @@ use crate::types;
 /// On creating a composite value (e.g. a struct or enum), the composite value gets its own
 /// Polonius regions We need to map these regions properly to the respective lifetimes.
 pub(crate) fn get_composite_rvalue_creation_annots<'tcx>(
-    env: &Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     inclusion_tracker: &mut InclusionTracker<'_, 'tcx>,
     ty_translator: &types::LocalTX<'_, 'tcx>,
     loc: mir::Location,
@@ -31,7 +30,7 @@ pub(crate) fn get_composite_rvalue_creation_annots<'tcx>(
     let input_facts = &info.borrowck_in_facts;
     let subset_base = &input_facts.subset_base;
 
-    let regions_of_ty = get_regions_of_ty(env, rhs_ty);
+    let regions_of_ty = get_regions_of_ty(tcx, rhs_ty);
 
     let mut annots = Vec::new();
 
@@ -67,7 +66,7 @@ pub(crate) fn get_composite_rvalue_creation_annots<'tcx>(
 }
 
 /// Get the regions appearing in a type.
-fn get_regions_of_ty<'tcx>(env: &Environment<'tcx>, ty: ty::Ty<'tcx>) -> HashSet<facts::Region> {
+fn get_regions_of_ty<'tcx>(tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> HashSet<facts::Region> {
     let mut regions = HashSet::new();
     let mut clos = |r: ty::Region<'tcx>, _| match r.kind() {
         ty::RegionKind::ReVar(rv) => {
@@ -76,7 +75,7 @@ fn get_regions_of_ty<'tcx>(env: &Environment<'tcx>, ty: ty::Ty<'tcx>) -> HashSet
         },
         _ => r,
     };
-    let mut folder = RegionFolder::new(env.tcx(), &mut clos);
+    let mut folder = RegionFolder::new(tcx, &mut clos);
     folder.fold_ty(ty);
     regions
 }

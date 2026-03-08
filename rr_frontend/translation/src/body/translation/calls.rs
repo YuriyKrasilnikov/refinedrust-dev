@@ -115,9 +115,9 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // the same environment (which is the case within this procedure).
         // Therefore, already the type parameters are sufficient to distinguish different
         // instantiations.
-        let key = types::generate_args_inst_key(self.env.tcx(), ty_params)?;
+        let key = types::generate_args_inst_key(self.tcx, ty_params)?;
 
-        let tcx = self.env.tcx();
+        let tcx = self.tcx;
 
         let late_bounds = if let Some(impl_did) = tcx.impl_of_assoc(callee_did)
             && tcx.impl_is_of_trait(impl_did)
@@ -208,12 +208,12 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         trace!("enter register_use_trait_method did={:?} ty_params={:?}", callee_did, ty_params);
         // Does not include the associated types in the key; see `register_use_procedure` for an
         // explanation.
-        let key = types::generate_args_inst_key(self.env.tcx(), ty_params)?;
+        let key = types::generate_args_inst_key(self.tcx, ty_params)?;
 
         let (method_loc_name, (method_spec_term, spec_scope, spec_inst), mapped_early_regions, method_params) =
-            self.ty_translator.register_use_trait_procedure(self.env, callee_did, ty_params)?;
+            self.ty_translator.register_use_trait_procedure(self.tcx, callee_did, ty_params)?;
 
-        let tcx = self.env.tcx();
+        let tcx = self.tcx;
         let fn_ty: ty::EarlyBinder<'_, ty::Ty<'_>> = tcx.type_of(callee_did);
         let fn_ty = fn_ty.instantiate(tcx, ty_params);
         let fnsig = fn_ty.fn_sig(tcx);
@@ -390,8 +390,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             "enter register_use_closure closure_did={closure_did:?}, closure_args={closure_args:?}, call_fn_did={call_fn_did:?}, ty_params={ty_params:?}"
         );
 
-        let trait_did = self.env.tcx().parent(call_fn_did);
-        let closure_kind = search::get_closure_kind_of_trait_did(self.env.tcx(), trait_did)
+        let trait_did = self.tcx.parent(call_fn_did);
+        let closure_kind = search::get_closure_kind_of_trait_did(self.tcx, trait_did)
             .ok_or(traits::Error::NotAClosureTrait(trait_did))?;
 
         trace!("determined closure kind: {closure_kind:?}");
@@ -401,14 +401,14 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // the same environment (which is the case within this procedure).
         // Therefore, already the type parameters are sufficient to distinguish different
         // instantiations.
-        let key = types::generate_args_inst_key(self.env.tcx(), ty_params)?;
+        let key = types::generate_args_inst_key(self.tcx, ty_params)?;
 
         let info = self.procedure_registry.lookup_closure_info(closure_did).unwrap();
 
         let quantified_scope =
             self.create_closure_impl_abstraction(info, closure_did, closure_args, closure_kind, ty_params)?;
 
-        let tup = TranslationKey(OrderedDefId::new(self.env.tcx(), call_fn_did), key);
+        let tup = TranslationKey(OrderedDefId::new(self.tcx, call_fn_did), key);
         let res;
         if let Some(proc_use) = self.collected_procedures.get(&tup) {
             res = proc_use.loc_name.clone();
@@ -428,10 +428,10 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             let loc_name = format!("{}_loc", types::mangle_name_with_tys(code_name, tup.1.as_slice()));
 
             let scope = self.ty_translator.scope.borrow();
-            let typing_env = ty::TypingEnv::post_analysis(self.env.tcx(), scope.did);
+            let typing_env = ty::TypingEnv::post_analysis(self.tcx, scope.did);
 
             let syntypes = get_arg_syntypes_for_procedure_call(
-                self.env.tcx(),
+                self.tcx,
                 self.ty_translator.translator,
                 // note: this is sufficient (without the lifetime map) as we erase lifetimes here anyways
                 &scope.generic_scope,
@@ -493,12 +493,12 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             return Err(TranslationError::UnknownError("not a FnDef type".to_owned()));
         };
 
-        let current_typing_env = ty::TypingEnv::post_analysis(self.env.tcx(), self.proc.get_id());
+        let current_typing_env = ty::TypingEnv::post_analysis(self.tcx, self.proc.get_id());
 
         // Check whether we are calling into a trait method.
         // This works since we did not resolve concrete instances, so this is always an abstract
         // reference to the trait.
-        let calling_trait = self.env.tcx().trait_of_assoc(*defid);
+        let calling_trait = self.tcx.trait_of_assoc(*defid);
 
         // Check whether we are calling a plain function or a trait method
         let Some(_) = calling_trait else {
@@ -512,7 +512,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // Otherwise, we are calling a trait method
         // Resolve the trait instance using trait selection
         let Some((resolved_did, resolved_params, kind)) = resolution::resolve_assoc_item(
-            self.env.tcx(),
+            self.tcx,
             current_typing_env,
             *defid,
             params,
@@ -576,14 +576,14 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             mir::Const::Ty(ty, _) | mir::Const::Val(_, ty) => {
                 match ty.kind() {
                     ty::TyKind::FnDef(def, args) => {
-                        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = self.env.tcx().type_of(*def);
+                        let ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = self.tcx.type_of(*def);
 
                         let ty_ident = ty.instantiate_identity();
                         assert!(ty_ident.is_fn());
-                        let ident_sig = ty_ident.fn_sig(self.env.tcx());
+                        let ident_sig = ty_ident.fn_sig(self.tcx);
 
-                        let ty_instantiated = ty.instantiate(self.env.tcx(), args.as_slice());
-                        let instantiated_sig = ty_instantiated.fn_sig(self.env.tcx());
+                        let ty_instantiated = ty.instantiate(self.tcx, args.as_slice());
+                        let instantiated_sig = ty_instantiated.fn_sig(self.tcx);
 
                         Ok((*def, ident_sig, args, instantiated_sig))
                     },
@@ -645,7 +645,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         for arg in args {
             // to_ty is the type the function expects
 
-            //let ty = arg.ty(&self.proc.get_mir().local_decls, self.env.tcx());
+            //let ty = arg.ty(&self.proc.get_mir().local_decls, self.tcx);
             let (translated_arg, _) = self.translate_operand(&arg.node, true)?;
             translated_args.push(translated_arg);
         }
@@ -671,7 +671,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         // 6. annotate the return value on assignment and establish constraints.
 
         let classification = regions::calls::compute_call_regions(
-            self.env,
+            self.tcx,
             &self.inclusion_tracker,
             call_info.method_params,
             loc,
@@ -713,7 +713,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let lhs_ty = self.get_type_of_place(destination);
         let lhs_strongly_writeable = !self.check_place_below_reference(destination);
         let assignment_annots = regions::assignment::get_assignment_annots(
-            self.env,
+            self.tcx,
             &mut self.inclusion_tracker,
             &self.ty_translator,
             loc,

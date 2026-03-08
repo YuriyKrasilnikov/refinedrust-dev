@@ -13,9 +13,8 @@ use std::process::Command;
 use std::{env, process};
 
 use log::{debug, info};
-use rr_rustc_interface::hir::def_id::LocalDefId;
-use rr_rustc_interface::middle::{queries, query, ty, util};
-use rr_rustc_interface::{borrowck, driver, interface, session};
+use rr_rustc_interface::middle::{ty, util};
+use rr_rustc_interface::{driver, interface, session};
 
 const BUG_REPORT_URL: &str = "https://gitlab.mpi-sws.org/lgaeher/refinedrust-dev/-/issues/new";
 
@@ -122,33 +121,8 @@ fn main() {
     .exit_process();
 }
 
-// From Prusti.
-fn mir_borrowck(tcx: ty::TyCtxt<'_>, def_id: LocalDefId) -> queries::mir_borrowck::ProvidedValue<'_> {
-    let bodies_with_facts = borrowck::consumers::get_bodies_with_borrowck_facts(
-        tcx,
-        def_id,
-        borrowck::consumers::ConsumerOptions::PoloniusOutputFacts,
-    );
-
-    // NB the order of iteration doesn't matter here
-    #[expect(clippy::iter_over_hash_type)]
-    for (did, body) in bodies_with_facts {
-        // SAFETY: This is safe because we are feeding in the same `tcx` that is
-        // going to be used as a witness when pulling out the data.
-        unsafe {
-            translation::store_mir_body(tcx, did, body);
-        }
-    }
-
-    let mut providers = query::Providers::default();
-    borrowck::provide(&mut providers);
-    let original_mir_borrowck = providers.mir_borrowck;
-    original_mir_borrowck(tcx, def_id)
-}
-
 fn override_queries(_session: &session::Session, providers: &mut util::Providers) {
-    // overriding these queries makes sure that the `mir_storage` gets all the relevant bodies
-    providers.queries.mir_borrowck = mir_borrowck;
+    providers.queries.mir_borrowck = translation::mir_borrowck;
 }
 
 /// Main entry point to the frontend that is called by the driver.
@@ -200,8 +174,7 @@ impl driver::Callbacks for RRCompilerCalls {
     fn config(&mut self, config: &mut interface::Config) {
         assert!(config.override_queries.is_none());
         if !rrconfig::no_verify() {
-            let x: fn(&session::Session, &mut util::Providers) = override_queries;
-            config.override_queries = Some(x);
+            config.override_queries = Some(override_queries);
         }
     }
 

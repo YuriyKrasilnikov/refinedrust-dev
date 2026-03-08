@@ -16,7 +16,6 @@ use typed_arena::Arena;
 
 use crate::base::*;
 use crate::body::signature;
-use crate::environment::Environment;
 use crate::regions::region_bi_folder::RegionBiFolder;
 use crate::spec_parsers::propagate_method_attr_from_impl;
 use crate::spec_parsers::trait_attr_parser::{
@@ -25,7 +24,7 @@ use crate::spec_parsers::trait_attr_parser::{
 use crate::spec_parsers::trait_impl_attr_parser::{TraitImplAttrParser as _, VerboseTraitImplAttrParser};
 use crate::traits::requirements;
 use crate::types::scope;
-use crate::{attrs, error, procedures, search, traits, types};
+use crate::{attrs, environment, error, procedures, search, traits, types};
 
 #[derive(Debug)]
 pub(crate) struct ResolvedTraitReq<'tcx, 'def> {
@@ -52,11 +51,12 @@ impl<'tcx, 'def> GenericTraitUse<'tcx, 'def> {
     /// This is used in the translation of symbolic `TyKind::Alias`.
     pub(crate) fn get_associated_type_use(
         &self,
-        env: &Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         did: DefId,
     ) -> Result<specs::Type<'def>, Error<'tcx>> {
-        let type_name = env.get_assoc_item_name(did).ok_or(Error::NotAnAssocType(did))?;
-        let type_idx = env.get_trait_associated_type_index(did).ok_or(Error::NotAnAssocType(did))?;
+        let type_name = environment::get_assoc_item_name(tcx, did).ok_or(Error::NotAnAssocType(did))?;
+        let type_idx =
+            environment::get_trait_associated_type_index(tcx, did).ok_or(Error::NotAnAssocType(did))?;
 
         // this is an associated type of the trait that is currently being declared
         // so make a symbolic reference
@@ -72,13 +72,13 @@ impl<'tcx, 'def> GenericTraitUse<'tcx, 'def> {
         }
     }
 
-    pub(crate) fn get_associated_types(&self, env: &Environment<'_>) -> Vec<(String, specs::Type<'def>)> {
+    pub(crate) fn get_associated_types(&self, tcx: ty::TyCtxt<'_>) -> Vec<(String, specs::Type<'def>)> {
         let mut assoc_tys = Vec::new();
 
         // get associated types
-        let assoc_types = env.get_trait_assoc_types(self.did);
+        let assoc_types = environment::get_trait_assoc_types(tcx, self.did);
         for (idx, ty_did) in assoc_types.iter().enumerate() {
-            let ty_name = env.get_assoc_item_name(*ty_did).unwrap();
+            let ty_name = environment::get_assoc_item_name(tcx, *ty_did).unwrap();
             let trait_use_ref = self.trait_use.borrow();
             let trait_use = trait_use_ref.as_ref().unwrap();
             let lit = trait_use.make_assoc_type_use(idx);
@@ -90,7 +90,7 @@ impl<'tcx, 'def> GenericTraitUse<'tcx, 'def> {
 
 pub(crate) struct TR<'tcx, 'def> {
     /// environment
-    env: &'def Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     type_translator: Cell<Option<&'def types::TX<'def, 'tcx>>>,
 
     /// trait declarations
@@ -124,14 +124,14 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
 
     /// Create an empty trait registry.
     pub(crate) fn new(
-        env: &'def Environment<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
         trait_arena: &'def Arena<specs::traits::LiteralSpec>,
         impl_arena: &'def Arena<specs::traits::LiteralImpl>,
         trait_use_arena: &'def Arena<specs::traits::LiteralSpecUseCell<'def>>,
         fn_spec_arena: &'def Arena<specs::functions::Spec<'def, specs::functions::InnerSpec<'def>>>,
     ) -> Self {
         Self {
-            env,
+            tcx,
             type_translator: Cell::new(None),
             trait_arena,
             impl_arena,
@@ -156,7 +156,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
 
     /// Get a set of other (different) traits that this trait depends on.
     pub(crate) fn get_deps_of_trait(&self, did: DefId) -> BTreeSet<OrderedDefId> {
-        let param_env: ty::ParamEnv<'tcx> = self.env.tcx().param_env(did);
+        let param_env: ty::ParamEnv<'tcx> = self.tcx.param_env(did);
 
         let mut deps = BTreeSet::new();
         for clause in param_env.caller_bounds() {
@@ -165,7 +165,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
                 let other_did = pred.trait_ref.def_id;
 
                 if other_did != did {
-                    deps.insert(OrderedDefId::new(self.env.tcx(), other_did));
+                    deps.insert(OrderedDefId::new(self.tcx, other_did));
                 }
             }
         }
@@ -182,7 +182,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
 
         for trait_decl in traits {
             let deps = self.get_deps_of_trait(trait_decl.to_def_id());
-            dep_map.insert(OrderedDefId::new(self.env.tcx(), trait_decl.to_def_id()), deps);
+            dep_map.insert(OrderedDefId::new(self.tcx, trait_decl.to_def_id()), deps);
         }
 
         dep_map
@@ -206,9 +206,9 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         let mut assoc_tys = Vec::new();
 
         // get associated types
-        let assoc_types = self.env.get_trait_assoc_types(did);
+        let assoc_types = environment::get_trait_assoc_types(self.tcx, did);
         for ty_did in &assoc_types {
-            let ty_name = self.env.get_assoc_item_name(*ty_did).unwrap();
+            let ty_name = environment::get_assoc_item_name(self.tcx, *ty_did).unwrap();
             assoc_tys.push(ty_name);
         }
 
@@ -226,13 +226,13 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
     ) -> Result<specs::traits::LiteralSpec, Error<'tcx>> {
         let mut method_trait_incl_decls = BTreeMap::new();
 
-        let items: &ty::AssocItems = self.env.tcx().associated_items(did);
-        let items = traits::sort_assoc_items(self.env, items);
+        let items: &ty::AssocItems = self.tcx.associated_items(did);
+        let items = traits::sort_assoc_items(self.tcx, items);
         for c in items {
             if let ty::AssocKind::Fn { .. } = c.kind {
                 // get function name
-                let method_name =
-                    self.env.get_assoc_item_name(c.def_id).ok_or(Error::NotATraitMethod(c.def_id))?;
+                let method_name = environment::get_assoc_item_name(self.tcx, c.def_id)
+                    .ok_or(Error::NotATraitMethod(c.def_id))?;
                 let method_name = strip_coq_ident(&method_name);
 
                 let trait_incl_decl = format!("trait_incl_of_{name}_{method_name}");
@@ -254,18 +254,18 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
     pub(crate) fn preregister_trait(&'def self, did: LocalDefId) -> Result<(), TranslationError<'tcx>> {
         {
             let scope = self.trait_decls.borrow();
-            let ordered_did = OrderedDefId::new(self.env.tcx(), did.to_def_id());
+            let ordered_did = OrderedDefId::new(self.tcx, did.to_def_id());
             if scope.get(&ordered_did).is_some() {
                 return Ok(());
             }
         }
 
         // first register the shim so we can handle recursive traits
-        let trait_name = strip_coq_ident(&self.env.get_absolute_item_name(did.to_def_id()));
-        let trait_attrs = attrs::filter_for_tool(self.env.get_attributes(did.into()));
+        let trait_name = strip_coq_ident(&environment::get_absolute_item_name(self.tcx, did.to_def_id()));
+        let trait_attrs = attrs::filter_for_tool(environment::get_attributes(self.tcx, did.into()));
 
-        let has_semantic_interp = self.env.has_tool_attribute(did.into(), "semantic");
-        let attrs_dependent = !self.env.has_tool_attribute(did.into(), "nondependent");
+        let has_semantic_interp = environment::has_tool_attribute(self.tcx, did.into(), "semantic");
+        let attrs_dependent = !environment::has_tool_attribute(self.tcx, did.into(), "nondependent");
 
         // get the declared attributes that are allowed on impls
         let valid_attrs: Vec<String> =
@@ -295,7 +295,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
     ) -> Result<(), TranslationError<'tcx>> {
         trace!("enter TR::register_trait for did={did:?}");
 
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did.to_def_id());
+        let ordered_did = OrderedDefId::new(self.tcx, did.to_def_id());
         {
             let scope = self.trait_decls.borrow();
             if scope.get(&ordered_did).is_some() {
@@ -307,16 +307,16 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         let lit_trait_spec_ref =
             self.lookup_trait(did.to_def_id()).ok_or_else(|| Error::NotATrait(did.to_def_id()))?;
 
-        let trait_name = strip_coq_ident(&self.env.get_absolute_item_name(did.to_def_id()));
-        let trait_attrs = attrs::filter_for_tool(self.env.get_attributes(did.into()));
+        let trait_name = strip_coq_ident(&environment::get_absolute_item_name(self.tcx, did.to_def_id()));
+        let trait_attrs = attrs::filter_for_tool(environment::get_attributes(self.tcx, did.into()));
 
         let mut cont = || -> Result<(), TranslationError<'tcx>> {
             // get generics
-            let trait_generics: &'tcx ty::Generics = self.env.tcx().generics_of(did.to_def_id());
+            let trait_generics: &'tcx ty::Generics = self.tcx.generics_of(did.to_def_id());
             let mut param_scope = scope::Params::from(trait_generics.own_params.as_slice());
-            param_scope.add_param_env(did.to_def_id(), self.env, self.type_translator(), self)?;
+            param_scope.add_param_env(did.to_def_id(), self.tcx, self.type_translator(), self)?;
 
-            let param_env: ty::ParamEnv<'tcx> = self.env.tcx().param_env(did.to_def_id());
+            let param_env: ty::ParamEnv<'tcx> = self.tcx.param_env(did.to_def_id());
             trace!("param env is {:?}", param_env);
 
             // parse trait spec
@@ -331,17 +331,20 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
             // get items
             let mut methods = BTreeMap::new();
             let mut assoc_types = Vec::new();
-            let items: &ty::AssocItems = self.env.tcx().associated_items(did);
-            let items = traits::sort_assoc_items(self.env, items);
+            let items: &ty::AssocItems = self.tcx.associated_items(did);
+            let items = traits::sort_assoc_items(self.tcx, items);
             for c in items {
                 if ty::AssocTag::Fn == c.tag() {
                     // get attributes
-                    let attrs =
-                        self.env.get_attributes_of_function(c.def_id, &propagate_method_attr_from_impl);
+                    let attrs = environment::get_attributes_of_function(
+                        self.tcx,
+                        c.def_id,
+                        &propagate_method_attr_from_impl,
+                    );
 
                     // get function name
-                    let method_name =
-                        self.env.get_assoc_item_name(c.def_id).ok_or(Error::NotATraitMethod(c.def_id))?;
+                    let method_name = environment::get_assoc_item_name(self.tcx, c.def_id)
+                        .ok_or(Error::NotATraitMethod(c.def_id))?;
                     let method_name = strip_coq_ident(&method_name);
 
                     let name = format!("{trait_name}_{method_name}");
@@ -351,7 +354,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
 
                     // get spec
                     let spec = signature::TX::spec_for_trait_method(
-                        self.env,
+                        self.tcx,
                         c.def_id,
                         &name,
                         &spec_name,
@@ -368,8 +371,8 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
                     methods.insert(method_name, specs::traits::InstanceMethodSpec::Defined(&*spec_ref));
                 } else if let ty::AssocKind::Type { .. } = c.kind {
                     // get name
-                    let type_name =
-                        self.env.get_assoc_item_name(c.def_id).ok_or(Error::NotAnAssocType(c.def_id))?;
+                    let type_name = environment::get_assoc_item_name(self.tcx, c.def_id)
+                        .ok_or(Error::NotAnAssocType(c.def_id))?;
                     let type_name = strip_coq_ident(&type_name);
                     let lit = specs::LiteralTyParam::new(&type_name);
                     assoc_types.push(lit);
@@ -414,11 +417,11 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         did: DefId,
         spec: specs::traits::LiteralSpec,
     ) -> TraitResult<'tcx, specs::traits::LiteralSpecRef<'def>> {
-        if !self.env.tcx().is_trait(did) {
+        if !self.tcx.is_trait(did) {
             return Err(Error::NotATrait(did));
         }
 
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+        let ordered_did = OrderedDefId::new(self.tcx, did);
         let mut trait_literals = self.trait_literals.borrow_mut();
         if trait_literals.get(&ordered_did).is_some() {
             return Err(Error::TraitAlreadyExists(did));
@@ -436,11 +439,11 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         did: DefId,
         spec: specs::traits::LiteralImpl,
     ) -> TraitResult<'tcx, specs::traits::LiteralImplRef<'def>> {
-        if !self.env.tcx().impl_is_of_trait(did) {
+        if !self.tcx.impl_is_of_trait(did) {
             return Err(Error::NotATraitImpl(did));
         }
 
-        let ordered_did = OrderedDefId::new(self.env.tcx(), did);
+        let ordered_did = OrderedDefId::new(self.tcx, did);
         let mut impl_literals = self.impl_literals.borrow_mut();
         if impl_literals.get(&ordered_did).is_some() {
             return Err(Error::ImplAlreadyExists(did));
@@ -475,14 +478,14 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
     /// Lookup a trait.
     pub(crate) fn lookup_trait(&self, trait_did: DefId) -> Option<specs::traits::LiteralSpecRef<'def>> {
         let trait_literals = self.trait_literals.borrow();
-        let ordered_did = OrderedDefId::new(self.env.tcx(), trait_did);
+        let ordered_did = OrderedDefId::new(self.tcx, trait_did);
         trait_literals.get(&ordered_did).copied()
     }
 
     /// Lookup the spec for an impl.
     pub(crate) fn lookup_impl(&self, impl_did: DefId) -> Option<specs::traits::LiteralImplRef<'def>> {
         let impl_literals = self.impl_literals.borrow();
-        let ordered_did = OrderedDefId::new(self.env.tcx(), impl_did);
+        let ordered_did = OrderedDefId::new(self.tcx, impl_did);
         impl_literals.get(&ordered_did).copied()
     }
 
@@ -508,20 +511,20 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         trace!(
             "enter TR::get_impl_spec_term for impl_did={impl_did:?} impl_args={impl_args:?} trait_args={trait_args:?}"
         );
-        let trait_did = self.env.tcx().impl_trait_id(impl_did);
+        let trait_did = self.tcx.impl_trait_id(impl_did);
 
         self.lookup_trait(trait_did).ok_or(Error::NotATrait(trait_did))?;
 
         let mut assoc_args = Vec::new();
         // get associated types of this impl
         // Since we know the concrete impl, we can directly resolve all of the associated types
-        let items: &'tcx ty::AssocItems = self.env.tcx().associated_items(impl_did);
-        let items = traits::sort_assoc_items(self.env, items);
+        let items: &'tcx ty::AssocItems = self.tcx.associated_items(impl_did);
+        let items = traits::sort_assoc_items(self.tcx, items);
         for it in items {
             if let ty::AssocKind::Type { .. } = it.kind {
                 let item_did = it.def_id;
-                let item_ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = self.env.tcx().type_of(item_did);
-                let subst_ty = item_ty.instantiate(self.env.tcx(), impl_args);
+                let item_ty: ty::EarlyBinder<'_, ty::Ty<'tcx>> = self.tcx.type_of(item_did);
+                let subst_ty = item_ty.instantiate(self.tcx, impl_args);
 
                 assoc_args.push(subst_ty);
             }
@@ -530,7 +533,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         // check if there's a more specific impl spec
         let term = if let Some(impl_spec) = self.lookup_impl(impl_did) {
             let scope_inst =
-                self.compute_scope_inst_in_state(state, impl_did, self.env.tcx().mk_args(impl_args))?;
+                self.compute_scope_inst_in_state(state, impl_did, self.tcx.mk_args(impl_args))?;
 
             specs::traits::SpecializedImpl::new(impl_spec, scope_inst)
         } else {
@@ -567,8 +570,8 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
             "compute_closure_late_bound_inst: trying to unify input={input:?} with args_tuple={args_tuple:?}"
         );
 
-        let typing_env = state.get_typing_env(self.env.tcx());
-        let mut unifier = LateBoundUnifier::new(self.env.tcx(), typing_env, late_regions.as_slice());
+        let typing_env = state.get_typing_env(self.tcx);
+        let mut unifier = LateBoundUnifier::new(self.tcx, typing_env, late_regions.as_slice());
         unifier.map_tys(input, args_tuple);
         let (inst, _) = unifier.get_result();
 
@@ -584,8 +587,8 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         // Also instantiate the external regions for the upvars and closure inputs
         // Important: needs to be in the same order as in `compute_closure_meta`!
         // First upvars, then the inputs.
-        let mut unifier = RegionUnifier::new(self.env.tcx(), state.get_typing_env(self.env.tcx()));
-        let decl_args = self.env.get_closure_args(closure_did);
+        let mut unifier = RegionUnifier::new(self.tcx, state.get_typing_env(self.tcx));
+        let decl_args = environment::get_closure_args(self.tcx, closure_did);
 
         let decl_upvars_tys = decl_args.upvar_tys();
         let upvars_tys = closure_args.upvar_tys();
@@ -620,7 +623,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         closure_args: ty::ClosureArgs<ty::TyCtxt<'tcx>>,
         trait_args: ty::GenericArgsRef<'tcx>,
     ) -> Result<(specs::traits::SpecializedImpl<'def>, Vec<ty::Ty<'tcx>>), TranslationError<'tcx>> {
-        let closure_kind = search::get_closure_kind_of_trait_did(self.env.tcx(), trait_did)
+        let closure_kind = search::get_closure_kind_of_trait_did(self.tcx, trait_did)
             .ok_or(Error::NotAClosureTrait(trait_did))?;
 
         let (closure_impl, _) = self
@@ -643,8 +646,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         trace!(
             "get_closure_impl_spec_term: trying to find instantiation with trait_args={trait_args:?}, args={args:?}, closure_args={closure_args:?}"
         );
-        let mut scope_inst =
-            self.compute_scope_inst_in_state(state, closure_did, self.env.tcx().mk_args(args))?;
+        let mut scope_inst = self.compute_scope_inst_in_state(state, closure_did, self.tcx.mk_args(args))?;
 
         // We also need to compute the lifetime instantiation, in the following order (mirroring
         // the declaration site):
@@ -684,27 +686,23 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         origin: specs::TyParamOrigin,
         assoc_constraints: &[Option<ty::Ty<'tcx>>],
     ) -> Result<ResolvedTraitReq<'tcx, 'def>, TranslationError<'tcx>> {
-        let current_typing_env: ty::TypingEnv<'tcx> = state.get_typing_env(self.env.tcx());
+        let current_typing_env: ty::TypingEnv<'tcx> = state.get_typing_env(self.tcx);
 
         let trait_spec = self.lookup_trait(trait_did).ok_or(Error::NotATrait(trait_did))?;
 
-        if let Some((impl_did, impl_args, kind)) = resolution::resolve_trait(
-            self.env.tcx(),
-            current_typing_env,
-            trait_did,
-            trait_args,
-            below_binders,
-        ) {
+        if let Some((impl_did, impl_args, kind)) =
+            resolution::resolve_trait(self.tcx, current_typing_env, trait_did, trait_args, below_binders)
+        {
             trace!("resolved trait impl as {impl_did:?} with {trait_args:?} {kind:?}");
 
             // register dependency on the resolved impl
-            state.register_dep_on(OrderedDefId::new(self.env.tcx(), impl_did));
+            state.register_dep_on(OrderedDefId::new(self.tcx, impl_did));
 
             // compute the new scope including the bound regions for HRTBs introduced by this requirement
             // We are resolving the trait requirement itself under these binders
             let mut scope = state.get_param_scope();
-            let binders = scope.translate_bound_regions(self.env.tcx(), bound_regions);
-            let mut quantified_state = state.setup_trait_state(self.env.tcx(), scope);
+            let binders = scope.translate_bound_regions(self.tcx, bound_regions);
+            let mut quantified_state = state.setup_trait_state(self.tcx, scope);
 
             let req_inst = match kind {
                 resolution::TraitResolutionKind::UserDefined => {
@@ -741,25 +739,22 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
                 resolution::TraitResolutionKind::Param => {
                     // Lookup in our current parameter environment to satisfy this trait
                     // assumption
-                    let assoc_types_did = self.env.get_trait_assoc_types(trait_did);
+                    let assoc_types_did = environment::get_trait_assoc_types(self.tcx, trait_did);
                     let mut assoc_types = Vec::new();
                     for (did, constr) in assoc_types_did.into_iter().zip(assoc_constraints) {
                         // filter out the associated types which are constrained -- these are
                         // not required in our encoding
                         if constr.is_none() {
-                            let alias = ty::AliasTy::new(self.env.tcx(), did, trait_args);
+                            let alias = ty::AliasTy::new(self.tcx, did, trait_args);
                             let tykind = ty::TyKind::Alias(ty::AliasTyKind::Projection, alias);
-                            let ty = self.env.tcx().mk_ty_from_kind(tykind);
+                            let ty = self.tcx.mk_ty_from_kind(tykind);
                             assoc_types.push(ty);
                         }
                     }
                     info!("Param associated types: {:?}", assoc_types);
 
-                    let trait_use = quantified_state.lookup_trait_use(
-                        self.env.tcx(),
-                        trait_did,
-                        trait_args.as_slice(),
-                    )?;
+                    let trait_use =
+                        quantified_state.lookup_trait_use(self.tcx, trait_did, trait_args.as_slice())?;
                     let trait_use_ref = trait_use.trait_use;
 
                     trace!(
@@ -770,7 +765,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
                     // compute the instantiation of the quantified trait assumption in terms
                     // of the variables introduced by the trait assumption we are proving.
                     let mut unifier =
-                        LateBoundUnifier::new(self.env.tcx(), current_typing_env, &trait_use.bound_regions);
+                        LateBoundUnifier::new(self.tcx, current_typing_env, &trait_use.bound_regions);
                     unifier.map_generic_args(trait_use.trait_ref.args, trait_args);
                     let (inst, _) = unifier.get_result();
                     trace!("computed instantiation: {inst:?}");
@@ -853,14 +848,14 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
             "Enter resolve_trait_requirements_in_state with did={did:?} and params={params:?}, in state={state:?}"
         );
 
-        let current_typing_env: ty::TypingEnv<'tcx> = state.get_typing_env(self.env.tcx());
+        let current_typing_env: ty::TypingEnv<'tcx> = state.get_typing_env(self.tcx);
         trace!("current typing env: {current_typing_env:?}");
 
-        let target_typing_env = ty::TypingEnv::post_analysis(self.env.tcx(), did);
+        let target_typing_env = ty::TypingEnv::post_analysis(self.tcx, did);
         trace!("target typing env {target_typing_env:?}");
 
         // Get the trait requirements of the target
-        let target_requirements = requirements::get_trait_requirements_with_origin(self.env, did);
+        let target_requirements = requirements::get_trait_requirements_with_origin(self.tcx, did);
         trace!("non-trivial target requirements: {target_requirements:?}");
         trace!("substituting with args {:?}", params);
 
@@ -883,18 +878,18 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
             let mut subst_args = Vec::new();
             for arg in args {
                 let bound = ty::EarlyBinder::bind(arg);
-                let bound = bound.instantiate(self.env.tcx(), params.as_slice());
+                let bound = bound.instantiate(self.tcx, params.as_slice());
                 subst_args.push(bound);
             }
 
             // Check if the target is a method of the same trait with the same args
             // Since this happens in the same ParamEnv, this is the assumption of the trait method
             // for its own trait, so we skip it, except if instructed otherwise (by `include_self`)
-            if self.env.is_method_did(did) {
-                if let Some(trait_did) = self.env.tcx().trait_of_assoc(did) {
+            if environment::is_method_did(self.tcx, did) {
+                if let Some(trait_did) = self.tcx.trait_of_assoc(did) {
                     // Get the params of the trait we're calling
                     let calling_trait_params =
-                        types::LocalTX::split_trait_method_args(self.env, trait_did, params).0;
+                        types::LocalTX::split_trait_method_args(self.tcx, trait_did, params).0;
                     if !include_self
                         && req.trait_ref.def_id == trait_did
                         && subst_args == calling_trait_params.as_slice()
@@ -902,13 +897,13 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
                         // if they match, this is the Self assumption, so skip
                         continue;
                     }
-                } else if let Some(_impl_did) = self.env.trait_impl_of_method(did) {
+                } else if let Some(_impl_did) = environment::trait_impl_of_method(self.tcx, did) {
                     // TODO
                 }
             }
 
             // build the new args
-            let trait_args = self.env.tcx().mk_args(subst_args.as_slice());
+            let trait_args = self.tcx.mk_args(subst_args.as_slice());
 
             // try to infer an instance for this
             trace!(
@@ -992,7 +987,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
             // compute the new scope including the bound regions.
             let mut scope = state.get_param_scope();
             scope.add_trait_req_scope(&trait_req.req_inst.scope);
-            let mut state = state.setup_trait_state(self.env.tcx(), scope);
+            let mut state = state.setup_trait_state(self.tcx, scope);
 
             let trait_req = self.translate_trait_req_inst_in_state(&mut state, trait_req.req_inst)?;
             trait_reqs.push(trait_req);
@@ -1030,15 +1025,15 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         trace!(
             "enter get_closure_trait_impl_info for closure_did={closure_did:?} and kind={kind:?} with info={info:?}"
         );
-        let trait_did = search::get_closure_trait_did(self.env.tcx(), kind)
-            .ok_or(Error::CouldNotFindClosureTrait(kind))?;
+        let trait_did =
+            search::get_closure_trait_did(self.tcx, kind).ok_or(Error::CouldNotFindClosureTrait(kind))?;
 
         let self_ty = info.self_ty;
-        //self.env.tcx().mk_ty_from_kind(ty::TyKind::Closure(closure_did, closure_args.args));
+        //self.tcx.mk_ty_from_kind(ty::TyKind::Closure(closure_did, closure_args.args));
         let args_ty = info.args_ty;
         //closure_args.tupled_upvars_ty();
         let trait_args: Vec<ty::GenericArg<'_>> = vec![self_ty.into(), args_ty.into()];
-        let trait_args = self.env.tcx().mk_args(&trait_args);
+        let trait_args = self.tcx.mk_args(&trait_args);
 
         //let trait_args =
         //ty::TyKind::Closure((), ())
@@ -1087,11 +1082,10 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
 
         // NOTE: of course, this doesn't have bindings for the closure lifetimes.
         let parent_args = closure_args.parent_args();
-        let mut param_scope =
-            scope::Params::new_from_generics(self.env.tcx(), self.env.tcx().mk_args(parent_args), None);
-        param_scope.add_param_env(closure_did, self.env, self.type_translator(), self)?;
+        let mut param_scope = scope::Params::new_from_generics(self.tcx, self.tcx.mk_args(parent_args), None);
+        param_scope.add_param_env(closure_did, self.tcx, self.type_translator(), self)?;
 
-        let typing_env = ty::TypingEnv::post_analysis(self.env.tcx(), closure_did);
+        let typing_env = ty::TypingEnv::post_analysis(self.tcx, closure_did);
         let state = types::TraitState::new(param_scope.clone(), typing_env, None, Some(&info.region_map));
         let mut state = types::STInner::TraitReqs(Box::new(state));
 
@@ -1136,7 +1130,7 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         &self,
         trait_impl_did: DefId,
     ) -> Result<Option<(specs::traits::SpecAttrsInst, coq::binder::BinderList)>, TranslationError<'tcx>> {
-        let subject = self.env.tcx().impl_trait_header(trait_impl_did);
+        let subject = self.tcx.impl_trait_header(trait_impl_did);
         let trait_ref = subject.trait_ref.skip_binder();
 
         let trait_spec_ref = self.lookup_trait(trait_ref.def_id).ok_or(Error::NotATrait(trait_ref.def_id))?;
@@ -1146,11 +1140,11 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
             return Ok(None);
         };
 
-        let impl_generics: &'tcx ty::Generics = self.env.tcx().generics_of(trait_impl_did);
+        let impl_generics: &'tcx ty::Generics = self.tcx.generics_of(trait_impl_did);
         let mut param_scope = scope::Params::from(impl_generics.own_params.as_slice());
-        param_scope.add_param_env(trait_impl_did, self.env, self.type_translator(), self)?;
+        param_scope.add_param_env(trait_impl_did, self.tcx, self.type_translator(), self)?;
 
-        let adt_attrs = attrs::filter_for_tool(self.env.get_attributes(def.did()));
+        let adt_attrs = attrs::filter_for_tool(environment::get_attributes(self.tcx, def.did()));
         let mut attr_parser = VerboseTraitImplAttrParser::new(&param_scope);
 
         let res = attr_parser
@@ -1169,35 +1163,35 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         &self,
         did: DefId,
     ) -> Result<ty::PolyFnSig<'tcx>, TranslationError<'tcx>> {
-        let impl_did = self.env.tcx().impl_of_assoc(did).ok_or(Error::NotATraitMethod(did))?;
+        let impl_did = self.tcx.impl_of_assoc(did).ok_or(Error::NotATraitMethod(did))?;
 
-        let subject = self.env.tcx().impl_trait_header(impl_did);
+        let subject = self.tcx.impl_trait_header(impl_did);
         let trait_ref = subject.trait_ref.skip_binder();
 
-        let assoc_item = self.env.tcx().associated_item(did);
+        let assoc_item = self.tcx.associated_item(did);
         let trait_item_did = assoc_item.trait_item_def_id().unwrap();
 
-        let impl_ty = self.env.tcx().type_of(did).instantiate_identity();
+        let impl_ty = self.tcx.type_of(did).instantiate_identity();
         let ty::TyKind::FnDef(_, impl_item_params) = impl_ty.kind() else { unreachable!() };
 
-        let item_ty = self.env.tcx().type_of(trait_item_did).instantiate_identity();
+        let item_ty = self.tcx.type_of(trait_item_did).instantiate_identity();
         let ty::TyKind::FnDef(_, item_params) = item_ty.kind() else { unreachable!() };
 
         trace!("impl_item_params = {impl_item_params:?}");
         trace!("item_params = {item_params:?}");
         trace!("trait ref args = {:?}", trait_ref.args);
 
-        //let trait_generics = self.env.tcx().generics_of(trait_ref.def_id);
-        let impl_generics = self.env.tcx().generics_of(impl_did);
+        //let trait_generics = self.tcx.generics_of(trait_ref.def_id);
+        let impl_generics = self.tcx.generics_of(impl_did);
         //item_params.iter().map(|x| { } );
 
         //ty::GenericArgKind
         let new_args = trait_ref.args.iter().chain(impl_item_params.iter().skip(impl_generics.count()));
-        let method_args = self.env.tcx().mk_args_from_iter(new_args);
+        let method_args = self.tcx.mk_args_from_iter(new_args);
         trace!("method args = {method_args:?}");
 
-        let subst_fn_ty = self.env.tcx().mk_ty_from_kind(ty::TyKind::FnDef(trait_item_did, method_args));
-        let fn_sig = subst_fn_ty.fn_sig(self.env.tcx());
+        let subst_fn_ty = self.tcx.mk_ty_from_kind(ty::TyKind::FnDef(trait_item_did, method_args));
+        let fn_sig = subst_fn_ty.fn_sig(self.tcx);
 
         Ok(fn_sig)
     }
@@ -1211,43 +1205,38 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         (specs::traits::RefInst<'def>, BTreeSet<OrderedDefId>, coq::binder::BinderList),
         TranslationError<'tcx>,
     > {
-        let trait_did = self.env.tcx().impl_trait_id(trait_impl_did);
+        let trait_did = self.tcx.impl_trait_id(trait_impl_did);
 
         // check if we registered this impl previously
         let trait_spec_ref = self.lookup_trait(trait_did).ok_or(Error::NotATrait(trait_did))?;
         let impl_ref = self.lookup_impl(trait_impl_did).ok_or(Error::NotATraitImpl(trait_impl_did))?;
 
         // get all associated items
-        let assoc_items: &'tcx ty::AssocItems = self.env.tcx().associated_items(trait_impl_did);
-        let trait_assoc_items: &'tcx ty::AssocItems = self.env.tcx().associated_items(trait_did);
+        let assoc_items: &'tcx ty::AssocItems = self.tcx.associated_items(trait_impl_did);
+        let trait_assoc_items: &'tcx ty::AssocItems = self.tcx.associated_items(trait_did);
 
         // figure out the parameters this impl gets and make a scope
-        let impl_generics: &'tcx ty::Generics = self.env.tcx().generics_of(trait_impl_did);
+        let impl_generics: &'tcx ty::Generics = self.tcx.generics_of(trait_impl_did);
         let mut param_scope = scope::Params::from(impl_generics.own_params.as_slice());
-        param_scope.add_param_env(trait_impl_did, self.env, self.type_translator(), self)?;
+        param_scope.add_param_env(trait_impl_did, self.tcx, self.type_translator(), self)?;
 
         // parse specification
-        let trait_impl_attrs = attrs::filter_for_tool(self.env.get_attributes(trait_impl_did));
+        let trait_impl_attrs = attrs::filter_for_tool(environment::get_attributes(self.tcx, trait_impl_did));
         let (impl_spec, context_items) = if !trait_impl_attrs.is_empty() {
             let mut attr_parser = VerboseTraitImplAttrParser::new(&param_scope);
             let res = attr_parser
                 .parse_trait_impl_attrs(&trait_impl_attrs)
                 .map_err(|e| Error::TraitImplSpec(trait_impl_did, e))?;
             (res.attrs, res.context_items)
-        } else if super::is_derive_trait_with_no_annotations(self.env.tcx(), trait_did) == Some(true)
-            || super::is_derive_trait_with_annotations(self.env.tcx(), trait_did) == Some(true)
+        } else if super::is_derive_trait_with_no_annotations(self.tcx, trait_did) == Some(true)
+            || super::is_derive_trait_with_annotations(self.tcx, trait_did) == Some(true)
         {
             let Some((attrs, context_items)) = self.check_for_derive_trait_attrs(trait_impl_did)? else {
                 let err = error::Message::TraitTranslation(Error::TraitImplSpec(
                     trait_impl_did,
                     "No specification provided".to_owned(),
                 ));
-                return Err(self
-                    .env
-                    .tcx()
-                    .dcx()
-                    .span_err(self.env.tcx().def_span(trait_impl_did), err)
-                    .into());
+                return Err(self.tcx.dcx().span_err(self.tcx.def_span(trait_impl_did), err).into());
             };
             (attrs, context_items)
         } else if trait_spec_ref.declared_attrs.is_empty() {
@@ -1257,15 +1246,15 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
                 trait_impl_did,
                 "No specification provided".to_owned(),
             ));
-            return Err(self.env.tcx().dcx().span_err(self.env.tcx().def_span(trait_impl_did), err).into());
+            return Err(self.tcx.dcx().span_err(self.tcx.def_span(trait_impl_did), err).into());
         };
 
         // figure out the trait ref for this
-        let header = self.env.tcx().impl_trait_header(trait_impl_did);
+        let header = self.tcx.impl_trait_header(trait_impl_did);
         let trait_ref = header.trait_ref.skip_binder();
 
         // set up scope
-        let typing_env = ty::TypingEnv::post_analysis(self.env.tcx(), trait_impl_did);
+        let typing_env = ty::TypingEnv::post_analysis(self.tcx, trait_impl_did);
         let mut deps = BTreeSet::new();
 
         // using the ADT translation state to track dependencies on other impls and ADTs
@@ -1279,16 +1268,16 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         // get instantiation for the associated types
         let mut assoc_types_inst = Vec::new();
 
-        let items = traits::sort_assoc_items(self.env, trait_assoc_items);
+        let items = traits::sort_assoc_items(self.tcx, trait_assoc_items);
         for x in items {
             if let ty::AssocKind::Type { .. } = x.kind {
                 let ty_item = assoc_items
-                    .filter_by_name_unhygienic_and_kind(x.ident(self.env.tcx()).name, ty::AssocTag::Type)
+                    .filter_by_name_unhygienic_and_kind(x.ident(self.tcx).name, ty::AssocTag::Type)
                     .find(|y| y.trait_item_def_id() == Some(x.def_id));
 
                 if let Some(ty_item) = ty_item {
                     let ty_did = ty_item.def_id;
-                    let ty = self.env.tcx().type_of(ty_did);
+                    let ty = self.tcx.type_of(ty_did);
                     let translated_ty =
                         self.type_translator().translate_type_in_state(ty.skip_binder(), &mut state)?;
                     assoc_types_inst.push(translated_ty);
@@ -1353,15 +1342,15 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
     /// Currently, we use this to assume the trivial specification for closure arguments.
     #[expect(dead_code)]
     fn get_builtin_trait_attr_override(&self, did: DefId) -> Option<String> {
-        let fn_did = search::try_resolve_did(self.env.tcx(), &["core", "ops", "Fn"])?;
+        let fn_did = search::try_resolve_did(self.tcx, &["core", "ops", "Fn"])?;
         if did == fn_did {
             return Some("Fn_default_attrs".to_owned());
         }
-        let fnmut_did = search::try_resolve_did(self.env.tcx(), &["core", "ops", "FnMut"])?;
+        let fnmut_did = search::try_resolve_did(self.tcx, &["core", "ops", "FnMut"])?;
         if did == fnmut_did {
             return Some("FnMut_default_attrs".to_owned());
         }
-        let fnonce_did = search::try_resolve_did(self.env.tcx(), &["core", "ops", "FnOnce"])?;
+        let fnonce_did = search::try_resolve_did(self.tcx, &["core", "ops", "FnOnce"])?;
         if did == fnonce_did {
             return Some("FnOnce_default_attrs".to_owned());
         }
@@ -1424,9 +1413,9 @@ impl<'tcx, 'def> TR<'tcx, 'def> {
         trace!("current scope={scope:?}");
 
         let mut scope = scope.clone();
-        let quantified_regions = scope.translate_bound_regions(self.env.tcx(), &trait_use.bound_regions);
+        let quantified_regions = scope.translate_bound_regions(self.tcx, &trait_use.bound_regions);
         trace!("new trait scope={scope:?}");
-        //let mut state = state.setup_trait_state(self.env.tcx(), scope);
+        //let mut state = state.setup_trait_state(self.tcx, scope);
         let mut state =
             types::STInner::TraitReqs(Box::new(types::TraitState::new(scope, typing_env, None, None)));
 

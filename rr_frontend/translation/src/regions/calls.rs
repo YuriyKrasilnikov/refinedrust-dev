@@ -16,8 +16,8 @@ use rr_rustc_interface::middle::{mir, ty};
 
 use crate::base::*;
 use crate::environment::borrowck::facts;
+use crate::environment::polonius_info;
 use crate::environment::region_folder::*;
-use crate::environment::{Environment, polonius_info};
 use crate::regions::inclusion_tracker::InclusionTracker;
 use crate::types;
 
@@ -42,7 +42,7 @@ pub(crate) struct CallRegions {
 /// call site, and we need to find an instantiation for these.
 /// `substs` are the substitutions for the early-bound regions
 pub(crate) fn compute_call_regions<'tcx>(
-    env: &Environment<'tcx>,
+    tcx: ty::TyCtxt<'tcx>,
     incl_tracker: &InclusionTracker<'_, '_>,
     substs: &[ty::GenericArg<'tcx>],
     loc: mir::Location,
@@ -86,7 +86,7 @@ pub(crate) fn compute_call_regions<'tcx>(
 
     for a in substs {
         if let ty::GenericArgKind::Type(c) = a.kind() {
-            let mut folder = RegionFolder::new(env.tcx(), &mut clos);
+            let mut folder = RegionFolder::new(tcx, &mut clos);
             folder.fold_ty(c);
         }
     }

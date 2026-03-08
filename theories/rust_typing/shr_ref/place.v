@@ -35,7 +35,7 @@ Section place.
     iIntros (st) "Hl". iMod (fupd_mask_subseteq F) as "HclF"; first done.
     iMod "HclF" as "_". iExists l'.
     iSplitR. { iPureIntro. unfold mem_cast. rewrite val_to_of_loc. done. }
-    iMod ("HR" with "[] HE HL [Hcred]") as "(%L1 & HL & HR)"; first done.
+    iMod ("HR" with "[] [$] HE HL [Hcred]") as "(%L1 & HL & HR)"; first done.
     { iApply lc_weaken; last done. unfold num_laters_per_step. lia. }
     iApply ("HR" with "[//] [//] [$LFT $LLCTX] HE HL Hf Hb").
     iModIntro. iIntros (L' κs l2 bmin b2 rti tyli ri updcx) "Hb Hs".
@@ -102,7 +102,7 @@ Section place.
     iIntros (st) "Hl Hc". iMod (fupd_mask_subseteq F) as "HclF"; first done.
     iMod "HclF" as "_". iExists l'.
     iSplitR. { iPureIntro. unfold mem_cast. rewrite val_to_of_loc. done. }
-    iMod ("HT" with "[] HE HL [Hcred]") as "(%L1 & HL & HT)"; first done.
+    iMod ("HT" with "[] [$] HE HL [Hcred]") as "(%L1 & HL & HT)"; first done.
     { iApply lc_weaken; last done. unfold num_laters_per_step. lia. }
     iApply ("HT" with "[//] [//] [$LFT $LLCTX] HE HL Hf Hb").
     iModIntro. iIntros (L' κs' l2 bmin b2 rti tyli ri updcx) "Hb Hs".
@@ -169,7 +169,7 @@ Section place.
     iIntros (st) "Hl". iMod (fupd_mask_mono with "Hb") as "#Hb"; first done.
     iExists l'.
     iSplitR. { iPureIntro. unfold mem_cast. rewrite val_to_of_loc. done. }
-    iMod ("HT" with "[] HE HL [Hcred]") as "(%L1 & HL &HT)"; first done.
+    iMod ("HT" with "[] [$] HE HL [Hcred]") as "(%L1 & HL &HT)"; first done.
     { iApply lc_weaken; last done. unfold num_laters_per_step. lia. }
     iApply ("HT" with "[//] [//] [$LFT $LLCTX] HE HL Hf Hb").
     iModIntro. iIntros (L'' κs' l2 bmin b2 rti tyli ri updcx) "Hb' Hs".

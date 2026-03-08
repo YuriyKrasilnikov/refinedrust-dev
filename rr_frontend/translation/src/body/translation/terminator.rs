@@ -10,13 +10,14 @@ use log::{info, trace, warn};
 use radium::{code, coq, lang, specs};
 use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
+use rr_rustc_interface::type_ir::TypeFolder as _;
 
 use super::TX;
 use rr_rustc_interface::span;
 
 use crate::base::*;
 use crate::environment::borrowck::facts;
-use crate::{search, types};
+use crate::{regions, search, types};
 
 /// Classification of atomic intrinsics.
 ///
@@ -128,9 +129,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
     /// Check if a call goes to `std::rt::begin_panic`
     fn is_call_destination_panic(&self, func: &mir::Operand<'_>) -> bool {
-        if let Some(panic_id_std) =
-            search::try_resolve_did(self.env.tcx(), &["std", "panicking", "begin_panic"])
-        {
+        if let Some(panic_id_std) = search::try_resolve_did(self.tcx, &["std", "panicking", "begin_panic"]) {
             if Self::check_call_destination(func, panic_id_std) {
                 return true;
             }
@@ -138,8 +137,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             warn!("Failed to determine DefId of std::panicking::begin_panic");
         }
 
-        if let Some(panic_id_core) = search::try_resolve_did(self.env.tcx(), &["core", "panicking", "panic"])
-        {
+        if let Some(panic_id_core) = search::try_resolve_did(self.tcx, &["core", "panicking", "panic"]) {
             if Self::check_call_destination(func, panic_id_core) {
                 return true;
             }
@@ -153,7 +151,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     // Check if the destination of this call is `core::intrinsics::discriminant_value`.
     fn is_call_destination_discriminant(&self, func: &mir::Operand<'_>) -> bool {
         if let Some(discriminant_did) =
-            search::try_resolve_did(self.env.tcx(), &["core", "intrinsics", "discriminant_value"])
+            search::try_resolve_did(self.tcx, &["core", "intrinsics", "discriminant_value"])
         {
             if Self::check_call_destination(func, discriminant_did) {
                 return true;
@@ -244,7 +242,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             return Ok(None);
         };
 
-        let Some(intrinsic_def) = self.env.tcx().intrinsic(did) else {
+        let Some(intrinsic_def) = self.tcx.intrinsic(did) else {
             return Ok(None);
         };
 
@@ -789,7 +787,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             return Ok(None);
         };
 
-        let tcx = self.env.tcx();
+        let tcx = self.tcx;
 
         // Must be an associated item (method in an impl block)
         if tcx.impl_of_assoc(did).is_none() {
@@ -956,14 +954,30 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             },
 
             mir::TerminatorKind::Return => {
-                // TODO: this requires additional handling for reborrows
+                let return_synty = self.ty_translator.translate_type_to_syn_type(self.return_ty)?;
+
+                // compute which lifetimes depend on local borrows
+                let mut region_folder = regions::TyRegionCollectFolder::new(self.tcx);
+                region_folder.fold_ty(self.return_ty);
+                let regions_in_return = region_folder.get_regions();
+
+                let mut lifetimes_to_extend = Vec::new();
+                for r in regions_in_return {
+                    //let atomic = self.info.mk_atomic_region(r);
+                    lifetimes_to_extend.push(self.ty_translator.translate_region_var(r)?);
+                }
+                let stmt_annots: Vec<_> = lifetimes_to_extend.into_iter().map(code::Annotation::ExtendLft).collect();
+                endlfts.insert(0, code::PrimStmt::Annot {
+                    a: stmt_annots,
+                    why: Some("return".to_owned()),
+                });
 
                 // read from the return place
                 // Is this semantics accurate wrt what the intended MIR semantics is?
                 // Possibly handle this differently by making the first argument of a function a dedicated
                 // return place? See also discussion at https://github.com/rust-lang/rust/issues/71117
                 let stmt = code::Stmt::Return(code::Expr::Move {
-                    ot: (&self.return_synty).into(),
+                    ot: (&return_synty).into(),
                     order: lang::Order::Na,
                     e: Box::new(code::Expr::Var(self.return_name.clone())),
                 });
