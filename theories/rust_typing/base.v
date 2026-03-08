@@ -186,7 +186,7 @@ Definition if_iErr {A B} (x : result A B) (ϕ : B → iProp Σ) : iProp Σ :=
   end.
 End iris.
 
-
+(** For options *)
 Definition if_Some {A} (x : option A) (ϕ : A → Prop) : Prop :=
   match x with
   | Some x => ϕ x
@@ -215,6 +215,24 @@ Definition if_iNone {A} (x : option A) (ϕ : iProp Σ) : iProp Σ :=
 End iris.
 Global Typeclasses Opaque if_iSome.
 Global Typeclasses Opaque if_iNone.
+
+(** For booleans *)
+Definition if_True (b : bool) (ϕ : Prop) : Prop :=
+  if b then ϕ else True.
+Definition if_False (b : bool) (ϕ : Prop) : Prop :=
+  if b then True else ϕ.
+
+(** The same for Iris *)
+Section iris.
+Context `{!refinedcG Σ}.
+
+Definition if_iTrue (b : bool) (ϕ : iProp Σ) : iProp Σ :=
+  if b then ϕ else True%I.
+Definition if_iFalse (b : bool) (ϕ : iProp Σ) : iProp Σ :=
+  if b then True%I else ϕ.
+End iris.
+Global Typeclasses Opaque if_iFalse.
+Global Typeclasses Opaque if_iTrue.
 
 (* TODO: upstream: overwritten to allow for more parameters *)
 Ltac my_f_equiv :=

@@ -176,7 +176,7 @@ Proof.
 Qed.
 
 (** Things for fallible ops *)
-Global Typeclasses Opaque if_None if_Ok if_Some if_Err.
+Global Typeclasses Opaque if_None if_Ok if_Some if_Err if_True if_False.
 Global Instance simpl_both_if_ok_inl {A B} (x : A) P :
   SimplBoth (if_Ok (A:=A)(B:=B) (inl x) P) (P x).
 Proof.
@@ -194,6 +194,16 @@ Proof.
 Qed.
 Global Instance simpl_both_if_none_none {A} P :
   SimplBoth (if_None (A:=A) (None) P) (P).
+Proof.
+  rewrite /SimplBoth. naive_solver.
+Qed.
+Global Instance simpl_both_if_true_true P :
+  SimplBoth (if_True true P) P.
+Proof.
+  rewrite /SimplBoth. naive_solver.
+Qed.
+Global Instance simpl_both_if_false_false P :
+  SimplBoth (if_False false P) P.
 Proof.
   rewrite /SimplBoth. naive_solver.
 Qed.
@@ -232,6 +242,8 @@ Proof.
   destruct x; naive_solver.
 Qed.
 
+
+(** miscellaneous *)
 Global Instance simplify_all_xtype `{!typeGS Σ} Q :
   SimplForall xtype 4 Q (∀ (rt : RT) (ty : type rt) (Hsz : TySized ty) (r : RT_xt rt), Q (mk_xtype (xtype_rt:=rt) ty r Hsz)).
 Proof.

@@ -272,7 +272,7 @@ Section find.
   (** FindOptLftDead *)
   Lemma subsume_lft_dead κ1 κ2 T :
     ⌜κ1 = κ2⌝ ∗ T ⊢ subsume (Σ := Σ) ([† κ1]) ([† κ2]) T.
-  Proof. iIntros "(-> & $)". eauto. Qed.
+Proof. iIntros "(-> & $)". eauto. Qed.
   Global Instance subsume_lft_dead_inst κ1 κ2 :
     Subsume ([† κ1]) ([† κ2]) := λ T, i2p (subsume_lft_dead κ1 κ2 T).
 
@@ -1187,7 +1187,8 @@ Section prove_subtype.
     iIntros "(%b & HT)". done.
   Qed.
 
-  (** Before, some simplification instances that trigger if we shouldn't destruct. *)
+  (** Instances for Option *)
+  (** first some simplification instances that trigger if we shouldn't destruct. *)
   Lemma simplify_goal_if_iSome_Some {A} (x : A) Φ T :
     (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iSome (Some x) Φ) T.
   Proof. simpl. done. Qed.
@@ -1220,6 +1221,71 @@ Section prove_subtype.
   Definition prove_with_subtype_destruct_if_iNone_inst := [instance @prove_with_subtype_destruct_if_iNone].
   Global Existing Instance prove_with_subtype_destruct_if_iNone_inst | 100.
 
+  (** Instances for Result *)
+  Lemma simplify_goal_if_iOk_Ok {A B} (x : A) Φ T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iOk (B:=B) (Ok x) Φ) T.
+  Proof. simpl. done. Qed.
+  Definition simplify_goal_if_iOk_Ok_inst := [instance @simplify_goal_if_iOk_Ok with 0%N].
+  Global Existing Instance simplify_goal_if_iOk_Ok_inst.
+  Lemma simplify_goal_if_iOk_Err {A B} (x : B) (Φ : A → iProp Σ) T :
+    T ⊢@{iProp Σ} simplify_goal (if_iOk (Err x) Φ) T.
+  Proof. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iOk_Err_inst := [instance @simplify_goal_if_iOk_Err with 0%N].
+  Global Existing Instance simplify_goal_if_iOk_Err_inst.
+  Lemma simplify_goal_if_iErr_Err {A B} (x : B) Φ T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iErr (A:=A) (Err x) Φ) T.
+  Proof. simpl. done. Qed.
+  Definition simplify_goal_if_iErr_Err_inst := [instance @simplify_goal_if_iErr_Err with 0%N].
+  Global Existing Instance simplify_goal_if_iErr_Err_inst.
+  Lemma simplify_goal_if_iErr_Ok {A B} (x : A) Φ T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iErr (B:=B) (Ok x) Φ) T.
+  Proof. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iErr_Ok_inst := [instance @simplify_goal_if_iErr_Ok with 0%N].
+  Global Existing Instance simplify_goal_if_iErr_Ok_inst.
+
+  Definition prove_with_subtype_destruct_if_iOk {A B} (x : result A B) P :=
+    prove_with_subtype_destruct x (if_iOk x P).
+  Definition prove_with_subtype_destruct_if_iOk_inst := [instance @prove_with_subtype_destruct_if_iOk].
+  Global Existing Instance prove_with_subtype_destruct_if_iOk_inst | 100.
+
+  Definition prove_with_subtype_destruct_if_iErr {A B} (x : result A B) P :=
+    prove_with_subtype_destruct x (if_iErr x P).
+  Definition prove_with_subtype_destruct_if_iErr_inst := [instance @prove_with_subtype_destruct_if_iErr].
+  Global Existing Instance prove_with_subtype_destruct_if_iErr_inst | 100.
+
+  (** Instances for bool *)
+  Lemma simplify_goal_if_iTrue_true Φ T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iTrue true Φ) T.
+  Proof. simpl. done. Qed.
+  Definition simplify_goal_if_iTrue_true_inst := [instance @simplify_goal_if_iTrue_true with 0%N].
+  Global Existing Instance simplify_goal_if_iTrue_true_inst.
+  Lemma simplify_goal_if_iTrue_false (Φ : iProp Σ) T :
+    T ⊢@{iProp Σ} simplify_goal (if_iTrue false Φ) T.
+  Proof. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iTrue_false_inst := [instance @simplify_goal_if_iTrue_false with 0%N].
+  Global Existing Instance simplify_goal_if_iTrue_false_inst.
+  Lemma simplify_goal_if_iFalse_false Φ T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iFalse false Φ) T.
+  Proof. simpl. done. Qed.
+  Definition simplify_goal_if_iFalse_false_inst := [instance @simplify_goal_if_iFalse_false with 0%N].
+  Global Existing Instance simplify_goal_if_iFalse_false_inst.
+  Lemma simplify_goal_if_iFalse_true Φ T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iFalse true Φ) T.
+  Proof. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iFalse_true_inst := [instance @simplify_goal_if_iFalse_true with 0%N].
+  Global Existing Instance simplify_goal_if_iFalse_true_inst.
+
+  Definition prove_with_subtype_destruct_if_iTrue (b : bool) P :=
+    prove_with_subtype_destruct b (if_iTrue b P).
+  Definition prove_with_subtype_destruct_if_iTrue_inst := [instance @prove_with_subtype_destruct_if_iTrue].
+  Global Existing Instance prove_with_subtype_destruct_if_iTrue_inst | 100.
+
+  Definition prove_with_subtype_destruct_if_ifalse (b : bool) P :=
+    prove_with_subtype_destruct b (if_iFalse b P).
+  Definition prove_with_subtype_destruct_if_ifalse_inst := [instance @prove_with_subtype_destruct_if_ifalse].
+  Global Existing Instance prove_with_subtype_destruct_if_ifalse_inst | 100.
+
+  (** Guarded *)
   Lemma prove_with_subtype_guarded E L b pm wl P T :
     prove_with_subtype E L b pm (maybe_creds wl ∗ P) T ⊢
     prove_with_subtype E L b pm (guarded wl P) T.

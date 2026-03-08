@@ -117,7 +117,8 @@ pub trait Iterator {
     // Postcondition: We consume a sequence of elements from the iterator
     #[rr::ensures(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π p self.cur seq s2")]
     // If true is returned, the whole iterator was consumed; otherwise, the last element didn't pass the check
-    #[rr::ensures(#iris "if ret then {Next} π p s2 None s2' else ⌜s2 = s2'⌝ ∗ ⌜∃ e, last seq = Some e ∧ ¬ P e⌝")]
+    #[rr::ensures(#iris "if_iTrue ret ({Next} π p s2 None s2')")]
+    #[rr::ensures(#iris "if_iFalse ret (⌜s2 = s2'⌝ ∗ ⌜∃ e, last seq = Some e ∧ ¬ P e⌝)")]
     // For all emitted elements, the predicate is satisfied
     #[rr::ensures("Forall P seq")]
     // Postcondition: the invariant is upheld

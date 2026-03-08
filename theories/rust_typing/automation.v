@@ -122,6 +122,24 @@ Ltac liDestruct_hook term ::=
         iRevert H
     end
   );
+  repeat iSelect (if_iFalse _ _) (fun H =>
+    match iTypeOf H with
+    | Some (_, if_iFalse ?x _) =>
+        match term with
+        | context [x] => idtac
+        end;
+        iRevert H
+    end
+  );
+  repeat iSelect (if_iTrue _ _) (fun H =>
+    match iTypeOf H with
+    | Some (_, if_iTrue ?x _) =>
+        match term with
+        | context [x] => idtac
+        end;
+        iRevert H
+    end
+  );
   try let_bind_envs
 .
 
