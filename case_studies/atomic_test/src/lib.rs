@@ -1235,3 +1235,55 @@ fn test_bool_fetch_xor(x: &MyAtomicBool) { let _v = x.fetch_xor(true); }
 #[rr::verify]
 fn test_bool_fetch_nand(x: &MyAtomicBool) { let _v = x.fetch_nand(true); }
 
+// ============================================================
+// MyAtomicPtr (*mut u8 as proxy for *mut T)
+// ============================================================
+// alias_ptr_t: refinement = loc, op_type = PtrOp
+// Phase A: load, store, swap (RmwXchg), compare_exchange, compare_exchange_weak
+
+#[repr(transparent)]
+#[rr::refined_by("()" : "unit")]
+#[rr::exists("x" : "loc")]
+#[rr::invariant("True")]
+#[rr::mode(atomic)]
+pub struct MyAtomicPtr {
+    #[rr::field("x")]
+    value: *mut u8,
+}
+
+impl MyAtomicPtr {
+    #[rr::only_spec]
+    #[rr::exists("x" : "loc")]
+    #[rr::returns("x")]
+    pub fn load(&self) -> *mut u8 { unimplemented!() }
+
+    #[rr::only_spec]
+    pub fn store(&self, _value: *mut u8) { unimplemented!() }
+
+    #[rr::only_spec]
+    #[rr::exists("x" : "loc")]
+    #[rr::returns("x")]
+    pub fn swap(&self, _value: *mut u8) -> *mut u8 { unimplemented!() }
+
+    #[rr::only_spec]
+    pub fn compare_exchange(&self, _current: *mut u8, _new: *mut u8) -> Result<*mut u8, *mut u8> { unimplemented!() }
+
+    #[rr::only_spec]
+    pub fn compare_exchange_weak(&self, _current: *mut u8, _new: *mut u8) -> Result<*mut u8, *mut u8> { unimplemented!() }
+}
+
+#[rr::verify]
+fn test_ptr_load(x: &MyAtomicPtr) { let _v = x.load(); }
+
+#[rr::verify]
+fn test_ptr_store(x: &MyAtomicPtr, p: *mut u8) { x.store(p); }
+
+#[rr::verify]
+fn test_ptr_swap(x: &MyAtomicPtr, p: *mut u8) { let _v = x.swap(p); }
+
+#[rr::verify]
+fn test_ptr_cas(x: &MyAtomicPtr, old: *mut u8, new_val: *mut u8) { let _r = x.compare_exchange(old, new_val); }
+
+#[rr::verify]
+fn test_ptr_cas_weak(x: &MyAtomicPtr, old: *mut u8, new_val: *mut u8) { let _r = x.compare_exchange_weak(old, new_val); }
+

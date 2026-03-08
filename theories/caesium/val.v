@@ -382,6 +382,7 @@ Definition val_to_Z_ot (v : val) (ot : op_type) : option Z :=
   match ot with
   | IntOp it => val_to_Z v it
   | BoolOp => bool_to_Z <$> val_to_bool v
+  | PtrOp => loc_a <$> val_to_loc v
   | _ => None
   end.
 
@@ -391,6 +392,7 @@ Proof.
   destruct ot => //=.
   - by move => /fmap_Some[?[/val_to_bool_length -> ?]].
   - by move => /val_to_Z_length ->.
+  - move => /fmap_Some[?[??]]. apply val_to_loc_length. by eexists.
 Qed.
 
 Lemma val_to_Z_ot_to_Z z it ot v:
