@@ -38,7 +38,7 @@ pub trait Iterator {
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state e,
         (☒ {Self::Next} π p_inner it_state (Some e) it_state') -∗
         Inv π it_state clos_state -∗
-        ∃ pclos, ⌜ParamPred pclos⌝ ∗ {F::Pre} π pclos clos_state *[e] ∗
+        ∃ pclos, ⌜ParamPred *[e] pclos⌝ ∗ {F::Pre} π pclos clos_state *[e] ∗
         (∀ e' clos_state', ☒ {F::PostMut} π pclos clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state' ∗ True))")]
     /// Precondition: If no element is emitted, the invariant is also upheld.
     #[rr::requires(#iris "□ (∀ it_state it_state' clos_state,

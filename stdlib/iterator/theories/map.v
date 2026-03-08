@@ -83,7 +83,7 @@ Section clos_param_variants.
 
   Definition clos_param_pred_ty (Args_rt Clos_rt Clos_out_rt : RT)
     (fnonce_attrs : FnOnce_spec_attrs Clos_rt Args_rt Clos_out_rt) :=
-    fnonce_attrs.(FnOnce_Params) → Prop.
+    RT_xt Args_rt → fnonce_attrs.(FnOnce_Params) → Prop.
   Global Arguments clos_param_pred_ty : simpl never.
 
   Context (Args_rt Clos_rt Clos_out_rt : RT)
@@ -92,17 +92,17 @@ Section clos_param_variants.
   (* Default instantiation *)
   Lemma simpl_exist_clos_param_pred_trivial Q :
     SimplExist (clos_param_pred_ty _ _ _ fnonce_attrs) Q
-      (∃ (ParamPred : fnonce_attrs.(FnOnce_Params) → Prop), Q ParamPred).
+      (∃ (ParamPred : RT_xt Args_rt → fnonce_attrs.(FnOnce_Params) → Prop), Q ParamPred).
   Proof. unfold SimplExist. done. Qed.
   Lemma simpl_forall_clos_param_pred Q :
-    SimplForall (clos_param_pred_ty _ _ _ fnonce_attrs) 1 Q (∀ (ParamPred : fnonce_attrs.(FnOnce_Params) → Prop), Q ParamPred).
+    SimplForall (clos_param_pred_ty _ _ _ fnonce_attrs) 1 Q (∀ (ParamPred : RT_xt Args_rt → fnonce_attrs.(FnOnce_Params) → Prop), Q ParamPred).
   Proof. unfold SimplForall. done. Qed.
 
   (* For trivial Params, instantiate with a trivial invariant *)
   Lemma simpl_exist_clos_param_pred_empty Q :
     TCDone (fnonce_attrs.(FnOnce_Params) = plist id []) →
     SimplExist (clos_param_pred_ty Args_rt Clos_rt Clos_out_rt fnonce_attrs) Q
-      (Q (λ _, True)).
+      (Q (λ _ _, True)).
   Proof.
     intros Hpre.
     unfold SimplExist.
@@ -126,7 +126,7 @@ Section map.
     (Pre : thread_id → ClosParams → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → iProp Σ)
     (PostMut : thread_id → ClosParams → RT_xt Clos_rt → RT_xt (tuple1_rt Item_rt) → RT_xt Clos_rt → RT_xt Clos_out_rt → iProp Σ)
     : _ → _ → _ → iProp Σ :=
-    λ (π : thread_id) (p : _ * (ClosParams → Prop)) (s : MapX Self_rt Clos_rt),
+    λ (π : thread_id) (p : _ * (RT_xt (tuple1_rt Item_rt) → ClosParams → Prop)) (s : MapX Self_rt Clos_rt),
     let '(inner_p, ParamPred) := p in
     (∃ (Inv : thread_id → RT_xt Self_rt → RT_xt Clos_rt → iProp Σ),
       (* user-picked invariant *)
@@ -137,7 +137,7 @@ Section map.
       li_sealed (□ (∀ it_state it_state' clos_state e,
         (☒ iter_attrs.(traits_iterator_Iterator_Next) π inner_p it_state (Some e) it_state') -∗
         Inv π it_state clos_state -∗
-        ∃ p_clos, ⌜ParamPred p_clos⌝ ∗ Pre π p_clos clos_state *[e] ∗
+        ∃ p_clos, ⌜ParamPred *[e] p_clos⌝ ∗ Pre π p_clos clos_state *[e] ∗
         (∀ e' clos_state', ☒ PostMut π p_clos clos_state *[e] clos_state' e' -∗ Inv π it_state' clos_state'))) ∗
       (* progress (no element) *)
       li_sealed (□ (∀ it_state it_state' clos_state,

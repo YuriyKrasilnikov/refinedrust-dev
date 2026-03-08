@@ -196,6 +196,7 @@ Ltac normalize_and_simpl_impl handle_exist :=
         fully simpl'd terms into the context (and do beta reduction
         for the lemma application above). *)
         simpl;
+        let changed := eval simpl in changed in
         lazymatch changed with
         | true => add_hint
         | false => do_intro

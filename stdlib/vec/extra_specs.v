@@ -62,6 +62,19 @@ Next Obligation.
   done.
 Qed.
 
+Global Program Instance iterator_learn_learn_slice_iter_mut T_rt p :
+  IteratorLearnInductive (IterMutaTasstd_iter_Iterator_spec_attrs T_rt) p :=
+  {| iterator_learn_inductive_Q s1 hist s2 := s1 = hist ++ s2 |}.
+Next Obligation.
+  iIntros (? [] ????) "Hx".
+  iPoseProof (boringly_persistent_elim with "Hx") as "Hx".
+  iInduction hist as [ | x hist] "IH" forall (s1 s2); simpl.
+  { iDestruct "Hx" as "->". iPureIntro. done. }
+  iDestruct "Hx" as "(%s1' & (_ & ->) & Hx)".
+  iPoseProof ("IH" with "Hx") as "->".
+  done.
+Qed.
+
 Lemma simplify_goal_slice_iter_inv T_rt π b p T :
   T
   ⊢ simplify_goal (traits_iterator_Iterator_Inv (IteraTasstd_iter_Iterator_spec_attrs T_rt) π p b) T.
