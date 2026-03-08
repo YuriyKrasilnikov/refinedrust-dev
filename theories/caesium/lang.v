@@ -552,6 +552,16 @@ Definition atomic_rmw_eval (op : atomic_rmw_op) (ot : op_type) (vo varg : val) :
           n2 ← val_to_Z varg it;
           r ← atomic_rmw_compute op n1 n2 it;
           val_of_Z r it
+      | BoolOp =>
+          b1 ← val_to_bool vo;
+          b2 ← val_to_bool varg;
+          match op with
+          | RmwAnd  => Some (val_of_bool (andb b1 b2))
+          | RmwOr   => Some (val_of_bool (orb b1 b2))
+          | RmwXor  => Some (val_of_bool (xorb b1 b2))
+          | RmwNand => Some (val_of_bool (negb (andb b1 b2)))
+          | _       => None
+          end
       | _ => None
       end
   end.
