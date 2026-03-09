@@ -108,6 +108,13 @@ Ltac ex_t_solve_persistent := fail "implement ex_t_solve_persistent".
 Global Hint Extern 10 (ExInvPersistent _) =>
   unfold ExInvPersistent; ex_t_solve_persistent : typeclass_instances.
 
+Class ExInvShrEq (P : Prop) := ex_inv_shr_eq_proof : P.
+Global Hint Mode ExInvShrEq + : typeclass_instances.
+
+Ltac ex_t_solve_shr_eq := fail "implement ex_t_solve_shr_eq".
+Global Hint Extern 10 (ExInvShrEq _) =>
+  unfold ExInvShrEq; ex_t_solve_shr_eq : typeclass_instances.
+
 Section copy.
   Context `{!typeGS Σ}.
 
@@ -115,7 +122,7 @@ Section copy.
     Copyable ty →
     (∀ π a b, (ExInvPersistent (P.(inv_P) π a b))) →
     (* Alternative: I could also require invariants to have a sharing accessor *)
-    TCDone (∀ π κ a b, P.(inv_P) π a b = P.(inv_P_shr) π κ a b) →
+    ExInvShrEq (∀ π κ a b, P.(inv_P) π a b = P.(inv_P_shr) π κ a b) →
     Copyable (ex_plain_t X Y P ty).
   Proof.
     intros Hcopy Hpers Heq. econstructor.
@@ -123,7 +130,7 @@ Section copy.
     iIntros (???? r m q ?).
     iIntros "CTX Hs Htok".
     iDestruct "Hs" as "(%x & Hshr & Hl)".
-    unfold TCDone in Heq. rewrite -Heq.
+    unfold ExInvShrEq in Heq. rewrite -Heq.
     iMod (copy_shr_acc with "CTX Hl Htok") as "(%ly & >%Hst & >%Hly & %q' & %v & Ha & Hcl)"; first done.
     iExists ly. iR. iR. iFrame. done.
   Qed.
