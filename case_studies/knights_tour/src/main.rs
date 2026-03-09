@@ -32,9 +32,8 @@ pub fn vec_iter<T>(x: &Vec<T>) -> core::slice::Iter<'_, T> {
     x.iter()
 }
 
-// #[derive(Copy, Clone)]
+#[derive(Copy, Clone)]
 #[rr::refined_by("(x, y)" : "Z * Z")]
-/* TODO(lennard): copy doesn't work. can't find typeclass instance of Copyable. */
 struct Point {
     #[rr::field("x")]
     pub x: isize,
@@ -172,49 +171,49 @@ fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
 // #[ensures(a@ * a@ <= 1_000_000)]
 // fn dumb_nonlinear_arith(a: usize) {}
 
-// #[requires(0 < size@ && size@ <= 1000)]
-// #[requires(x < size)]
-// #[requires(y < size)]
-// #[rr::requires("x < size")]
-// #[rr::requires("y < size")]
-// /* TODO(lennard): blocked on point being Copyable */
-// pub fn knights_tour(size: usize, x: usize, y: usize) -> Option<Board> {
-//     let mut board = Board::new(size);
-//     let mut p = Point { x: x as isize, y: y as isize };
-//     board.set(p, 1);
+//#[requires(0 < size@ && size@ <= 1000)]
+//#[requires(x < size)]
+//#[requires(y < size)]
+#[rr::only_spec]
+#[rr::requires("x < size")]
+#[rr::requires("y < size")]
+pub fn knights_tour(size: usize, x: usize, y: usize) -> Option<Board> {
+    let mut board = Board::new(size);
+    let mut p = Point { x: x as isize, y: y as isize };
+    board.set(p, 1);
 
-//     // snapshot! { dumb_nonlinear_arith(size) };
-//     // #[invariant(board.size == size)]
-//     // #[invariant(board.wf())]
-//     // #[invariant(board.in_bounds(p))]
-//     for step in 2..(size * size) {
-//         // choose next square by Warnsdorf's rule
-//         #[rr::inv_vars("size", "board", "p")]
-//         #[rr::invariant("board.1 = size")]
-//         #[rr::invariant("in_bounds board.1 p")]
-//         #[rr::ignore]||{};
-//         let mut candidates: Vec<(usize, Point)> = Vec::new();
-//         // #[invariant(forall<i> 0 <= i && i < candidates@.len() ==>
-//         //             board.in_bounds(candidates[i].1))]
-//         for m in moves() {
-//             #[rr::inv_vars("candidates", "board")]
-//             #[rr::invariant("∀ x, x ∈ candidates -> in_bounds board.1 x.:1")]
-//             #[rr::ignore]||{};
-//             // proof_assert! { forall<r:Seq<_>, a: Seq<_>, b:Seq<_>> r == a.concat(Seq::singleton(m).concat(b)) ==> m == r[a.len()] };
-//             let adj = p.mov(&m);
-//             if board.available(adj) {
-//                 let degree = board.count_degree(adj);
-//                 candidates.push((degree, adj));
-//             }
-//         }
-//         match min(&candidates) {
-//             Some(&(_, adj)) => p = adj,
-//             None => return None,
-//         };
-//         board.set(p, step);
-//     }
-//     Some(board)
-// }
+    // snapshot! { dumb_nonlinear_arith(size) };
+    // #[invariant(board.size == size)]
+    // #[invariant(board.wf())]
+    // #[invariant(board.in_bounds(p))]
+    for step in 2..(size * size) {
+        // choose next square by Warnsdorf's rule
+        #[rr::inv_vars("size", "board", "p")]
+        #[rr::invariant("board.1 = size")]
+        #[rr::invariant("in_bounds board.1 p")]
+        #[rr::ignore]||{};
+        let mut candidates: Vec<(usize, Point)> = Vec::new();
+        // #[invariant(forall<i> 0 <= i && i < candidates@.len() ==>
+        //             board.in_bounds(candidates[i].1))]
+        for m in moves() {
+            #[rr::inv_vars("candidates", "board")]
+            #[rr::invariant("∀ x, x ∈ candidates -> in_bounds board.1 x.:1")]
+            #[rr::ignore]||{};
+            // proof_assert! { forall<r:Seq<_>, a: Seq<_>, b:Seq<_>> r == a.concat(Seq::singleton(m).concat(b)) ==> m == r[a.len()] };
+            let adj = p.mov(&m);
+            if board.available(adj) {
+                let degree = board.count_degree(adj);
+                candidates.push((degree, adj));
+            }
+        }
+        match min(&candidates) {
+            Some(&(_, adj)) => p = adj,
+            None => return None,
+        };
+        board.set(p, step);
+    }
+    Some(board)
+}
 
 const SIZE: i64 = 5;
 
