@@ -33,33 +33,43 @@ Proof.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
   Unshelve.
-  (*assert (Hwrap : p mod int_modulus usize ≤ p).*)
 
-  - assert (Hmod: wrap_to_it p usize ≤ p).
-    { apply wrap_leq. solve_goal. }
-    lia.
+  - rewrite wrap_to_it_id; last solve_goal.
+    apply HupperX.
   - Search wrap_to_it.
     rewrite wrap_to_it_id; last solve_goal.
     rewrite wrap_to_it_id; last solve_goal.
 
     rewrite list_lookup_total_fmap; last solve_goal.
     rewrite length_fmap.
-    rewrite H13.
+    rewrite Hnestedlen.
     all : solve_goal.
-  - admit.
+  - rewrite /compose. simpl.
+    assert (Hinner :
+      ∀ x : list nat,
+        ((λ x0 : Z, # x0) <$> (Z.of_nat <$> x)) =
+        ((λ y : nat, #(Z.of_nat y)) <$> x)).
+    { intros. rewrite -list_fmap_compose. f_equal. }
+    setoid_rewrite Hinner.
+    apply list_subequiv_fmap.
+    apply list_subequiv_insert_in_r; first solve_goal.
+    done.
   - rewrite! wrap_to_it_id; [ | solve_goal..].
     eexists. split; first solve_goal.
     f_equiv.
     rewrite list_lookup_total_fmap; last solve_goal.
-    Search lookup_total insert.
     rewrite list_lookup_total_insert_eq; last solve_goal.
-    admit.
+    rewrite !list_fmap_insert.
+    f_equal.
+    { rewrite Z2Nat.id; first done. done. }
+    rewrite -list_fmap_compose.
+    rewrite /compose.
+    done.
   - rewrite! wrap_to_it_id; [ | solve_goal..].
-    Search lookup_total insert.
     rewrite list_lookup_total_insert.
     case_decide.
     + rewrite length_insert.
-      apply H13. solve_goal.
-    + apply H13. solve_goal.
+      apply Hnestedlen. solve_goal.
+    + apply Hnestedlen. solve_goal.
 Qed.
 End proof.
