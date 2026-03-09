@@ -80,7 +80,8 @@ Section def.
       - iIntros "(%len & %ly' & -> & %Hst' & %Hsz & %Hlen & Hl)".
         apply syn_type_has_layout_array_inv in Hst as (ly0 & Hst0 & -> & ?).
         assert (ly0 = ly') as ->. { by eapply syn_type_has_layout_inj. }
-        iPoseProof (array_own_val_extract_pointsto with "Hlb Hl") as "(%vs & Hl & % & Ha)"; [done.. | ].
+        iPoseProof (array_own_val_extract_pointsto with "[Hlb] Hl") as "(%vs & Hl & % & Ha)"; [done.. | | ].
+        { iApply (loc_in_bounds_shorten_suf with "Hlb"); lia. }
         iExists vs. iFrame "Hl". iExists len, ly'. do 5 iR. done.
     }
 
