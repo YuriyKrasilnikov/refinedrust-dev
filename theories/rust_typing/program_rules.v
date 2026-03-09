@@ -1189,24 +1189,24 @@ Section prove_subtype.
 
   (** Instances for Option *)
   (** first some simplification instances that trigger if we shouldn't destruct. *)
-  Lemma simplify_goal_if_iSome_Some {A} (x : A) Φ T :
-    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iSome (Some x) Φ) T.
-  Proof. simpl. done. Qed.
+  Lemma simplify_goal_if_iSome_Some {A} (x : A) Φ `{Heq: !TCDone (y = Some x)} T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iSome y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iSome_Some_inst := [instance @simplify_goal_if_iSome_Some with 0%N].
   Global Existing Instance simplify_goal_if_iSome_Some_inst.
-  Lemma simplify_goal_if_iSome_None {A} (Φ : A → iProp Σ) T :
-    T ⊢@{iProp Σ} simplify_goal (if_iSome None Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iSome_None {A} (Φ : A → iProp Σ) `{Heq : !TCDone (y = None)} T :
+    T ⊢@{iProp Σ} simplify_goal (if_iSome y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iSome_None_inst := [instance @simplify_goal_if_iSome_None with 0%N].
   Global Existing Instance simplify_goal_if_iSome_None_inst.
-  Lemma simplify_goal_if_iNone_None {A} Φ T :
-    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) None Φ) T.
-  Proof. simpl. done. Qed.
+  Lemma simplify_goal_if_iNone_None {A} Φ `{Heq: !TCDone (y = None)} T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iNone_None_inst := [instance @simplify_goal_if_iNone_None with 0%N].
   Global Existing Instance simplify_goal_if_iNone_None_inst.
-  Lemma simplify_goal_if_iNone_Some {A} (x : A) Φ T :
-    (T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) (Some x) Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iNone_Some {A} (x : A) Φ `{Heq : !TCDone (y = Some x)} T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iNone_Some_inst := [instance @simplify_goal_if_iNone_Some with 0%N].
   Global Existing Instance simplify_goal_if_iNone_Some_inst.
 
@@ -1222,24 +1222,24 @@ Section prove_subtype.
   Global Existing Instance prove_with_subtype_destruct_if_iNone_inst | 100.
 
   (** Instances for Result *)
-  Lemma simplify_goal_if_iOk_Ok {A B} (x : A) Φ T :
-    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iOk (B:=B) (Ok x) Φ) T.
-  Proof. simpl. done. Qed.
+  Lemma simplify_goal_if_iOk_Ok {A B} (x : A) Φ `{Heq : !TCDone (y = Ok x)} T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iOk (B:=B) y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iOk_Ok_inst := [instance @simplify_goal_if_iOk_Ok with 0%N].
   Global Existing Instance simplify_goal_if_iOk_Ok_inst.
-  Lemma simplify_goal_if_iOk_Err {A B} (x : B) (Φ : A → iProp Σ) T :
-    T ⊢@{iProp Σ} simplify_goal (if_iOk (Err x) Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iOk_Err {A B} (x : B) (Φ : A → iProp Σ) `{Heq : !TCDone (y = Err x)} T :
+    T ⊢@{iProp Σ} simplify_goal (if_iOk y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iOk_Err_inst := [instance @simplify_goal_if_iOk_Err with 0%N].
   Global Existing Instance simplify_goal_if_iOk_Err_inst.
-  Lemma simplify_goal_if_iErr_Err {A B} (x : B) Φ T :
-    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iErr (A:=A) (Err x) Φ) T.
-  Proof. simpl. done. Qed.
+  Lemma simplify_goal_if_iErr_Err {A B} (x : B) Φ `{Heq : !TCDone (y = Err x)} T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iErr (A:=A) y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iErr_Err_inst := [instance @simplify_goal_if_iErr_Err with 0%N].
   Global Existing Instance simplify_goal_if_iErr_Err_inst.
-  Lemma simplify_goal_if_iErr_Ok {A B} (x : A) Φ T :
-    (T) ⊢@{iProp Σ} simplify_goal (if_iErr (B:=B) (Ok x) Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iErr_Ok {A B} (x : A) Φ `{Heq : !TCDone (y = Ok x)} T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iErr (B:=B) y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iErr_Ok_inst := [instance @simplify_goal_if_iErr_Ok with 0%N].
   Global Existing Instance simplify_goal_if_iErr_Ok_inst.
 
@@ -1254,24 +1254,24 @@ Section prove_subtype.
   Global Existing Instance prove_with_subtype_destruct_if_iErr_inst | 100.
 
   (** Instances for bool *)
-  Lemma simplify_goal_if_iTrue_true Φ T :
-    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iTrue true Φ) T.
-  Proof. simpl. done. Qed.
+  Lemma simplify_goal_if_iTrue_true Φ `{Heq : !TCDone (y = true)} T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iTrue y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iTrue_true_inst := [instance @simplify_goal_if_iTrue_true with 0%N].
   Global Existing Instance simplify_goal_if_iTrue_true_inst.
-  Lemma simplify_goal_if_iTrue_false (Φ : iProp Σ) T :
-    T ⊢@{iProp Σ} simplify_goal (if_iTrue false Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iTrue_false (Φ : iProp Σ) `{Heq : !TCDone (y = false)} T :
+    T ⊢@{iProp Σ} simplify_goal (if_iTrue y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iTrue_false_inst := [instance @simplify_goal_if_iTrue_false with 0%N].
   Global Existing Instance simplify_goal_if_iTrue_false_inst.
-  Lemma simplify_goal_if_iFalse_false Φ T :
-    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iFalse false Φ) T.
-  Proof. simpl. done. Qed.
+  Lemma simplify_goal_if_iFalse_false Φ `{Heq : !TCDone (y = false)} T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iFalse y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iFalse_false_inst := [instance @simplify_goal_if_iFalse_false with 0%N].
   Global Existing Instance simplify_goal_if_iFalse_false_inst.
-  Lemma simplify_goal_if_iFalse_true Φ T :
-    (T) ⊢@{iProp Σ} simplify_goal (if_iFalse true Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iFalse_true Φ `{Heq : !TCDone (y = true)} T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iFalse y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iFalse_true_inst := [instance @simplify_goal_if_iFalse_true with 0%N].
   Global Existing Instance simplify_goal_if_iFalse_true_inst.
 
