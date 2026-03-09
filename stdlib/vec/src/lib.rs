@@ -17,6 +17,7 @@
 #![rr::include("ptr")]
 #![rr::include("ptr_advanced")]
 #![rr::include("clone")]
+#![rr::include("controlflow")]
 
 use std::alloc::{Allocator, Global};
 use std::marker::PhantomData;
@@ -93,7 +94,21 @@ impl<T, A: Allocator> Vec<T, A> {
     #[rr::args("(xs, γ)", "Z.of_nat i")]
     #[rr::requires("i < length xs")]
     #[rr::observe("γ": "delete i (<$#> xs)")]
+    #[rr::returns("xs !!! i")]
     pub fn remove(&mut self, index: usize) -> T {
+        unreachable!(); 
+    }
+
+    #[rr::requires("index < length self.cur")]
+    //#[rr::observe("self.ghost": "take index self.cur ++ take 1%nat (drop (length self.cur - (1+index) ) (drop (1 + index) self.cur))")]
+    // TODO: very weak specification for now, getting this right in all boundary conditions is
+    // tricky
+    #[rr::exists("xs")]
+    #[rr::ensures("take (Z.to_nat index) self.cur = take (Z.to_nat index) xs")]
+    #[rr::ensures("length xs = (length self.cur - 1)%nat")]
+    #[rr::observe("self.ghost": "<$#> xs")]
+    #[rr::returns("self.cur !!! Z.to_nat index")]
+    pub fn swap_remove(&mut self, index: usize) -> T {
         unreachable!(); 
     }
 

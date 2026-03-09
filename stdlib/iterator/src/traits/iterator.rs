@@ -2,6 +2,7 @@
 #![rr::import("rrstd.iterator.theories", "iterator")]
 
 use crate::adapters::map::Map;
+use std::ops::{ControlFlow, Try};
 
 // example for state changes on None:
 // - fusing iterator (make any iterator Fused)
@@ -125,12 +126,19 @@ pub trait Iterator {
     #[rr::ensures(#iris "{Inv} π p s2'")]
     // Postcondition: the iterator is updated to the new state
     #[rr::observe("self.ghost": "$# s2'")]
-    fn all<F>(&mut self, f: F) -> bool
+    fn all<F>(&mut self, mut f: F) -> bool
     where
         Self: Sized,
         F: FnMut(Self::Item) -> bool,
     {
-        unimplemented!();
+        matches!(self.try_fold((), 
+            #[rr::skip]
+            #[rr::params("pclos")]
+            #[rr::requires(#iris "{F::Pre} π pclos {f} *[b]")] 
+            #[rr::exists("res" : "bool")]
+            #[rr::ensures(#iris "{F::PostMut} π pclos {f} *[b] {f.*new} res")]
+            #[rr::returns("if res then Ok tt else Err tt")]
+            |_, b| { if f(b) { ControlFlow::Continue(()) } else { ControlFlow::Break(()) } }), ControlFlow::Continue(_))
     }
 
     #[rr::only_spec]
@@ -200,6 +208,58 @@ pub trait Iterator {
     {
         unimplemented!();
         //self.max_by(Ord::cmp)
+    }
+
+    // Closure inv gets accumulator, iterator state and closure state 
+    // P is a predicate over elements of the iterator. TODO: generalize to include the accumulator?
+    #[rr::params("p", "P" : "{xt_of Self::Item} → Prop", "ClosInv" : "thread_id → {xt_of B} → {xt_of Self} → {xt_of F} → iProp Σ")]
+    #[rr::requires(#iris "{Inv} π p self.cur")]
+    #[rr::requires(#iris "ClosInv π init self.cur f")]
+    #[rr::requires(#iris "□ (∀ acc it_state it_state' clos_state e,
+        {Self::Next} π p it_state (Some e) it_state' -∗
+        ClosInv π acc it_state clos_state -∗
+        ∃ pclos, {F::Pre} π pclos clos_state *[acc; e] ∗
+        {Self::Next} π p it_state (Some e) it_state' ∗ 
+        (∀ b clos_state', {F::PostMut} π pclos clos_state *[acc; e] clos_state' b -∗ 
+            if_iOk ({R::BranchFn} b) (λ new_acc, ⌜P e⌝ ∗ ClosInv π new_acc it_state' clos_state') ∗ 
+            if_iErr ({R::BranchFn} b) (λ err, ⌜¬ P e⌝)
+            ))")]
+    #[rr::exists("seq", "s2", "s2'")]
+    // We observe a sequence of elements emitted from the iterator.
+    #[rr::observe("self.ghost": "$# s2'")]
+    #[rr::ensures(#iris "{Inv} π p s2'")]
+    #[rr::ensures(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π p self.cur seq s2")]
+    // If Ok is returned, then we fully consumed the iterator.
+    // TODO: currently, we don't state much of anything about the accumulator, just about the
+    // sequence of elements.
+    #[rr::ensures(#iris "if_iOk ({R::BranchFn} ret) (λ ret, 
+            {Next} π p s2 None s2' ∗ 
+            ⌜Forall P seq⌝ 
+            )")]
+    #[rr::ensures(#iris "if_iErr ({R::BranchFn} ret) (λ err, 
+               ⌜s2 = s2'⌝∗ 
+               ⌜∃ e, last seq = Some e ∧ ¬ P e⌝
+            )")]
+    fn try_fold<B, F, R>(&mut self, init: B, mut f: F) -> R
+    where
+        Self: Sized,
+        F: FnMut(B, Self::Item) -> R,
+        R: Try<Output = B>,
+    {
+        let mut accum = init;
+        while let Some(x) = self.next() {
+            #[rr::params("γ", "init_state")]
+            #[rr::inv_vars("self", "accum", "f")]
+            #[rr::invariant("self.ghost = γ")]
+            #[rr::exists("seq")]
+            #[rr::invariant(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π p init_state seq self.cur")]
+            #[rr::invariant(#iris "{Inv} π p self.cur")]
+            #[rr::invariant(#iris "ClosInv π accum self.cur f")]  
+            #[rr::invariant("Forall P seq")]
+            #[rr::ignore] || {};
+            accum = f(accum, x)?;
+        }
+        try { accum }
     }
 
 

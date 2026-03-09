@@ -223,7 +223,7 @@
           {
             pname = "stdlib-iterator";
             src = ./stdlib/iterator;
-            libDeps = with packages; [stdlib-clone stdlib-closures stdlib-cmp stdlib-option stdlib-range];
+            libDeps = with packages; [stdlib-clone stdlib-closures stdlib-cmp stdlib-option stdlib-range stdlib-result stdlib-controlflow];
             withTheories = true;
           }
           {
@@ -299,7 +299,7 @@
           {
             pname = "stdlib-vec";
             src = ./stdlib/vec;
-            libDeps = with packages; [stdlib-alloc stdlib-iterator stdlib-option stdlib-rr_internal stdlib-closures stdlib-index stdlib-cmp stdlib-ptr-advanced stdlib-clone];
+            libDeps = with packages; [stdlib-alloc stdlib-iterator stdlib-option stdlib-rr_internal stdlib-closures stdlib-index stdlib-cmp stdlib-ptr-advanced stdlib-clone stdlib-controlflow];
           }
           {
             pname = "stdlib";
