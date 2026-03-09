@@ -19,22 +19,19 @@ Proof.
   Unshelve. all: sidecond_hammer.
   Unshelve.
   all: cbn.
-  - specialize H32 with x'1 s.
+  all: rename select (∀ a b : Z, _ -> a ≤ 2 ∧ _) into Hbound.
+  - have Hmem : *[x'1; s] ∈ _iter_hist_7 ++ -[x'1; s] :: x'.
+    { rewrite elem_of_app. right. rewrite elem_of_cons. left. done. }
+    apply Hbound in Hmem. lia.
+  - specialize Hbound with x'1 s.
     have Hmem : *[x'1; s] ∈ _iter_hist_7 ++ -[x'1; s] :: x'.
     { rewrite elem_of_app. right. rewrite elem_of_cons. left. done. }
-    apply H32 in Hmem as Hbnd.
-    lia.
-  - specialize H32 with x'1 s.
-    have Hmem : *[x'1; s] ∈ _iter_hist_7 ++ -[x'1; s] :: x'.
-    { rewrite elem_of_app. right. rewrite elem_of_cons. left. done. }
-    apply H32 in Hmem as Hbnd.
-    lia.
+    apply Hbound in Hmem. lia.
   - rewrite Nat2Z.inj_succ.
-    change (count + 1 ≤ Z.of_nat (length _iter_hist_7) + 1).
-    lia.
+    rewrite -Z.succ_le_mono.
+    done.
   - rewrite Nat2Z.inj_succ.
     change (count ≤ Z.of_nat (length _iter_hist_7) + 1).
     lia.
-  all: print_remaining_sidecond.
 Qed.
 End proof.
