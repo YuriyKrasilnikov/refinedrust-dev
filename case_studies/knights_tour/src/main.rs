@@ -8,7 +8,6 @@
 #![feature(custom_inner_attributes)]
 #![feature(stmt_expr_attributes)]
 #![rr::import("refinedrust.examples.knights_tour.theories", "defs")]
-
 #![rr::include("stdlib")]
 
 #[rr::only_spec]
@@ -48,15 +47,20 @@ impl Point {
     #[rr::requires("int_elem_of_it (self.2 + p.:1) isize")]
     #[rr::returns("(self.1 + p.:0, self.2 + p.:1)")]
     fn mov(&self, p: &(isize, isize)) -> Self {
-        Self { x: (self.x + p.0), y: (self.y + p.1) }
+        Self {
+            x: (self.x + p.0),
+            y: (self.y + p.1),
+        }
     }
 }
 
 #[rr::refined_by("(s, f)" : "nat * (list (list nat))")]
 #[rr::exists("field" : "list _")]
-#[rr::invariant("field = fmap (λ (x : list nat), #(fmap (λ (y: nat), #(Z.of_nat y)) x) : place_rfn (list (place_rfn Z))) f")]
+#[rr::invariant(
+    "field = fmap (λ (x : list nat), #(fmap (λ (y: nat), #(Z.of_nat y)) x) : place_rfn (list (place_rfn Z))) f"
+)]
 #[rr::invariant("s = length f")]
-#[rr::invariant("∀ i : nat, i < length f -> length (f !!! i) = s")]
+#[rr::invariant("Hnestedlen" : "∀ i : nat, i < length f -> length (f !!! i) = s")]
 pub struct Board {
     #[rr::field("Z.of_nat s")]
     pub size: usize,
@@ -65,41 +69,19 @@ pub struct Board {
 }
 
 impl Board {
-    // #[logic]
-    // fn wf(self) -> bool {
-    //     pearlite! {
-    //         self.size@ <= 1_000 &&
-    //         self.field@.len() == self.size@ &&
-    //         forall<i> 0 <= i && i < self.size@ ==> (self.field[i]@).len() == self.size@
-    //     }
-    // }
-    // #[requires(size@ <= 1000)]
-    // #[ensures(result.size == size)]
-    // #[ensures(result.wf())]
-    // #[rr::exists("rows")]
     #[rr::only_spec]
+    #[rr::requires("Z.to_nat 16 * size ∈ isize")]
     #[rr::ensures("ret.1 = Z.to_nat size")]
     fn new(size: usize) -> Self {
         let rows = (0..size)
             .map(
-                #[rr::requires("True")]
-                |_| {
-                    vec![0; size]
-                    // ::std::vec::from_elem(0, size)
-                }
+                #[rr::requires("Z.to_nat 16 * {size} ∈ isize")]
+                |_| vec![0; size],
             )
-            // .map_inv(
-            //     #[ensures(result@.len() == size@)]
-            //     |_, _| vec![0; size],
-            // )
             .collect();
         Self { size, field: rows }
     }
 
-    // #[requires(self.wf())]
-    // #[ensures(result ==> self.in_bounds(p))]
-    // #[rr::ensures()]
-    #[rr::only_spec]
     #[rr::ensures("ret -> in_bounds self.1 p")]
     /* TODO(lennard): indexing. (not enough simplification) */
     fn available(&self, p: Point) -> bool {
@@ -110,10 +92,11 @@ impl Board {
             && *vec_index(vec_index(&self.field, p.x as usize), p.y as usize) == 0
     }
 
-    // calculate the number of possible moves
-    // #[requires(self.wf())]
-    // #[requires(self.in_bounds(p))]
     #[rr::requires("in_bounds self.1 p")]
+    #[rr::requires("p.1 + 2 ∈ isize")]
+    #[rr::requires("p.1 - 2 ∈ isize")]
+    #[rr::requires("p.2 + 2 ∈ isize")]
+    #[rr::requires("p.2 - 2 ∈ isize")]
     #[rr::ensures("ret <= 8")]
     fn count_degree(&self, p: Point) -> usize {
         let mut count = 0;
@@ -121,7 +104,8 @@ impl Board {
         for m in moves() {
             #[rr::inv_vars("count")]
             #[rr::invariant("count <= length {Hist}")]
-            #[rr::ignore]||{};
+            #[rr::ignore]
+            || {};
             let next = p.mov(&m);
             if self.available(next) {
                 count += 1;
@@ -130,27 +114,20 @@ impl Board {
         count
     }
 
-    // #[requires(self.wf())]
-    // #[requires(self.in_bounds(p))]
-    // #[ensures((^self).wf())]
-    // #[ensures((^self).size == (*self).size)]
     #[rr::requires("in_bounds self.cur.1 p")]
     #[rr::exists("new_rows" : "list (list nat)")]
     #[rr::observe("self.ghost" : "(self.cur.1, new_rows)")]
-    /* TODO(lennard): indexing. (not enough simplification) */
     fn set(&mut self, p: Point, v: usize) {
         /* use wrapper for indexing: vec_index */
         let idx = vec_index_mut(&mut self.field, p.x as usize);
         *vec_index_mut(idx, p.y as usize) = v;
-        // self.field[p.x as usize][p.y as usize] = v
     }
 }
 
-// #[trusted]
-// #[ensures(result@.len() == 8)]
-// #[ensures(forall<i> 0 <= i && i < 8 ==>  -2 <= result[i].0@ && result[i].0@ <= 2 && -2 <= result[i].1@ && result[i].1@ <= 2)]
 #[rr::trust_me]
-#[rr::returns("[ *[2; 1]; *[1; 2]; *[-1; 2]; *[-2; 1]; *[-2; -1]; *[-1; -2]; *[1; -2]; *[2; -1]]")]
+// #[rr::returns("[ *[2; 1]; *[1; 2]; *[-1; 2]; *[-2; 1]; *[-2; -1]; *[-1; -2]; *[1; -2]; *[2; -1]]")]
+#[rr::ensures("∀ (a b : Z), *[a; b] ∈ ret -> (a ≤ 2)%Z ∧ (-2 ≤ a)%Z ∧ (b ≤ 2)%Z ∧ (-2 ≤ b)%Z")]
+#[rr::ensures("length ret = 8%nat")]
 fn moves() -> Vec<(isize, isize)> {
     let mut v = Vec::new();
     v.push((2, 1));
@@ -166,6 +143,7 @@ fn moves() -> Vec<(isize, isize)> {
 
 // #[ensures(forall<r: &(usize, Point)> result == Some(r) ==>
 //           exists<i> 0 <= i && i < v@.len() && v[i] == *r)]
+#[rr::only_spec]
 #[rr::ensures("if_Some ret (λ m, m ∈ v)")]
 /* TODO(lennard): figure out wth's going wrong */
 fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
@@ -173,9 +151,10 @@ fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
     // #[invariant(forall<r: &(usize, Point)> min == Some(r) ==>
     //                   exists<i> 0 <= i && i < v@.len() && v[i] == *r)]
     for x in vec_iter(v) {
-        #[rr::inv_vars("min")]
+        #[rr::inv_vars("min", "v")]
         #[rr::invariant("if_Some min (λ m, m ∈ v)")]
-        #[rr::ignore]||{};
+        #[rr::ignore]
+        || {};
         match min {
             None => min = Some(x),
             Some(m) => {
@@ -237,7 +216,7 @@ fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
 //     Some(board)
 // }
 
-const SIZE : i64 = 5;
+const SIZE: i64 = 5;
 
 fn main() {
     let (x, y) = (3, 1);
