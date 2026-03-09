@@ -6,13 +6,35 @@ Set Default Proof Using "Type".
 
 (** ** Representation of the heap. *)
 
-Inductive lock_state := WSt | RSt (n : nat).
+(** Per-byte entry in a cell's write history (weak memory).
+    All bytes of a single atomic write share identical epoch/release/view.
+    Redundant per-byte but uniform with Caesium's per-byte heap model. *)
+Record byte_write_entry := ByteWriteEntry {
+  bwe_value   : mbyte;        (** Written byte value. *)
+  bwe_epoch   : nat;          (** Monotonic per-location counter. *)
+  bwe_release : bool;         (** true = Release write. *)
+  bwe_view    : gmap loc nat; (** Snapshot of writer's coherence at write time. *)
+}.
+
+Inductive lock_state :=
+  | WSt
+  | RSt (n : nat) (max_epoch : nat)
+  | PendingSt (history : list byte_write_entry)
+.
+
+(** A cell is "idle" (ready for atomic write) when in RSt(0) or PendingSt. *)
+Definition lock_state_idle (st : lock_state) : Prop :=
+  (∃ me, st = RSt 0 me) ∨ (∃ hist, st = PendingSt hist).
 
 Record heap_cell := HeapCell {
   hc_alloc_id   : alloc_id;   (** Allocation owning the cell. *)
-  hc_lock_state : lock_state; (** Datarace detection stuff. *)
-  hc_value      : mbyte;      (** Byte value. *)
+  hc_lock_state : lock_state;  (** Datarace detection stuff. *)
+  hc_value      : mbyte;       (** Byte value. *)
+  hc_max_epoch  : nat;         (** Monotonic epoch counter, owned by the cell. *)
 }.
+
+(** Uniform accessor for the next epoch — one field access, no pattern match. *)
+Definition next_epoch_of (c : heap_cell) : nat := S c.(hc_max_epoch).
 
 Definition heap := gmap addr heap_cell.
 
@@ -25,34 +47,54 @@ Fixpoint heap_lookup (a : addr) (v : val) (Paid : alloc_id → Prop)
                      (Plk : lock_state → Prop) (h : heap) : Prop :=
   match v with
   | []     => True
-  | b :: v => (∃ aid lk, h !! a = Some (HeapCell aid lk b) ∧ Paid aid ∧ Plk lk) ∧
+  | b :: v => (∃ aid lk ep, h !! a = Some (HeapCell aid lk b ep) ∧ Paid aid ∧ Plk lk) ∧
               heap_lookup (Z.succ a) v Paid Plk h
   end.
 
-(** Function writing value [v] at address [a] in heap [h]. For all involved
-cells in the resulting heap, an allocation id and lock state is built using
-functions [faid] and [flk] respectively. These functions receive as input
-the previous value of the field (if the cell previously existed in [h]). *)
-Fixpoint heap_update (a : addr) (v : val) (faid : option alloc_id → alloc_id)
-                     (flk : option lock_state → lock_state) (h : heap) : heap :=
+(** Write value [v] at address [a] in heap [h]. Each cell is built by [fcell]
+    which receives the new byte and the previous cell (if any).
+    Use [mk_cell] / [mk_cell_weak] smart constructors for instantiation. *)
+Fixpoint heap_update (a : addr) (v : val)
+    (fcell : mbyte → option heap_cell → heap_cell) (h : heap) : heap :=
   match v with
   | []     => h
-  | b :: v => let update m :=
-                Some {|
-                  hc_alloc_id   := faid (hc_alloc_id <$> m);
-                  hc_lock_state := flk (hc_lock_state <$> m);
-                  hc_value      := b;
-                |}
-              in
-              partial_alter update a (heap_update (Z.succ a) v faid flk h)
+  | b :: v => partial_alter (λ m, Some (fcell b m)) a
+              (heap_update (Z.succ a) v fcell h)
   end.
+
+(** Smart constructor for standard writes: [faid] builds alloc_id,
+    [flk] builds lock_state, [fep] builds epoch. *)
+Definition mk_cell (faid : option alloc_id → alloc_id)
+    (flk : option lock_state → lock_state)
+    (fep : option nat → nat)
+    : mbyte → option heap_cell → heap_cell :=
+  λ b old, {|
+    hc_alloc_id   := faid (hc_alloc_id <$> old);
+    hc_lock_state := flk (hc_lock_state <$> old);
+    hc_value      := b;
+    hc_max_epoch  := fep (hc_max_epoch <$> old) |}.
+Global Arguments mk_cell _ _ _ _ _ /.
+
+(** Smart constructor for weak memory writes: [flk_w] additionally receives
+    the new byte and old (lock_state, byte) pair for per-byte PendingSt history. *)
+Definition mk_cell_weak (faid : option alloc_id → alloc_id)
+    (flk_w : mbyte → option (lock_state * mbyte) → lock_state)
+    (fep : option nat → nat)
+    : mbyte → option heap_cell → heap_cell :=
+  λ b old, {|
+    hc_alloc_id   := faid (hc_alloc_id <$> old);
+    hc_lock_state := flk_w b
+        (option_map (λ c, (c.(hc_lock_state), c.(hc_value))) old);
+    hc_value      := b;
+    hc_max_epoch  := fep (hc_max_epoch <$> old) |}.
+Global Arguments mk_cell_weak _ _ _ _ _ /.
 
 Definition heap_lookup_loc (l : loc) (v : val) (Plk : lock_state → Prop)
                            (h : heap) : Prop :=
   heap_lookup l.(loc_a) v (λ aid, l.(loc_p) = ProvAlloc aid) Plk h.
 
 Definition heap_alloc (a : addr) (v : val) (aid : alloc_id) (h : heap) : heap :=
-  heap_update a v (λ _, aid) (λ _, RSt 0%nat) h.
+  heap_update a v (mk_cell (λ _, aid) (λ _, RSt 0 0) (λ _, 0%nat)) h.
 
 Definition heap_at (l : loc) (ly : layout) (v : val) (Plk : lock_state → Prop)
                    (h : heap) : Prop :=
@@ -61,7 +103,7 @@ Definition heap_at (l : loc) (ly : layout) (v : val) (Plk : lock_state → Prop)
   heap_lookup_loc l v Plk h.
 
 Definition heap_upd (l : loc) v flk h :=
-  heap_update l.(loc_a) v (default (default dummy_alloc_id (prov_alloc_id l.(loc_p)))) flk h.
+  heap_update l.(loc_a) v (mk_cell (default (default dummy_alloc_id (prov_alloc_id l.(loc_p)))) flk (default 0%nat)) h.
 
 (** Predicate stating that the [n] first bytes from address [a] in [h] have
 not been allocated. *)
@@ -82,7 +124,7 @@ Lemma heap_lookup_inj_val a h v1 v2 Paid1 Paid2 Plk1 Plk2:
   heap_lookup a v1 Paid1 Plk1 h → heap_lookup a v2 Paid2 Plk2 h → v1 = v2.
 Proof.
   elim: v1 v2 a; first by move => [|??] //.
-  move => ?? IH [|??] //= ? [?] [[?[?[??]]]?] [[?[?[??]]]?]; simplify_eq.
+  move => ?? IH [|??] //= ? [?] [[?[?[?[??]]]]?] [[?[?[?[??]]]]?]; simplify_eq.
   f_equal. by apply: IH.
 Qed.
 
@@ -91,34 +133,31 @@ Lemma heap_lookup_is_Some a p v Paid Plk h:
   a ≤ p < a + length v →
   is_Some (h !! p).
 Proof.
-  elim: v a => /=; first lia. move => b v IH a [[aid [lk [Ha _]]] H] Hp.
+  elim: v a => /=; first lia. move => b v IH a [[aid [lk [ep [Ha _]]]] H] Hp.
   destruct (decide (p = a)) as [->|]; first naive_solver.
   apply (IH (Z.succ a)) => //. lia.
 Qed.
 
-Lemma heap_update_ext h a v faid1 faid2 flk1 flk2:
-  (∀ x, faid1 x = faid2 x) → (∀ x, flk1 x = flk2 x) →
-  heap_update a v faid1 flk1 h = heap_update a v faid2 flk2 h.
+Lemma heap_update_ext h a v fcell1 fcell2:
+  (∀ b m, fcell1 b m = fcell2 b m) →
+  heap_update a v fcell1 h = heap_update a v fcell2 h.
 Proof.
-  move => Hext1 Hext2. elim: v a => //= ?? IH ?. rewrite IH.
-  apply: partial_alter_ext => ??. by rewrite Hext1 Hext2.
+  move => Hext. elim: v a => //= ?? IH ?. rewrite IH.
+  apply: partial_alter_ext => ??. f_equal. by apply Hext.
 Qed.
 
-Lemma heap_update_lookup_not_in_range a1 a2 v faid flk h:
+Lemma heap_update_lookup_not_in_range a1 a2 v fcell h:
   a1 < a2 ∨ a2 + length v ≤ a1 →
-  heap_update a2 v faid flk h !! a1 = h !! a1.
+  heap_update a2 v fcell h !! a1 = h !! a1.
 Proof.
   elim: v a1 a2 => // ?? IH ?? H.
   rewrite lookup_partial_alter_ne /=; first apply IH; move: H => [] /=; lia.
 Qed.
 
-Lemma heap_update_lookup_in_range a1 a2 v faid flk h:
+Lemma heap_update_lookup_in_range a1 a2 v fcell h:
   a2 ≤ a1 < a2 + length v →
-  heap_update a2 v faid flk h !! a1 = Some {|
-    hc_alloc_id := faid (hc_alloc_id <$> h !! a1);
-    hc_lock_state := flk (hc_lock_state <$> h !! a1);
-    hc_value := default MPoison (v !! (Z.to_nat (a1 - a2)));
-  |}.
+  heap_update a2 v fcell h !! a1 =
+    Some (fcell (default MPoison (v !! (Z.to_nat (a1 - a2)))) (h !! a1)).
 Proof.
   elim: v a1 a2.
   - move => /= a1 a2 [??]. exfalso. lia.
@@ -145,7 +184,7 @@ Qed.
 
 Lemma heap_upd_ext h l v f1 f2:
   (∀ x, f1 x = f2 x) → heap_upd l v f1 h = heap_upd l v f2 h.
-Proof. by apply heap_update_ext. Qed.
+Proof. move => Hext. rewrite /heap_upd. apply heap_update_ext => b m /=. by rewrite Hext. Qed.
 
 Lemma heap_at_inj_val l ly h v1 v2 Plk1 Plk2:
   heap_at l ly v1 Plk1 h → heap_at l ly v2 Plk2 h → v1 = v2.
@@ -167,7 +206,7 @@ Lemma heap_upd_heap_at_id l v flk flk' h:
   heap_upd l v flk h = h.
 Proof.
   rewrite /heap_upd.
-  elim: v l => // ?? IH ? [[?[?[H[H1 ?]]]]?] Hlookup /=.
+  elim: v l => // ?? IH ? [[?[?[?[H[H1 ?]]]]]?] Hlookup /=.
   assert (∀ l, Z.succ l.(loc_a) = (l +ₗ 1).(loc_a)) as -> by done.
   rewrite IH => //. apply: partial_alter_id'.
   by rewrite H Hlookup H1 /=.
@@ -199,20 +238,20 @@ Proof.
   unfold heap_lookup_loc.
   induction v as [ | b v IH] in l, s, n, h |-*; simpl; first done.
   intros Hdisj. split.
-  - intros [(aid & lk & Hf & ? & ?) Hl].
+  - intros [(aid & lk & ep & Hf & ? & ?) Hl].
     split; first last.
     { eapply (IH _ _ (l +ₗ 1)); last done.
       simpl. intros. eapply Hdisj. lia. }
-    eexists _, _. split_and!; try done.
+    exists aid, lk, ep. split_and!; try done.
     rewrite -Hf.
     rewrite heap_free_lookup_not_in_range; first done.
     intros [Ha Hb].
     ospecialize (Hdisj l.(loc_a) _); lia.
-  - intros [(aid & lk & Hf & ? & ?) Hl].
+  - intros [(aid & lk & ep & Hf & ? & ?) Hl].
     split; first last.
     { eapply (IH _ _ (l +ₗ 1)); last done.
       simpl. intros. eapply Hdisj. lia. }
-    eexists _, _. split_and!; try done.
+    exists aid, lk, ep. split_and!; try done.
     rewrite -Hf.
     rewrite heap_free_lookup_not_in_range; first done.
     intros [Ha Hb].
@@ -613,7 +652,7 @@ Inductive free_block : heap_state → alloc_kind → loc → layout → heap_sta
     l.(loc_p) = ProvAlloc aid →
     σ.(hs_allocs) !! aid = Some al_alive →
     length v = ly.(ly_size) →
-    heap_lookup_loc l v (λ st, st = RSt 0%nat) σ.(hs_heap) →
+    heap_lookup_loc l v (λ st, lock_state_idle st) σ.(hs_heap) →
     free_block σ kind l ly {|
       hs_heap   := heap_free l.(loc_a) ly.(ly_size) σ.(hs_heap);
       hs_allocs := <[aid := al_dead]> σ.(hs_allocs);
@@ -653,7 +692,7 @@ Lemma free_block_inv hs kind l ly hs':
   l.(loc_p) = ProvAlloc aid ∧
   hs.(hs_allocs) !! aid = Some (Allocation l.(loc_a) ly.(ly_size) true kind) ∧
   length v = ly.(ly_size) ∧
-  heap_lookup_loc l v (λ st, st = RSt 0%nat) hs.(hs_heap) ∧
+  heap_lookup_loc l v (λ st, lock_state_idle st) hs.(hs_heap) ∧
   hs' = {| hs_heap := heap_free l.(loc_a) ly.(ly_size) hs.(hs_heap); hs_allocs := <[aid := Allocation l.(loc_a) ly.(ly_size) false kind]> hs.(hs_allocs); |}.
 Proof. inversion 1; eauto 10. Qed.
 
@@ -728,7 +767,7 @@ Proof.
   move => []; clear.
   move => σ1 l aid kind v alloc Haid Hfresh Halloc Hrange H.
   destruct H as (Hi1&Hi2&Hi3&Hi4&Hi5). split_and!.
-  - move => a [id??] /= Ha. destruct (decide (aid = id)) as [->|Hne].
+  - move => a [id???] /= Ha. destruct (decide (aid = id)) as [->|Hne].
     + exists alloc. split => /=; first by rewrite lookup_insert_eq.
       destruct (decide (l.(loc_a) ≤ a < l.(loc_a) + length v)) as [|Hne] => //=.
       exfalso. rewrite heap_update_lookup_not_in_range in Ha; last first.
@@ -741,7 +780,7 @@ Proof.
         eexists; by rewrite lookup_insert_ne.
       * exfalso. rewrite heap_update_lookup_in_range in Ha; last lia.
         by inversion Ha.
-  - move => a [id??] /= Ha. destruct (decide (aid = id)) as [->|Hne].
+  - move => a [id???] /= Ha. destruct (decide (aid = id)) as [->|Hne].
     + exists alloc. by rewrite lookup_insert_eq.
     + destruct (decide (a < l.(loc_a) ∨ l.(loc_a) + length v ≤ a)).
       * rewrite heap_update_lookup_not_in_range in Ha; last done.
@@ -849,19 +888,19 @@ Proof.
   apply IH. by eapply free_block_invariant.
 Qed.
 
-Lemma heap_update_heap_cell_in_range_alloc σ a v1 v2 Paid Plk faid flk:
+Lemma heap_update_heap_cell_in_range_alloc σ a v1 v2 Paid Plk faid flk fep:
   heap_state_heap_cell_in_range_alloc σ →
   heap_lookup a v1 Paid Plk σ.(hs_heap) →
   (∀ aid, faid (Some aid) = aid) →
   length v1 = length v2 →
   heap_state_heap_cell_in_range_alloc {|
-    hs_heap := heap_update a v2 faid flk σ.(hs_heap);
+    hs_heap := heap_update a v2 (mk_cell faid flk fep) σ.(hs_heap);
     hs_allocs := σ.(hs_allocs);
   |}.
 Proof.
   elim: v2 v1 a => // b2 v2 IH [] // b1 v1 a1 Hσ Hcontains Hfaid [] Hlen.
   move => a2 hc H /=. rewrite /heap_lookup -/heap_lookup in Hcontains.
-  move: Hcontains => [[id[?[Heq [??]]]] Hcontains].
+  move: Hcontains => [[id[?[?[Heq [??]]]]] Hcontains].
   destruct (decide (a1 = a2)) as [->|Hne].
   - rewrite lookup_partial_alter_eq -/heap_update in H. simplify_eq => /=.
     rewrite heap_update_lookup_not_in_range; last lia. rewrite Heq /= Hfaid.
@@ -870,19 +909,19 @@ Proof.
     by apply (IH _ _ Hσ Hcontains Hfaid Hlen a2 hc) => //.
 Qed.
 
-Lemma heap_update_heap_cell_alloc_alive σ a v1 v2 Paid Plk faid flk:
+Lemma heap_update_heap_cell_alloc_alive σ a v1 v2 Paid Plk faid flk fep:
   heap_state_heap_cell_alloc_alive σ →
   heap_lookup a v1 Paid Plk σ.(hs_heap) →
   (∀ aid, faid (Some aid) = aid) →
   length v1 = length v2 →
   heap_state_heap_cell_alloc_alive {|
-    hs_heap := heap_update a v2 faid flk σ.(hs_heap);
+    hs_heap := heap_update a v2 (mk_cell faid flk fep) σ.(hs_heap);
     hs_allocs := σ.(hs_allocs);
   |}.
 Proof.
   elim: v2 v1 a => // b2 v2 IH [] // b1 v1 a1 Hσ Hcontains Hfaid [] Hlen.
   move => a2 hc H /=. rewrite /heap_lookup -/heap_lookup in Hcontains.
-  move: Hcontains => [[id[?[Heq [??]]]] Hcontains].
+  move: Hcontains => [[id[?[?[Heq [??]]]]] Hcontains].
   destruct (decide (a1 = a2)) as [->|Hne].
   - rewrite lookup_partial_alter_eq -/heap_update in H. simplify_eq => /=.
     rewrite heap_update_lookup_not_in_range; last lia. rewrite Heq /= Hfaid.
@@ -891,13 +930,13 @@ Proof.
     by apply (IH _ _ Hσ Hcontains Hfaid Hlen a2 hc) => //.
 Qed.
 
-Lemma heap_update_alloc_alive_in_heap σ a v1 v2 Paid Plk faid flk:
+Lemma heap_update_alloc_alive_in_heap σ a v1 v2 Paid Plk faid flk fep:
   heap_state_alloc_alive_in_heap σ →
   heap_lookup a v1 Paid Plk σ.(hs_heap) →
   (∀ aid, faid (Some aid) = aid) →
   length v1 = length v2 →
   heap_state_alloc_alive_in_heap {|
-    hs_heap := heap_update a v2 faid flk σ.(hs_heap);
+    hs_heap := heap_update a v2 (mk_cell faid flk fep) σ.(hs_heap);
     hs_allocs := σ.(hs_allocs);
   |}.
 Proof.
@@ -907,13 +946,13 @@ Proof.
   - rewrite heap_update_lookup_not_in_range; last lia. by eapply H.
 Qed.
 
-Lemma heap_update_heap_state_invariant σ a v1 v2 Paid Plk faid flk:
+Lemma heap_update_heap_state_invariant σ a v1 v2 Paid Plk faid flk fep:
   heap_state_invariant σ →
   heap_lookup a v1 Paid Plk σ.(hs_heap) →
   (∀ aid, faid (Some aid) = aid) →
   length v1 = length v2 →
   heap_state_invariant {|
-    hs_heap := heap_update a v2 faid flk σ.(hs_heap);
+    hs_heap := heap_update a v2 (mk_cell faid flk fep) σ.(hs_heap);
     hs_allocs := σ.(hs_allocs);
   |}.
 Proof.

@@ -24,8 +24,11 @@ Inductive bin_op : Set :=
 Inductive un_op : Set :=
 | NotBoolOp | NotIntOp | NegOp | CastOp (ot : op_type).
 
-Inductive order : Set :=
-| ScOrd | Na1Ord | Na2Ord.
+(** Memory ordering types — separate types for read, write, and fence positions.
+    Invalid combos (e.g. release in read position) are compile-time errors. *)
+Inductive read_order : Set := RlxRd | AcqRd | ScRd | Na1Rd | Na2Rd.
+Inductive write_order : Set := RlxWr | RelWr | ScWr | Na1Wr | Na2Wr.
+Inductive fence_order : Set := FenceAcq | FenceRel | FenceAcqRel | FenceSc.
 
 Inductive atomic_rmw_op : Set :=
   | RmwXchg
@@ -33,6 +36,23 @@ Inductive atomic_rmw_op : Set :=
   | RmwAnd | RmwOr | RmwXor | RmwNand
   | RmwMaxS | RmwMinS
   | RmwMaxU | RmwMinU.
+
+(** CAS configuration — named fields instead of 5 positional parameters (S5). *)
+Record cas_config : Set := CasConfig {
+  cas_ot   : op_type;
+  cas_sr   : read_order;   (** success read ordering *)
+  cas_sw   : write_order;  (** success write ordering *)
+  cas_fr   : read_order;   (** failure read ordering *)
+  cas_weak : bool;          (** true = compare_exchange_weak (allows spurious failure) *)
+}.
+
+(** RMW configuration — named fields (S5). *)
+Record rmw_config : Set := RmwConfig {
+  rmw_op : atomic_rmw_op;
+  rmw_ot : op_type;
+  rmw_ro : read_order;     (** read ordering *)
+  rmw_wo : write_order;    (** write ordering *)
+}.
 
 Section expr.
 Local Unset Elimination Schemes.
@@ -46,9 +66,10 @@ Inductive expr :=
 | CheckUnOp (op : un_op) (ot : op_type) (e : expr)
 | CheckBinOp (op : bin_op) (ot1 ot2 : op_type) (e1 e2 : expr)
 | CopyAllocId (ot1 : op_type) (e1 : expr) (e2 : expr)
-| Deref (o : order) (ot : op_type) (memcast : bool) (e : expr)
-| CAS (ot : op_type) (e1 e2 e3 : expr)
-| AtomicRMW (op : atomic_rmw_op) (ot : op_type) (e1 e2 : expr)
+| Deref (ro : read_order) (ot : op_type) (memcast : bool) (e : expr)
+| CAS (cfg : cas_config) (e1 e2 e3 : expr)
+| AtomicRMW (cfg : rmw_config) (e1 e2 : expr)
+| Fence (fo : fence_order)
 | Call (f : expr) (args : list expr)
 | Concat (es : list expr)
 | IfE (ot : op_type) (e1 e2 e3 : expr)
@@ -67,9 +88,10 @@ Lemma expr_ind (P : expr → Prop) :
   (∀ (op : un_op) (ot : op_type) (e : expr), P e → P (CheckUnOp op ot e)) →
   (∀ (op : bin_op) (ot1 ot2 : op_type) (e1 e2 : expr), P e1 → P e2 → P (CheckBinOp op ot1 ot2 e1 e2)) →
   (∀ (ot1 : op_type) (e1 e2 : expr), P e1 → P e2 → P (CopyAllocId ot1 e1 e2)) →
-  (∀ (o : order) (ot : op_type) (memcast : bool) (e : expr), P e → P (Deref o ot memcast e)) →
-  (∀ (ot : op_type) (e1 e2 e3 : expr), P e1 → P e2 → P e3 → P (CAS ot e1 e2 e3)) →
-  (∀ (op : atomic_rmw_op) (ot : op_type) (e1 e2 : expr), P e1 → P e2 → P (AtomicRMW op ot e1 e2)) →
+  (∀ (ro : read_order) (ot : op_type) (memcast : bool) (e : expr), P e → P (Deref ro ot memcast e)) →
+  (∀ (cfg : cas_config) (e1 e2 e3 : expr), P e1 → P e2 → P e3 → P (CAS cfg e1 e2 e3)) →
+  (∀ (cfg : rmw_config) (e1 e2 : expr), P e1 → P e2 → P (AtomicRMW cfg e1 e2)) →
+  (∀ (fo : fence_order), P (Fence fo)) →
   (∀ (f : expr) (args : list expr), P f → Forall P args → P (Call f args)) →
   (∀ (es : list expr), Forall P es → P (Concat es)) →
   (∀ (ot : op_type) (e1 e2 e3 : expr), P e1 → P e2 → P e3 → P (IfE ot e1 e2 e3)) →
@@ -79,9 +101,9 @@ Lemma expr_ind (P : expr → Prop) :
   ∀ (e : expr), P e.
 Proof.
   move => *. generalize dependent P => P. match goal with | e : expr |- _ => revert e end.
-  fix FIX 1. move => [ ^e] => ?????????? Hcall Hconcat *.
-  11: { apply Hcall; [ |apply Forall_true => ?]; by apply: FIX. }
-  11: { apply Hconcat. apply Forall_true => ?. by apply: FIX. }
+  fix FIX 1. move => [ ^e] => ??????????? Hcall Hconcat *.
+  12: { apply Hcall; [ |apply Forall_true => ?]; by apply: FIX. }
+  12: { apply Hconcat. apply Forall_true => ?. by apply: FIX. }
   all: auto.
 Qed.
 
@@ -98,7 +120,7 @@ Inductive stmt :=
 | IfS (ot : op_type) (join : option label) (e : expr) (s1 s2 : stmt)
 (* m: map from values of e to indices into bs, def: default *)
 | Switch (it : int_type) (e : expr) (m : gmap Z nat) (bs : list stmt) (def : stmt)
-| Assign (o : order) (ot : op_type) (e1 e2 : expr) (s : stmt)
+| Assign (wo : write_order) (ot : op_type) (e1 e2 : expr) (s : stmt)
 (* [e_align] is the 2-logarithm of the allocation's alignment *)
 | Free (e_size : expr) (e_align : expr) (e : expr) (s : stmt)
 | SkipS (s : stmt)
@@ -123,11 +145,17 @@ Record call_frame := {
 }.
 Record thread_state := {
   ts_frames : list call_frame;
+  ts_coherence : gmap loc nat;                (** per-location frontier (weak memory) *)
+  ts_pending_views : list (gmap loc nat);     (** views from Relaxed reads, for fence(Acquire) *)
+  ts_release_view : option (gmap loc nat);    (** snapshot from fence(Release) *)
 }.
 
 
 Definition pop_frame (ts : thread_state) : thread_state :=
-  {| ts_frames := tail ts.(ts_frames) |}.
+  {| ts_frames := tail ts.(ts_frames);
+     ts_coherence := ts.(ts_coherence);
+     ts_pending_views := ts.(ts_pending_views);
+     ts_release_view := ts.(ts_release_view) |}.
 
 Definition thread_get_frame (ts : thread_state) : option call_frame :=
   head ts.(ts_frames).
@@ -143,9 +171,15 @@ Definition frame_dealloc_vars (cf : call_frame) (xs : list var_name) : call_fram
   List.fold_right (λ x cf, frame_dealloc_var cf x) cf xs.
 
 Definition thread_push_frame (ts : thread_state) (cf : call_frame) : thread_state :=
-  {| ts_frames := cf :: ts.(ts_frames) |}.
+  {| ts_frames := cf :: ts.(ts_frames);
+     ts_coherence := ts.(ts_coherence);
+     ts_pending_views := ts.(ts_pending_views);
+     ts_release_view := ts.(ts_release_view) |}.
 Definition thread_update_frame (ts : thread_state) (cf : call_frame) : thread_state :=
-  {| ts_frames := cf :: tail ts.(ts_frames) |}.
+  {| ts_frames := cf :: tail ts.(ts_frames);
+     ts_coherence := ts.(ts_coherence);
+     ts_pending_views := ts.(ts_pending_views);
+     ts_release_view := ts.(ts_release_view) |}.
 
 Definition empty_frame : call_frame := {| cf_locals := ∅ |}.
 Definition initialize_new_frame (args : list (string * layout)) (lsa : list loc) : call_frame :=
@@ -168,6 +202,23 @@ Definition heap_fmap (f : heap → heap) (σ : state) := {|
   st_thread := σ.(st_thread);
 |}.
 
+(** State update combinators (S1: one raw mechanism, three self-documenting wrappers). *)
+Definition state_update_raw (σ : state) (hs : heap_state) (threads : gmap thread_id thread_state) : state := {|
+  st_heap := hs;
+  st_fntbl := σ.(st_fntbl);
+  st_thread := threads;
+|}.
+
+Definition state_with_heap (σ : state) (hs : heap_state) : state :=
+  state_update_raw σ hs σ.(st_thread).
+
+Definition state_with_thread (σ : state) (π : thread_id) (ts : thread_state) : state :=
+  state_update_raw σ σ.(st_heap) (<[π := ts]> σ.(st_thread)).
+
+Definition state_with_heap_and_thread (σ : state) (hs : heap_state)
+    (π : thread_id) (ts : thread_state) : state :=
+  state_update_raw σ hs (<[π := ts]> σ.(st_thread)).
+
 Inductive runtime_expr :=
 (* separate from [Expr], as we need to define [of_val] *)
 | RTVal (v : val)
@@ -181,10 +232,11 @@ with rtexpr :=
 | RTCheckUnOp (op : un_op) (ot : op_type) (e : runtime_expr)
 | RTCheckBinOp (op : bin_op) (ot1 ot2 : op_type) (e1 e2 : runtime_expr)
 | RTCopyAllocId (ot1 : op_type) (e1 : runtime_expr) (e2 : runtime_expr)
-| RTDeref (o : order) (ot : op_type) (memcast : bool) (e : runtime_expr)
+| RTDeref (ro : read_order) (ot : op_type) (memcast : bool) (e : runtime_expr)
 | RTCall (f : runtime_expr) (args : list runtime_expr)
-| RTCAS (ot : op_type) (e1 e2 e3 : runtime_expr)
-| RTAtomicRMW (op : atomic_rmw_op) (ot : op_type) (e1 e2 : runtime_expr)
+| RTCAS (cfg : cas_config) (e1 e2 e3 : runtime_expr)
+| RTAtomicRMW (cfg : rmw_config) (e1 e2 : runtime_expr)
+| RTFence (fo : fence_order)
 | RTConcat (es : list runtime_expr)
 | RTAlloc (e_size : runtime_expr) (e_align : runtime_expr)
 | RTIfE (ot : op_type) (e1 e2 e3 : runtime_expr)
@@ -195,7 +247,7 @@ with rtstmt :=
 | RTReturn (e : runtime_expr)
 | RTIfS (ot : op_type) (join : option label) (e : runtime_expr) (s1 s2 : stmt)
 | RTSwitch (it : int_type) (e : runtime_expr) (m : gmap Z nat) (bs : list stmt) (def : stmt)
-| RTAssign (o : order) (ot : op_type) (e1 e2 : runtime_expr) (s : stmt)
+| RTAssign (wo : write_order) (ot : op_type) (e1 e2 : runtime_expr) (s : stmt)
 | RTFree (e_size : runtime_expr) (e_align : runtime_expr) (e : runtime_expr) (s : stmt)
 | RTSkipS (s : stmt)
 | RTStuckS
@@ -220,10 +272,11 @@ Fixpoint to_rtexpr (π : thread_id) (e : expr) : runtime_expr :=
   | CheckUnOp op ot e => Expr π $ RTCheckUnOp op ot (to_rtexpr π e)
   | CheckBinOp op ot1 ot2 e1 e2 => Expr π $ RTCheckBinOp op ot1 ot2 (to_rtexpr π e1) (to_rtexpr π e2)
   | CopyAllocId ot1 e1 e2 => Expr π $ RTCopyAllocId ot1 (to_rtexpr π e1) (to_rtexpr π e2)
-  | Deref o ot mc e => Expr π $ RTDeref o ot mc (to_rtexpr π e)
+  | Deref ro ot mc e => Expr π $ RTDeref ro ot mc (to_rtexpr π e)
   | Call f args => Expr π $ RTCall (to_rtexpr π f) (to_rtexpr π <$> args)
-  | CAS ot e1 e2 e3 => Expr π $ RTCAS ot (to_rtexpr π e1) (to_rtexpr π e2) (to_rtexpr π e3)
-  | AtomicRMW op ot e1 e2 => Expr π $ RTAtomicRMW op ot (to_rtexpr π e1) (to_rtexpr π e2)
+  | CAS cfg e1 e2 e3 => Expr π $ RTCAS cfg (to_rtexpr π e1) (to_rtexpr π e2) (to_rtexpr π e3)
+  | AtomicRMW cfg e1 e2 => Expr π $ RTAtomicRMW cfg (to_rtexpr π e1) (to_rtexpr π e2)
+  | Fence fo => Expr π $ RTFence fo
   | Concat es => Expr π $ RTConcat (to_rtexpr π <$> es)
   | IfE ot e1 e2 e3 => Expr π $ RTIfE ot (to_rtexpr π e1) (to_rtexpr π e2) (to_rtexpr π e3)
   | Alloc e_size e_align => Expr π $ RTAlloc (to_rtexpr π e_size) (to_rtexpr π e_align)
@@ -236,7 +289,7 @@ Definition to_rtstmt (π : thread_id) (f : function) (s : stmt) : runtime_expr :
   | Return e => RTReturn (to_rtexpr π e)
   | IfS ot join e s1 s2 => RTIfS ot join (to_rtexpr π e) s1 s2
   | Switch it e m bs def => RTSwitch it (to_rtexpr π e) m bs def
-  | Assign o ot e1 e2 s => RTAssign o ot (to_rtexpr π e1) (to_rtexpr π e2) s
+  | Assign wo ot e1 e2 s => RTAssign wo ot (to_rtexpr π e1) (to_rtexpr π e2) s
   | Free e_size e_align e s => RTFree (to_rtexpr π e_size) (to_rtexpr π e_align) (to_rtexpr π e) s
   | SkipS s => RTSkipS s
   | StuckS => RTStuckS
@@ -566,6 +619,49 @@ Definition atomic_rmw_eval (op : atomic_rmw_op) (ot : op_type) (vo varg : val) :
       end
   end.
 
+(*** Pure helpers for weak memory step rules (S2, S3, S4) *)
+
+(** Apply read-side view handling based on read ordering (S4). *)
+Definition apply_read_view (ro : read_order) (ts : thread_state)
+    (view : gmap loc nat) : thread_state :=
+  match ro with
+  | AcqRd | ScRd =>
+      {| ts_frames := ts.(ts_frames);
+         ts_coherence := union_with (λ a b, Some (Nat.max a b)) ts.(ts_coherence) view;
+         ts_pending_views := ts.(ts_pending_views);
+         ts_release_view := ts.(ts_release_view) |}
+  | RlxRd =>
+      {| ts_frames := ts.(ts_frames);
+         ts_coherence := ts.(ts_coherence);
+         ts_pending_views := view :: ts.(ts_pending_views);
+         ts_release_view := ts.(ts_release_view) |}
+  | Na1Rd | Na2Rd => ts
+  end.
+
+(** Compute a write entry based on write ordering (S4). *)
+Definition compute_write_entry (wo : write_order) (ts : thread_state)
+    (new_val : mbyte) (epoch : nat) : byte_write_entry :=
+  match wo with
+  | RelWr | ScWr =>
+      {| bwe_value := new_val; bwe_epoch := epoch;
+         bwe_release := true; bwe_view := ts.(ts_coherence) |}
+  | RlxWr =>
+      let view := default ∅ ts.(ts_release_view) in
+      let rel := match ts.(ts_release_view) with Some _ => true | None => false end in
+      {| bwe_value := new_val; bwe_epoch := epoch;
+         bwe_release := rel; bwe_view := view |}
+  | Na1Wr | Na2Wr =>
+      {| bwe_value := new_val; bwe_epoch := epoch;
+         bwe_release := false; bwe_view := ∅ |}
+  end.
+
+(** Update thread coherence for a specific location (helper). *)
+Definition thread_update_coherence (ts : thread_state) (l : loc) (epoch : nat) : thread_state :=
+  {| ts_frames := ts.(ts_frames);
+     ts_coherence := <[l := epoch]> ts.(ts_coherence);
+     ts_pending_views := ts.(ts_pending_views);
+     ts_release_view := ts.(ts_release_view) |}.
+
 (*** Evaluation of Expressions *)
 
 Inductive expr_step : expr → thread_id → state → list Empty_set → runtime_expr → state → list runtime_expr → Prop :=
@@ -588,24 +684,27 @@ Inductive expr_step : expr → thread_id → state → list Empty_set → runtim
     thread_get_frame ts = Some cf →
     cf.(cf_locals) !! x = Some (l, ly) →
     expr_step (Var x) π σ [] (RTVal (val_of_loc l)) σ []
-| DerefS o v l ot v' σ π (mc : bool):
-    let start_st st := ∃ n, st = if o is Na2Ord then RSt (S n) else RSt n in
+| DerefS ro v l ot v' σ π (mc : bool):
+    let start_st st := match ro with
+      | Na2Rd => ∃ n me, st = RSt (S n) me
+      | _ => ∃ n me, st = RSt n me
+      end in
     let end_st st :=
-      match o, st with
-      | Na1Ord, Some (RSt n)     => RSt (S n)
-      | Na2Ord, Some (RSt (S n)) => RSt n
-      | ScOrd , Some st          => st
-      |  _    , _                => WSt (* unreachable *)
+      match ro, st with
+      | Na1Rd, Some (RSt n me)     => RSt (S n) me
+      | Na2Rd, Some (RSt (S n) me) => RSt n me
+      | ScRd , Some st          => st
+      |  _    , _               => WSt (* unreachable *)
       end
     in
     let end_expr :=
-      if o is Na1Ord then
-        Deref Na2Ord ot mc (Val v)
-      else
-        Val (if mc then mem_cast v' ot (dom σ.(st_fntbl), σ.(st_heap)) else v') in
+      match ro with
+      | Na1Rd => Deref Na2Rd ot mc (Val v)
+      | _ => Val (if mc then mem_cast v' ot (dom σ.(st_fntbl), σ.(st_heap)) else v')
+      end in
     val_to_loc v = Some l →
     heap_at l (ot_layout ot) v' start_st σ.(st_heap).(hs_heap) →
-    expr_step (Deref o ot mc (Val v)) π σ [] (to_rtexpr π end_expr) (heap_fmap (heap_upd l v' end_st) σ) []
+    expr_step (Deref ro ot mc (Val v)) π σ [] (to_rtexpr π end_expr) (heap_fmap (heap_upd l v' end_st) σ) []
 (* Rust-style CAS: expected by value, returns old value.
    CAS ot v1 v2 v3 where:
      v1 = pointer to target atomic location
@@ -614,37 +713,42 @@ Inductive expr_step : expr → thread_id → state → list Empty_set → runtim
    Returns: old value from target (vo), uniform with AtomicRMW.
    On success (vo == v2 as integers): target ← v3.
    On failure (vo ≠ v2 as integers): target unchanged. *)
-| CasFailS ot l vo σ π z1 z2 v1 v2 v3:
+(* CAS failure: genuine mismatch OR spurious failure (weak=true).
+   Accepts idle lock states (RSt 0 or PendingSt) via lock_state_idle. *)
+| CasFailS cfg l vo σ π z1 z2 v1 v2 v3:
     val_to_loc v1 = Some l →
-    heap_at l (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
-    val_to_Z_ot vo ot = Some z1 →
-    val_to_Z_ot v2 ot = Some z2 →
-    v2 `has_layout_val` ot_layout ot →
-    v3 `has_layout_val` ot_layout ot →
-    ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
-    z1 ≠ z2 →
-    expr_step (CAS ot (Val v1) (Val v2) (Val v3)) π σ []
+    heap_at l (ot_layout cfg.(cas_ot)) vo (λ st, lock_state_idle st) σ.(st_heap).(hs_heap) →
+    val_to_Z_ot vo cfg.(cas_ot) = Some z1 →
+    val_to_Z_ot v2 cfg.(cas_ot) = Some z2 →
+    v2 `has_layout_val` ot_layout cfg.(cas_ot) →
+    v3 `has_layout_val` ot_layout cfg.(cas_ot) →
+    ((ot_layout cfg.(cas_ot)).(ly_size) ≤ bytes_per_addr)%nat →
+    (z1 ≠ z2 ∨ cfg.(cas_weak) = true) →
+    expr_step (CAS cfg (Val v1) (Val v2) (Val v3)) π σ []
               (RTVal vo) σ []
-| CasSucS ot l vo σ π z1 z2 v1 v2 v3:
+(* CAS success: z1 = z2 → write desired value.
+   Accepts idle lock states (RSt 0 or PendingSt) via lock_state_idle. *)
+| CasSucS cfg l vo σ π z1 z2 v1 v2 v3:
     val_to_loc v1 = Some l →
-    heap_at l (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
-    val_to_Z_ot vo ot = Some z1 →
-    val_to_Z_ot v2 ot = Some z2 →
-    v2 `has_layout_val` ot_layout ot →
-    v3 `has_layout_val` ot_layout ot →
-    ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
+    heap_at l (ot_layout cfg.(cas_ot)) vo (λ st, lock_state_idle st) σ.(st_heap).(hs_heap) →
+    val_to_Z_ot vo cfg.(cas_ot) = Some z1 →
+    val_to_Z_ot v2 cfg.(cas_ot) = Some z2 →
+    v2 `has_layout_val` ot_layout cfg.(cas_ot) →
+    v3 `has_layout_val` ot_layout cfg.(cas_ot) →
+    ((ot_layout cfg.(cas_ot)).(ly_size) ≤ bytes_per_addr)%nat →
     z1 = z2 →
-    expr_step (CAS ot (Val v1) (Val v2) (Val v3)) π σ []
-              (RTVal vo) (heap_fmap (heap_upd l v3 (λ _, RSt 0%nat)) σ) []
-| AtomicRMWS op ot l vo σ π v1 v2 v_new:
+    expr_step (CAS cfg (Val v1) (Val v2) (Val v3)) π σ []
+              (RTVal vo) (heap_fmap (heap_upd l v3 (λ _, RSt 0 0)) σ) []
+(* Accepts idle lock states (RSt 0 or PendingSt) via lock_state_idle. *)
+| AtomicRMWS cfg l vo σ π v1 v2 v_new:
     val_to_loc v1 = Some l →
-    heap_at l (ot_layout ot) vo (λ st, st = RSt 0%nat) σ.(st_heap).(hs_heap) →
-    v2 `has_layout_val` ot_layout ot →
-    v_new `has_layout_val` ot_layout ot →
-    ((ot_layout ot).(ly_size) ≤ bytes_per_addr)%nat →
-    atomic_rmw_eval op ot vo v2 = Some v_new →
-    expr_step (AtomicRMW op ot (Val v1) (Val v2)) π σ []
-              (RTVal vo) (heap_fmap (heap_upd l v_new (λ _, RSt 0%nat)) σ) []
+    heap_at l (ot_layout cfg.(rmw_ot)) vo (λ st, lock_state_idle st) σ.(st_heap).(hs_heap) →
+    v2 `has_layout_val` ot_layout cfg.(rmw_ot) →
+    v_new `has_layout_val` ot_layout cfg.(rmw_ot) →
+    ((ot_layout cfg.(rmw_ot)).(ly_size) ≤ bytes_per_addr)%nat →
+    atomic_rmw_eval cfg.(rmw_op) cfg.(rmw_ot) vo v2 = Some v_new →
+    expr_step (AtomicRMW cfg (Val v1) (Val v2)) π σ []
+              (RTVal vo) (heap_fmap (heap_upd l v_new (λ _, RSt 0 0)) σ) []
 | CallS π lsa σ hs' ts ts' vf vs f fn a:
     val_to_loc vf = Some f →
     f = fn_loc a →
@@ -696,20 +800,52 @@ Inductive expr_step : expr → thread_id → state → list Empty_set → runtim
     val_to_Z v_align USize = Some (Z.of_nat n_align) →
     n_size > 0 →
     expr_step (Alloc (Val v_size) (Val v_align)) π σ [] AllocFailed σ []
+(* Fence — thread-only transition, no heap (R12f). *)
+| FenceS fo π σ ts ts':
+    state_get_thread σ π = Some ts →
+    ts' = match fo with
+          | FenceAcq =>
+              {| ts_frames := ts.(ts_frames);
+                 ts_coherence := fold_left (union_with (λ a b, Some (Nat.max a b)))
+                                           ts.(ts_pending_views) ts.(ts_coherence);
+                 ts_pending_views := [];
+                 ts_release_view := ts.(ts_release_view) |}
+          | FenceRel =>
+              {| ts_frames := ts.(ts_frames);
+                 ts_coherence := ts.(ts_coherence);
+                 ts_pending_views := ts.(ts_pending_views);
+                 ts_release_view := Some ts.(ts_coherence) |}
+          | FenceAcqRel =>
+              let coh' := fold_left (union_with (λ a b, Some (Nat.max a b)))
+                                    ts.(ts_pending_views) ts.(ts_coherence) in
+              {| ts_frames := ts.(ts_frames);
+                 ts_coherence := coh';
+                 ts_pending_views := [];
+                 ts_release_view := Some coh' |}
+          | FenceSc =>
+              let coh' := fold_left (union_with (λ a b, Some (Nat.max a b)))
+                                    ts.(ts_pending_views) ts.(ts_coherence) in
+              {| ts_frames := ts.(ts_frames);
+                 ts_coherence := coh';
+                 ts_pending_views := [];
+                 ts_release_view := Some coh' |}
+          end →
+    expr_step (Fence fo) π σ []
+              (RTVal []) (state_with_thread σ π ts') []
 (* no rule for StuckE *)
 .
 
 (*** Evaluation of statements *)
 Inductive stmt_step : stmt → thread_id → function → state → list Empty_set → runtime_expr → state → list runtime_expr → Prop :=
-| AssignS (o : order) π rf σ s v1 v2 l v' ot:
-    let start_st st := st = if o is Na2Ord then WSt else RSt 0%nat in
-    let end_st _ := if o is Na1Ord then WSt else RSt 0%nat in
-    let end_val  := if o is Na1Ord then v' else v2 in
-    let end_stmt := if o is Na1Ord then Assign Na2Ord ot (Val v1) (Val v2) s else s in
+| AssignS (wo : write_order) π rf σ s v1 v2 l v' ot:
+    let start_st st := match wo with Na2Wr => st = WSt | _ => ∃ me, st = RSt 0 me end in
+    let end_st _ := match wo with Na1Wr => WSt | _ => RSt 0 0 end in
+    let end_val  := match wo with Na1Wr => v' | _ => v2 end in
+    let end_stmt := match wo with Na1Wr => Assign Na2Wr ot (Val v1) (Val v2) s | _ => s end in
     val_to_loc v1 = Some l →
     v2 `has_layout_val` (ot_layout ot) →
     heap_at l (ot_layout ot) v' start_st σ.(st_heap).(hs_heap) →
-    stmt_step (Assign o ot (Val v1) (Val v2) s) π rf σ [] (to_rtstmt π rf end_stmt) (heap_fmap (heap_upd l end_val end_st) σ) []
+    stmt_step (Assign wo ot (Val v1) (Val v2) s) π rf σ [] (to_rtstmt π rf end_stmt) (heap_fmap (heap_upd l end_val end_st) σ) []
 | IfSS ot join v s1 s2 π rf σ b:
     cast_to_bool ot v σ.(st_heap) = Some b →
     stmt_step (IfS ot join (Val v) s1 s2) π rf σ [] (to_rtstmt π rf ((if b then s1 else s2))) σ []
@@ -837,14 +973,14 @@ Inductive expr_ectx :=
 | CheckBinOpRCtx (op : bin_op) (ot1 ot2 : op_type) (v1 : val)
 | CopyAllocIdLCtx (ot1 : op_type) (e2 : runtime_expr)
 | CopyAllocIdRCtx (ot1 : op_type) (v1 : val)
-| DerefCtx (o : order) (ot : op_type) (memcast : bool)
+| DerefCtx (ro : read_order) (ot : op_type) (memcast : bool)
 | CallLCtx (args : list runtime_expr)
 | CallRCtx (f : val) (vl : list val) (el : list runtime_expr)
-| CASLCtx (ot : op_type) (e2 e3 : runtime_expr)
-| CASMCtx (ot : op_type) (v1 : val) (e3 : runtime_expr)
-| CASRCtx (ot : op_type) (v1 v2 : val)
-| AtomicRMWLCtx (op : atomic_rmw_op) (ot : op_type) (e2 : runtime_expr)
-| AtomicRMWRCtx (op : atomic_rmw_op) (ot : op_type) (v1 : val)
+| CASLCtx (cfg : cas_config) (e2 e3 : runtime_expr)
+| CASMCtx (cfg : cas_config) (v1 : val) (e3 : runtime_expr)
+| CASRCtx (cfg : cas_config) (v1 v2 : val)
+| AtomicRMWLCtx (cfg : rmw_config) (e2 : runtime_expr)
+| AtomicRMWRCtx (cfg : rmw_config) (v1 : val)
 | ConcatCtx (vs : list val) (es : list runtime_expr)
 | IfECtx (ot : op_type) (e2 e3 : runtime_expr)
 | AllocLCtx (e_align : runtime_expr)
@@ -862,14 +998,14 @@ Definition expr_fill_item (Ki : expr_ectx) (e : runtime_expr) : rtexpr :=
   | CheckBinOpRCtx op ot1 ot2 v1 => RTCheckBinOp op ot1 ot2 (RTVal v1) e
   | CopyAllocIdLCtx ot1 e2 => RTCopyAllocId ot1 e e2
   | CopyAllocIdRCtx ot1 v1 => RTCopyAllocId ot1 (RTVal v1) e
-  | DerefCtx o l mc => RTDeref o l mc e
+  | DerefCtx ro l mc => RTDeref ro l mc e
   | CallLCtx args => RTCall e args
   | CallRCtx f vl el => RTCall (RTVal f) (((RTVal <$> vl)) ++ e :: el)
-  | CASLCtx ot e2 e3 => RTCAS ot e e2 e3
-  | CASMCtx ot v1 e3 => RTCAS ot (RTVal v1) e e3
-  | CASRCtx ot v1 v2 => RTCAS ot (RTVal v1) (RTVal v2) e
-  | AtomicRMWLCtx op ot e2 => RTAtomicRMW op ot e e2
-  | AtomicRMWRCtx op ot v1 => RTAtomicRMW op ot (RTVal v1) e
+  | CASLCtx cfg e2 e3 => RTCAS cfg e e2 e3
+  | CASMCtx cfg v1 e3 => RTCAS cfg (RTVal v1) e e3
+  | CASRCtx cfg v1 v2 => RTCAS cfg (RTVal v1) (RTVal v2) e
+  | AtomicRMWLCtx cfg e2 => RTAtomicRMW cfg e e2
+  | AtomicRMWRCtx cfg v1 => RTAtomicRMW cfg (RTVal v1) e
   | ConcatCtx vs es => RTConcat (((RTVal <$> vs)) ++ e :: es)
   | IfECtx ot e2 e3 => RTIfE ot e e2 e3
   | AllocLCtx e_align => RTAlloc e e_align
@@ -880,8 +1016,8 @@ Definition expr_fill_item (Ki : expr_ectx) (e : runtime_expr) : rtexpr :=
 (** Statements *)
 Inductive stmt_ectx :=
 (* Assignment is evalutated right to left, otherwise we need to split contexts *)
-| AssignRCtx (o : order) (ot : op_type) (e1 : expr) (s : stmt)
-| AssignLCtx (o : order) (ot : op_type) (v2 : val) (s : stmt)
+| AssignRCtx (wo : write_order) (ot : op_type) (e1 : expr) (s : stmt)
+| AssignLCtx (wo : write_order) (ot : op_type) (v2 : val) (s : stmt)
 | ReturnCtx
 | FreeLCtx (e_align : expr) (e : expr) (s : stmt)
 | FreeMCtx (v_size : val) (e : expr) (s : stmt)
@@ -893,8 +1029,8 @@ Inductive stmt_ectx :=
 
 Definition stmt_fill_item (π : thread_id) (Ki : stmt_ectx) (e : runtime_expr) : rtstmt :=
   match Ki with
-  | AssignRCtx o ot e1 s => RTAssign o ot (to_rtexpr π e1) e s
-  | AssignLCtx o ot v2 s => RTAssign o ot e (RTVal v2) s
+  | AssignRCtx wo ot e1 s => RTAssign wo ot (to_rtexpr π e1) e s
+  | AssignLCtx wo ot v2 s => RTAssign wo ot e (RTVal v2) s
   | ReturnCtx => RTReturn e
   | FreeLCtx e_align e' s => RTFree e (to_rtexpr π e_align) (to_rtexpr π e') s
   | FreeMCtx v_size e' s => RTFree (RTVal v_size) e (to_rtexpr π e') s
@@ -987,7 +1123,8 @@ Global Instance heap_state_inhabited : Inhabited heap_state :=
 Global Instance call_frame_inhabited : Inhabited call_frame :=
   populate {| cf_locals := inhabitant |}.
 Global Instance thread_state_inhabited : Inhabited thread_state :=
-  populate {| ts_frames := inhabitant |}.
+  populate {| ts_frames := inhabitant; ts_coherence := inhabitant;
+              ts_pending_views := inhabitant; ts_release_view := inhabitant |}.
 Global Instance state_inhabited : Inhabited state :=
   populate {| st_heap := inhabitant; st_fntbl := inhabitant; st_thread := inhabitant |}.
 
