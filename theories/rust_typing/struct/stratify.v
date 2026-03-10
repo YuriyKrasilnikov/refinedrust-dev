@@ -118,7 +118,7 @@ Section stratify.
               end
             else
               (* unfold to an OpenedLtype *)
-              ⌜ma = StratNoRefold⌝ ∗
+              ⌜fast_eq_hint (ma = StratNoRefold)⌝ ∗
               T L2 R _ (OpenedLtype (StructLtype lts' sls) (StructLtype lts sls) (StructLtype lts sls) (λ r1 r2, ⌜r1 = r2⌝) (λ _ _, llft_elt_toks κs)) (#rs')
           )) (zip (hzipl _ lts) (hzipl _ lts')) (UpdUniq []) ))
     ⊢ stratify_ltype π E L mu mdu ma m l (StructLtype lts sls) (#rs) (Uniq κ γ) T.
