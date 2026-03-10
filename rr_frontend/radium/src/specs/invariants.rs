@@ -452,8 +452,17 @@ impl Spec {
         let rt_instantiations = all_ty_params.get_coq_ty_rt_params().make_using_terms();
         let applied_base_rt = coq::term::App::new(base_rfn_type, rt_instantiations.clone());
 
+        let attr_binders = scope.get_all_attr_trait_parameters(IncludeSelfReq::Dont);
+        let attr_binders_uses = attr_binders.make_using_terms();
+
         // get the applied base type
-        let applied_base_type = coq::term::App::new(base_type_name, rt_instantiations.clone());
+        let applied_base_type = coq::term::App::new(
+            coq::term::Term::App(Box::new(coq::term::App::new(
+                coq::term::Term::Literal(base_type_name.to_owned()),
+                rt_instantiations.clone(),
+            ))),
+            attr_binders_uses,
+        );
         let applied_base_type = format!("({applied_base_type} {})", scope.identity_instantiation_term());
 
         write!(

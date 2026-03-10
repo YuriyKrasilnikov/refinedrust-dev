@@ -162,13 +162,15 @@ impl<'def> AbstractVariant<'def> {
     #[must_use]
     pub(crate) fn generate_coq_type_def_core(
         &self,
-        ty_params: &GenericScope<'def>,
+        scope: &GenericScope<'def>,
         ty_context_names: &[String],
         rt_context_names: &[String],
     ) -> coq::Document {
         let mut document = coq::Document::default();
 
-        let all_ty_params = ty_params.get_all_ty_params_with_assocs();
+        let all_ty_params = scope.get_all_ty_params_with_assocs();
+
+        let attr_binders = scope.get_all_attr_trait_parameters(super::IncludeSelfReq::Dont);
 
         // Generate terms to apply the sls app to
         let sls_app: Vec<_> = all_ty_params
@@ -189,10 +191,9 @@ impl<'def> AbstractVariant<'def> {
         document.push(coq::command::Definition {
             program_mode: false,
             name: self.plain_ty_name.clone(),
-            params: coq::binder::BinderList::empty(),
+            params: attr_binders,
             ty: Some(
-                ty_params
-                    .get_spec_all_type_term(Box::new(model::Type::Ttype(Box::new(self.rfn_type()))).into()),
+                scope.get_spec_all_type_term(Box::new(model::Type::Ttype(Box::new(self.rfn_type()))).into()),
             ),
             body: coq::command::DefinitionBody::Proof(coq::proof::Proof::new_using(
                 ty_context_names.join(" "),
@@ -200,7 +201,7 @@ impl<'def> AbstractVariant<'def> {
                 |proof| {
                     proof.push(coq::ltac::LTac::Exact(coq::term::Term::App(Box::new(coq::term::App::new(
                         // TODO: `ty_params` must create a specific Coq object.
-                        coq::term::Term::Literal(ty_params.to_string()),
+                        coq::term::Term::Literal(scope.to_string()),
                         vec![coq::term::Term::Literal(self.get_coq_type_term(sls_app).to_string())],
                     )))));
                 },
@@ -506,6 +507,14 @@ impl<'def> Abstract<'def> {
             let rfn_type = &inv.rfn_type;
             let spec_name = inv.spec_name();
 
+            let attr_binders = self.scope.get_all_attr_trait_parameters(super::IncludeSelfReq::Dont);
+            let attr_binders_uses = attr_binders.make_using_terms();
+            let attr_binders_uses = fmt_list!(attr_binders_uses, " ");
+
+            if !attr_binders.0.is_empty() {
+                write!(out, "{}\n\n", coq::command::Context::new(attr_binders)).unwrap();
+            }
+
             write!(
                 out,
                 "{indent}Definition {type_name}_rec {} ({type_name}_rec' : type ({rfn_type})) : type ({rfn_type}) :=\n",
@@ -513,7 +522,7 @@ impl<'def> Abstract<'def> {
                 ).unwrap();
             write!(
                 out,
-                "{indent}{indent}let {type_name} {ty_rt_uses} := {} {type_name}_rec' in\n",
+                "{indent}{indent}let {type_name} {ty_rt_uses} {attr_binders_uses} := {} {type_name}_rec' in\n",
                 self.scope,
             )
             .unwrap();
@@ -521,7 +530,7 @@ impl<'def> Abstract<'def> {
             #[expect(deprecated)]
             write!(
                 out,
-                "{indent}{indent}ex_plain_t _ _ ({spec_name} {}) ({}).\n",
+                "{indent}{indent}ex_plain_t _ _ ({spec_name} {attr_binders_uses} {}) ({}).\n",
                 self.scope.identity_instantiation_term(),
                 self.variant_def.generate_coq_type_term(sls_app)
             )
