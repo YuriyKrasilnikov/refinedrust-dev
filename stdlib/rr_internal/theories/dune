@@ -3,4 +3,4 @@
 (package refinedrust-stdlib)
 (name rrstd.rr_internal.theories)
 (generate_project_file)
-(theories stdpp iris iris_contrib Ltac2 Stdlib Equations lrust caesium lithium refinedrust rrstd.alloc.alloc.generated rrstd.alloc.theories rrstd.clone.clone.generated rrstd.mem.mem.generated rrstd.mem.theories rrstd.sized.sized.generated rrstd.ptr.ptr.generated rrstd.ptr.theories rrstd.num.num.generated rrstd.option.option.generated rrstd.closures.closures.generated rrstd.result.result.generated rrstd.result.theories))
+(theories stdpp iris iris_contrib Ltac2 Stdlib Equations lrust caesium lithium refinedrust rrstd.alloc.alloc.generated rrstd.alloc.theories rrstd.clone.clone.generated rrstd.mem.mem.generated rrstd.mem.theories rrstd.sized.sized.generated rrstd.ptr.ptr.generated rrstd.ptr.theories rrstd.num.num.generated rrstd.option.option.generated rrstd.closures.closures.generated rrstd.closures.theories rrstd.result.result.generated rrstd.result.theories))
