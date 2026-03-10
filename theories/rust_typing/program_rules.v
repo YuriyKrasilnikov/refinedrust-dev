@@ -1702,6 +1702,18 @@ Section subsume.
   Qed.
   Definition prove_place_cond_blocked_r_Strong_inst := [instance @prove_place_cond_blocked_r_Strong].
   Global Existing Instance prove_place_cond_blocked_r_Strong_inst | 5.
+
+  Lemma prove_place_cond_blocked_blocked E L {rt} (ty : type rt) κ' T :
+    T (mkPUKRes (UpdUniq [κ']) opt_place_update_eq_refl opt_place_update_eq_refl) ⊢
+    prove_place_cond E L UpdStrong (BlockedLtype ty κ') (BlockedLtype ty κ') T.
+  Proof.
+    iIntros "HT". iIntros (F ?) "#CTX HE HL".
+    iFrame. iL. simpl.
+    iApply typed_place_cond_blocked_l.
+    iApply ofty_blocked_place_cond. iApply place_update_kind_incl_refl.
+  Qed.
+  Definition prove_place_cond_blocked_blocked_inst := [instance @prove_place_cond_blocked_blocked].
+  Global Existing Instance prove_place_cond_blocked_blocked_inst | 4.
   (* no shared lemma *)
 
   Lemma prove_place_cond_blocked_l E L {rt rt2} (ty : type rt) (lt : ltype rt2) b κ'  T :
@@ -5016,7 +5028,7 @@ Section subsume.
   Definition typed_context_fold_extract_interp (π : thread_id) := λ '(ctx, R), (type_ctx_interp π ctx ∗ R)%I.
   Lemma typed_context_fold_step_extract π E L l {rt} (lt : ltype rt) (r : place_rfn rt) (tctx : list loc) acc R κ T :
     stratify_ltype_extract π E L StratNoRefold l lt r (Owned) κ
-      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_stratify_interp π) E L' (CtxFoldExtractAll κ) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
+      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_extract_interp π) E L' (CtxFoldExtractAll κ) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
     ⊢ typed_context_fold_step (typed_context_fold_extract_interp π) π E L (CtxFoldExtractAll κ) l lt r tctx (acc, R) T.
   Proof.
     iIntros "Hstrat". iIntros (????) "#CTX #HE HL Hdel Hl".
@@ -5034,8 +5046,8 @@ Section subsume.
 
   Lemma typed_context_fold_extract_init π E L κ T :
     li_tactic find_spatial_locs_goal (λ tctx,
-    typed_context_fold (typed_context_fold_stratify_interp π) E L (CtxFoldExtractAll κ) tctx ([], True%I) (λ L' m' acc, True ∗
-      typed_context_fold_end (typed_context_fold_stratify_interp π) E L' acc T))
+    typed_context_fold (typed_context_fold_extract_interp π) E L (CtxFoldExtractAll κ) tctx ([], True%I) (λ L' m' acc, True ∗
+      typed_context_fold_end (typed_context_fold_extract_interp π) E L' acc T))
     ⊢ typed_pre_context_fold π E L (CtxFoldExtractAllInit κ) T.
   Proof.
     rewrite /find_spatial_locs_goal.
@@ -5082,7 +5094,7 @@ Section subsume.
   Definition typed_context_fold_close_inv_interp (π : thread_id) := λ '(ctx, R), (type_ctx_interp π ctx ∗ R)%I.
   Lemma typed_context_fold_step_close_inv π E L l {rt} (lt : ltype rt) (r : place_rfn rt) (tctx : list loc) acc R κs T :
     stratify_ltype_close_inv κs π E L l lt r (Owned)
-      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_resolve_interp π) E L' (CtxFoldCloseInvAll κs) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
+      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_close_inv_interp π) E L' (CtxFoldCloseInvAll κs) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
     ⊢ typed_context_fold_step (typed_context_fold_close_inv_interp π) π E L (CtxFoldCloseInvAll κs) l lt r tctx (acc, R) T.
   Proof.
     iIntros "Hstrat". iIntros (????) "#CTX #HE HL Hdel Hl".
