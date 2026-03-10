@@ -182,7 +182,7 @@
           {
             pname = "stdlib-alloc";
             src = ./stdlib/alloc;
-            libDeps = with packages; [stdlib-ptr stdlib-result stdlib-clone stdlib-mem stdlib-clone];
+            libDeps = with packages; [stdlib-ptr stdlib-result stdlib-clone stdlib-mem stdlib-closures];
             withTheories = true;
           }
           {

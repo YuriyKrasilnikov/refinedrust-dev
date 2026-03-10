@@ -49,9 +49,6 @@ Section trans.
   Qed.
 
   Lemma simplify_goal_iterator_next_fused_trans_app {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
-    `{!CheckOwnInContext (IteratorNextFusedTrans A π p s1 hist' s1')}
-    e s1''
-    `{!CheckOwnInContext (A.(traits_iterator_Iterator_Next) π p s1' (Some e) s1'')}
     T :
     (∃ x,
       ⌜hist = hist' ++ [x]⌝ ∗
@@ -63,8 +60,24 @@ Section trans.
     rewrite iterator_next_fused_trans_app.
     iFrame.
   Qed.
-  Definition simplify_goal_iterator_next_fused_trans_app_inst := [instance @simplify_goal_iterator_next_fused_trans_app with 50%N].
-  Global Existing Instance simplify_goal_iterator_next_fused_trans_app_inst.
+  (* Apply transitivity in case the next relation is in context already *)
+  Definition simplify_goal_iterator_next_fused_trans_app_find_next {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
+    `{!CheckOwnInContext (IteratorNextFusedTrans A π p s1 hist' s1')}
+    e s1''
+    `{!CheckOwnInContext (A.(traits_iterator_Iterator_Next) π p s1' (Some e) s1'')} T
+    :=
+    simplify_goal_iterator_next_fused_trans_app A π p s1 hist s2 s1' hist' T.
+  Definition simplify_goal_iterator_next_fused_trans_app_find_next_inst := [instance @simplify_goal_iterator_next_fused_trans_app_find_next with 50%N].
+  Global Existing Instance simplify_goal_iterator_next_fused_trans_app_find_next_inst.
+
+  (* Apply transitivity if the attrs are concrete *)
+  Definition simplify_goal_iterator_next_fused_trans_app_not_var {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
+    `{!CheckOwnInContext (IteratorNextFusedTrans A π p s1 hist' s1')}
+    `{!IsNotVar A} T
+    :=
+    simplify_goal_iterator_next_fused_trans_app A π p s1 hist s2 s1' hist' T.
+  Definition simplify_goal_iterator_next_fused_trans_app_not_var_inst := [instance @simplify_goal_iterator_next_fused_trans_app_not_var with 50%N].
+  Global Existing Instance simplify_goal_iterator_next_fused_trans_app_not_var_inst.
 
   Lemma simplify_goal_iterator_next_fused_trans_nil {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist T :
     (⌜hist = []⌝) ∗ T ⊢ simplify_goal (IteratorNextFusedTrans A π p s1 hist s1) T.
