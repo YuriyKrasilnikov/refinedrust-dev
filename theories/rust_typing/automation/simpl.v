@@ -27,6 +27,12 @@ Proof.
   - intros (Heq & HT). injection Heq. done.
 Qed.
 
+Global Instance simpl_both_plist_eq_cons {A B} (a a' : A) (b b' : B) :
+  SimplBothRel (=) (a *:: b) (a' *:: b') (a = a' ∧ b = b').
+Proof.
+  unfold SimplBothRel. naive_solver.
+Qed.
+
 Global Instance simpl_eq_phd {A} {F : A → Type} (Xs : list A) (X : A) (xs : plist F (X :: Xs)) (x : F X)   :
   SimplBothRel (eq) (x) (phd xs) (∃ c : plist F Xs, xs = pcons x c).
 Proof.

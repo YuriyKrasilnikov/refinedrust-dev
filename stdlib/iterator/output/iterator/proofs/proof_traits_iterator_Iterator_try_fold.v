@@ -25,11 +25,11 @@ Proof.
 
   2: { 
     rep <-! liRStep; liShow.
-    rep <- 15 liRStep; liShow.
+    rep  liRStep; liShow.
     liInst Hevar_x1 seq.
     liInst Hevar_x2 x7.
-
-    rep liRStep; liShow. }
+    rep liRStep; liShow. 
+  }
 
   (* establishing the precondition *)
   iRename select (∀ _ _ _ _, _)%I into "Hwand".
@@ -63,7 +63,6 @@ Proof.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
   { eapply Forall_app. solve_goal. }
-  { rewrite last_app; simpl. solve_goal. }
   Unshelve. all: print_remaining_sidecond.
 Qed.
 End proof.

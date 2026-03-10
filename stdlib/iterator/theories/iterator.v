@@ -48,7 +48,11 @@ Section trans.
         iFrame. iApply "IH". iFrame.
   Qed.
 
-  Lemma simplify_goal_iterator_next_fused_trans_app {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist' `{!CheckOwnInContext (IteratorNextFusedTrans A π p s1 hist' s1')} T :
+  Lemma simplify_goal_iterator_next_fused_trans_app {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
+    `{!CheckOwnInContext (IteratorNextFusedTrans A π p s1 hist' s1')}
+    e s1''
+    `{!CheckOwnInContext (A.(traits_iterator_Iterator_Next) π p s1' (Some e) s1'')}
+    T :
     (∃ x,
       ⌜hist = hist' ++ [x]⌝ ∗
       IteratorNextFusedTrans A π p s1 hist' s1' ∗
