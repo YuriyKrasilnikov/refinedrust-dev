@@ -389,7 +389,7 @@ Section alias_ltype.
   Global Existing Instance typed_place_alias_shared_inst.
 
   (** Core lemma for putting back ownership after raw borrows *)
-  Lemma stratify_ltype_alias_owned π E L mu mdu ma {M} (m : M) l l2 rt st r (T : stratify_ltype_cont_t) :
+  Lemma stratify_ltype_alias_owned π E L mu mdu ma {M} (m : M) l l2 rt st r `{!StratifyLtypeShouldCloseInv m Owned} (T : stratify_ltype_cont_t) :
     match ma with
     | StratNoRefold => T L True _ (AliasLtype rt st l2) r
     | _ =>
@@ -418,7 +418,7 @@ Section alias_ltype.
   Definition stratify_ltype_alias_owned_inst := [instance @stratify_ltype_alias_owned].
   Global Existing Instance stratify_ltype_alias_owned_inst.
 
-  Lemma stratify_ltype_alias_shared π E L mu mdu ma {M} (m : M) l l2 rt''' st r κ (T : stratify_ltype_cont_t) :
+  Lemma stratify_ltype_alias_shared π E L mu mdu ma {M} (m : M) l l2 rt''' st r κ  `{!StratifyLtypeShouldCloseInv m (Shared κ)} (T : stratify_ltype_cont_t) :
     ( if decide (ma = StratNoRefold)
       then
         T L True _ (AliasLtype rt''' st l2) r

@@ -495,9 +495,32 @@ Section credits.
     iApply ("HT" with "Hstore").
     iFrame.
   Qed.
+
+  Lemma tac_credit_store_acquire_one_credit P :
+    find_in_context FindCreditStore (λ '(n, m),
+      ⌜fast_lia_hint (1 ≤ n)⌝ ∗
+      (credit_store (n - 1) (m) -∗ £1 -∗ P))
+    ⊢ P.
+  Proof.
+    rewrite /FindCreditStore/find_in_context/=.
+    iIntros "(%p & Hstore & HT)". destruct p as [n m].
+    unfold fast_lia_hint.
+    iDestruct "HT" as "(% & HT)".
+    iPoseProof (credit_store_scrounge 1 with "Hstore") as "(Hcred & Hstore)".
+    { done. }
+    iApply ("HT" with "Hstore").
+    iFrame.
+  Qed.
 End credits.
 Tactic Notation "iAcquireCredits" "as" constr(H) :=
   iApply tac_credit_store_acquire_guard;
+  repeat (liFindInContext || liSep || liSideCond);
+  li_unfold_lets_in_context;
+  iIntros "?";
+  iIntros H.
+
+Tactic Notation "iAcquireCredit" "as" constr(H) :=
+  iApply tac_credit_store_acquire_one_credit;
   repeat (liFindInContext || liSep || liSideCond);
   li_unfold_lets_in_context;
   iIntros "?";
