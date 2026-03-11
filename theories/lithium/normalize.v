@@ -71,6 +71,26 @@ Create HintDb lithium_rewrite discriminated.
 
 #[export] Hint Rewrite @lookup_total_drop : lithium_rewrite.
 
+
+#[export] Hint Rewrite -> @fmap_app : lithium_rewrite.
+#[export] Hint Rewrite -> @length_zip : lithium_rewrite.
+#[export] Hint Rewrite -> @snd_zip using can_solve : lithium_rewrite.
+#[export] Hint Rewrite -> @fst_zip using can_solve : lithium_rewrite.
+
+
+(** Classes for simplifying a particular term *)
+Class NormalizeTermProgress {A} (a b : A) := normalize_term_progress_proof : a = b.
+Global Hint Mode NormalizeTermProgress + + - : typeclass_instances.
+
+Hint Extern 10 (NormalizeTermProgress ?a ?b) =>
+  progress autorewrite with lithium_rewrite; reflexivity : typeclass_instances.
+
+Class NormalizeTerm {A} (a b : A) := normalize_term_proof : a = b.
+Global Hint Mode NormalizeTerm + + - : typeclass_instances.
+
+Hint Extern 10 (NormalizeTerm ?a ?b) =>
+  autorewrite with lithium_rewrite; reflexivity : typeclass_instances.
+
 (** ** Additional normalization instances *)
 
 
