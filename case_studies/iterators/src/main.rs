@@ -41,3 +41,28 @@ pub fn counter(v: Vec<u32>) -> Vec<u32> {
         .collect();
     x
 }
+#[rr::requires("n >= 0")]
+#[rr::returns("n")]
+pub fn sum_range(n: isize) -> isize {
+    let mut i = 0;
+    for _ in 0..n {
+        #[rr::inv_vars("i")]
+        #[rr::inv("i = length {Hist}")]
+        #[rr::ignore]||{};
+        i += 1;
+    }
+    i
+}
+
+#[rr::requires("Z.of_nat (length vec) ∈ USize")]
+#[rr::returns("length vec")]
+pub fn vec_len<T>(vec: &Vec<T>) -> usize {
+    let mut i = 0;
+    for _ in vec_iter(vec) {
+        #[rr::inv_vars("i")]
+        #[rr::inv("i = length {Hist}")]
+        #[rr::ignore]||{};
+        i += 1
+    }
+    i
+}
