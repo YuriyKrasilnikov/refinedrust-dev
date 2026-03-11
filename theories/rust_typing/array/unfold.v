@@ -18,6 +18,18 @@ Section lemmas.
   Qed.
 
   (* TODO: possibly also prove these lemmas for location ownership? *)
+  Lemma ltype_own_ofty_array_length {rt} (ty : type rt) l π r n F :
+    lftE ⊆ F →
+    (l ◁ₗ[π, Owned] #r @ ◁ array_t n ty) ={F}=∗
+    ⌜length r = n⌝ ∗ l ◁ₗ[π, Owned] #r @ ◁ array_t n ty.
+  Proof.
+    rewrite ltype_own_ofty_unfold /lty_of_ty_own.
+    iIntros (?) "(%ly & ? & ? & ? & ? & % & <- & Hb)".
+    iMod (fupd_mask_mono with "Hb") as "Hb"; first done.
+    iDestruct "Hb" as "(%v & Hl & Hv)".
+    iPoseProof (array_t_rfn_length_eq with "Hv") as "%".
+    iFrame. done.
+  Qed.
 End lemmas.
 
 Section split.
@@ -52,23 +64,22 @@ Section split.
   Qed.
   (* TODO: unnesting lemma to reverse this *)
 
-  Lemma ltype_own_array_subtype_strong F l π {rt} (ty : type rt) {rt'} (ty' : type rt') rs n ly' :
+  Lemma ltype_own_array_subtype_strong F l π {rt} (ty : type rt) {rt'} (ty' : type rt') rs n ly' R :
     lftE ⊆ F →
     syn_type_size_eq (st_of ty MetaNone) (st_of ty' MetaNone) →
     (* [l] also needs to be well-aligned for the new type *)
     syn_type_has_layout (st_of ty' MetaNone) ly' →
     l `has_layout_loc` ly' →
-    (□∀ v r, v ◁ᵥ{π, MetaNone} r @ ty ={F}=∗ ∃ r', v ◁ᵥ{π, MetaNone} r' @ ty') -∗
+    (□∀ v i r, ⌜rs !! i = Some r⌝ -∗ v ◁ᵥ{π, MetaNone} r @ ty ={F}=∗ ∃ r', R r r' ∗ v ◁ᵥ{π, MetaNone} r' @ ty') -∗
     (l ◁ₗ[π, Owned] #(<#> rs) @ ◁ array_t n ty) ={F}=∗
-    ∃ rs', l ◁ₗ[π, Owned] #(<#> rs') @ ◁ array_t n ty'.
+    ∃ rs', ([∗ list] r; r' ∈ rs; rs', R r r') ∗ l ◁ₗ[π, Owned] #(<#> rs') @ ◁ array_t n ty'.
   Proof.
     iIntros (? Hsteq ??) "#Hupd Hl".
     rewrite ltype_own_ofty_unfold /lty_of_ty_own.
     iDestruct "Hl" as "(%ly & %Hst & %Hly & Hsc & #Hlb & %r' & <- & Ha)".
     iMod (fupd_mask_mono with "Ha") as "(%v & Hl & Hv)"; first done.
-    iMod (ty_own_val_array_subtype_strong with "Hupd Hv") as "(%rs' & Hv)".
+    iMod (ty_own_val_array_subtype_strong with "Hupd Hv") as "(%rs' & $ & Hv)".
     { done. }
-    iExists rs'.
     rewrite ltype_own_ofty_unfold /lty_of_ty_own. simpl.
     iExists (mk_array_layout ly' n).
     apply syn_type_has_layout_array_inv in Hst as (ly'' & Hst' & -> & Hsz).
@@ -146,6 +157,44 @@ Section split.
       unfold offset_loc. enough (Z.of_nat $ length v1 = (ly_size ly' * n1)%Z) as -> by done.
       subst v1. rewrite length_take.
       rewrite Hlyv. rewrite ly_size_mk_array_layout. lia.
+  Qed.
+
+  Lemma array_t_ofty_merge {rt} (ty : type rt) (n1 n2 : nat) rs1 rs2 l π F :
+    lftE ⊆ F →
+    (size_of_st (st_of ty MetaNone) * (n1 + n2) ≤ MaxInt ISize)%Z →
+    l ◁ₗ[π, Owned] #rs1 @ (◁ array_t n1 ty) -∗
+    (l offsetst{st_of ty MetaNone}ₗ n1) ◁ₗ[π, Owned] #rs2 @ (◁ array_t n2 ty) ={F}=∗
+    (l ◁ₗ[π, Owned] #(rs1 ++ rs2) @ ◁ array_t (n1 + n2) ty).
+  Proof.
+    iIntros (? Hbound) "Harr1 Harr2".
+    rewrite !ltype_own_ofty_unfold/lty_of_ty_own.
+    iDestruct "Harr1" as "(%ly1 & %Hst1 & %Hlyl & _ & Hlb & %rs1' & -> & Harr1)".
+    opose proof * syn_type_has_layout_array_inv as (ly1' & Hst1' & ? & ?); first apply Hst1.
+    iDestruct "Harr2" as "(%ly2 & %Hst2 & _ & _ & Hlb2 & %rs2' & -> & Harr2)".
+    opose proof * syn_type_has_layout_array_inv as (ly2' & Hst2' & ? & ?); first apply Hst2.
+    subst. assert (ly2' = ly1') as -> by by eapply syn_type_has_layout_inj.
+    iMod (fupd_mask_mono with "Harr1") as "(%v1 & Hl1 & Hv1)"; first done.
+    iMod (fupd_mask_mono with "Harr2") as "(%v2 & Hl2 & Hv2)"; first done.
+    iPoseProof (ty_own_val_has_layout with "Hv1") as "%Hlyv1"; first done.
+    iPoseProof (ty_own_val_has_layout with "Hv2") as "%Hlyv2"; first done.
+
+    iPoseProof (heap_pointsto_app with "[$Hl1 Hl2]") as "Hl".
+    { rewrite /OffsetLocSt/offset_loc/use_layout_alg' Hst1' Hlyv1.
+      rewrite ly_size_mk_array_layout/= Nat2Z.inj_mul//. }
+    iPoseProof (array_t_own_val_merge with "Hv1 Hv2") as "Hv"; first lia.
+
+    iModIntro.
+    - iExists (mk_array_layout ly1' (n1 + n2)).
+      iSplitR. { iPureIntro.
+        eapply syn_type_has_layout_array; [ done.. | ].
+        move: Hbound. rewrite /size_of_st/use_layout_alg' Hst1'/=. lia. }
+      iR. iR.
+      iPoseProof (heap_pointsto_loc_in_bounds with "Hl") as "#Hlb'".
+      iSplitR. { iApply loc_in_bounds_shorten_suf; last done.
+        rewrite ly_size_mk_array_layout length_app Hlyv1 Hlyv2.
+        rewrite !ly_size_mk_array_layout. lia. }
+      iExists _. iR.
+      iModIntro. iExists (v1 ++ v2). iFrame.
   Qed.
 
   Lemma array_t_ofty_split_reshape {rt} (ty : type rt) F π n num size l rs :
@@ -254,7 +303,7 @@ Section split.
     rewrite Hv. iR. iExists _. by iFrame.
   Qed.
 
-  Lemma array_t_ofty_merge {rt} (ty : type rt) π F (size : nat) (rs : list (list (place_rfn rt))) l :
+  Lemma array_t_ofty_merge_big_sep {rt} (ty : type rt) π F (size : nat) (rs : list (list (place_rfn rt))) l :
     lftE ⊆ F →
     length rs > 0 →
     (size_of_st (st_of ty MetaNone) * size * length rs ≤ MaxInt ISize)%Z →

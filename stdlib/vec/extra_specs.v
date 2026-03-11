@@ -36,6 +36,214 @@ Admitted.
 Definition resolve_ghost_Vec_T_uniq_inst := [instance @resolve_ghost_Vec_T_uniq].
 Global Existing Instance resolve_ghost_Vec_T_uniq_inst.
 
+(** Accessors that can be used by unsafe code doing funky stuff *)
+Lemma vec_access_elems {T_rt A_rt} (T_ty : type T_rt) (A_ty : type A_rt) (A_attrs : Allocator_spec_attrs A_rt) π rs l F :
+  lftE ⊆ F →
+  £ 1 -∗
+  l ◁ₗ[π, Owned] #(<#> rs) @ (◁ (Vec_inv_t T_rt A_rt A_attrs <TY> T_ty <TY> A_ty <INST!>)) ={F}=∗
+  ∃ (l' : loc), 
+    (l' ◁ₗ[π, Owned] # (<#> rs) @ ◁ (array_t (length rs) T_ty)) ∗
+    (∀ T_rt' (T_ty' : type T_rt') rs', 
+      ⌜length rs = length rs'⌝ -∗
+      ⌜ty_syn_type T_ty' MetaNone = ty_syn_type T_ty MetaNone⌝ -∗
+      (l' ◁ₗ[π, Owned] #(<#> rs') @ ◁ (array_t (length rs) T_ty')) ={F}=∗ 
+      l ◁ₗ[π, Owned] #(<#> rs') @ (◁ (Vec_inv_t T_rt' A_rt A_attrs *[] *[T_ty'; A_ty]))).
+Proof.
+  iIntros (?) "Hc1".
+  rewrite ltype_own_ofty_unfold /lty_of_ty_own/=.
+  iIntros "(%ly & %Hst & % & _ & #Hlb & %r' & <- & Hl)".
+  iMod (fupd_mask_mono with "Hl") as "Hl"; first done.
+  iDestruct "Hl" as "(%v & Hl & Hv)".
+  rewrite {1}/ty_own_val/=.
+  unfold name_hint.
+  iDestruct "Hv" as "(%fields & (%cap & %l' & %len & %els & -> & Hls & %Heq1 & %Hlook1 & %Hlook2 & %Hlen_eq & %Hcap & %Hbound & _) & Hv)".
+  rewrite /guarded.
+  iDestruct "Hls" as "(Hcred & Hls)".
+  iApply (lc_fupd_add_later with "Hc1"). iNext.
+  iMod (ltype_own_ofty_array_length with "Hls") as "(%Hcap_eq & Hls)"; first done.
+  iMod (array_t_ofty_split _ _ _ len (cap - len) with "Hls") as "(Hls & Huninit)".
+  { done. } { lia. }
+  assert (take len els = <#> (Some <$> project_vec_els len els)) as Hels_eq.
+  { apply list_eq. intros i.
+    do 2 rewrite list_lookup_fmap.
+    rewrite lookup_take.
+    destruct (decide (i < len)%nat) as [Hlt | Hnlt].
+    - opose proof (Hlook1 i _) as Hlook1'; first lia.
+      rewrite Hlook1'. rewrite Heq1.
+      rewrite list_lookup_lookup_total_lt; first done. 
+      apply lookup_lt_Some in Hlook1'.
+      rewrite project_vec_els_length. lia.
+    - rewrite /project_vec_els.
+      rewrite list_lookup_fmap.
+      rewrite lookup_ge_None_2; first done.
+      rewrite length_take. lia. }
+  assert (drop len els = <#> replicate (cap - len) None) as Heq'.
+  { apply list_eq. intros i.
+    rewrite list_lookup_fmap.
+    rewrite lookup_drop. 
+    destruct (replicate (cap - len) (None) !! i) eqn:Heq'. 
+    { apply lookup_replicate in Heq' as [-> Hlt].
+      rewrite Hlook2; first done. lia. }
+    apply lookup_replicate_None in Heq'. 
+    apply lookup_ge_None_2. rewrite Hcap_eq. lia. }
+  rewrite Heq'. clear Heq'.
+  iEval (rewrite Hels_eq) in "Hls".
+  iExists l'. 
+  rewrite length_fmap in Hlen_eq.
+  iPoseProof (ltype_own_has_layout with "Hls") as "(%ly' & %Hst' & %Hlyl)".
+  apply syn_type_has_layout_array_inv in Hst' as (ly_T & Hst' & -> & ?).
+  iSplitL "Hls".
+  { set (R := λ r1 (r2 : T_rt), ⌜r1 = Some (#r2)⌝%I : iProp Σ).
+    iMod (ltype_own_array_subtype_strong _ _ _ _ (T_ty) _ _ _ R with "[] Hls") as "(%rs' & HR & Hls)".
+    { done. }
+    { simpl. apply syn_type_size_eq_refl. }
+    { done. }
+    { done. }
+    { iModIntro. iIntros (??? Heq). revert Heq. 
+      rewrite list_lookup_fmap.
+      destruct (project_vec_els len els !! i) eqn:Hlook; last done.
+      intros [=<-].
+      apply project_vec_els_lookup_Some in Hlook as (x' & Hlook1' & -> & ?).
+      rewrite Hlook1 in Hlook1'; last lia.
+      injection Hlook1' as <-. simpl. 
+      rewrite list_lookup_total_fmap; last lia.
+      iIntros "Hv". iPoseProof (ty_own_val_Some_maybe_uninit with "Hv") as "Hv".
+      iFrame. done. }
+    iPoseProof (big_sepL2_Forall2 with "HR") as "%HR".
+    rewrite Hlen_eq.
+    enough (rs = rs') as -> by by iFrame.
+    move: HR. unfold R. rewrite -Heq1.
+    rewrite !Forall2_fmap_l.
+    intros Hf. eapply Forall2_eq.
+    eapply Forall2_impl; first apply Hf.
+    intros ??. simpl. congruence. }
+  iModIntro. iIntros (T_rt' T_ty' rs' Hlen' Hst'') "Hls".
+
+  iPoseProof (ltype_own_has_layout with "Hls") as "(%ly' & %Hst3 & %Hlyl')".
+  apply syn_type_has_layout_array_inv in Hst3 as (ly_T' & Hst3 & -> & ?).
+  rewrite Hst'' in Hst3. assert (ly_T' = ly_T) as -> by by eapply syn_type_has_layout_inj.
+  iAssert (|={F}=> l' ◁ₗ[π, Owned] # (<#> (Some <$> (<#> rs'))) @ ◁ array_t (length rs) (maybe_uninit T_ty'))%I with "[Hls]" as ">Hls".
+  { set (R := λ (r1 : T_rt') r2, ⌜r2 = Some (#r1)⌝%I : iProp Σ).
+    iMod (ltype_own_array_subtype_strong _ _ _ _ (maybe_uninit T_ty') _ _ _ R with "[] Hls") as "(%rs'' & HR & Hls)".
+    { done. }
+    { simpl. apply syn_type_size_eq_refl. }
+    { simpl. rewrite Hst''. done. }
+    { done. }
+    { iModIntro. iIntros (??? Heq).
+      iIntros "Hv". iPoseProof (ty_own_val_maybe_uninit_Some with "Hv") as "Hv".
+      iFrame. done. }
+    iPoseProof (big_sepL2_Forall2 with "HR") as "%HR".
+    apply Forall2_functional in HR as ->.
+    eassert ((Some <$> <#> rs') = _) as Heq. 
+    2: { rewrite Heq. by iFrame. }
+    solve_goal. }
+  simpl. rewrite -Hst''.
+
+  iPoseProof (ltype_own_has_layout with "Huninit") as "(%ly4 & %Hst4 & %Hlyl2)".
+  apply syn_type_has_layout_array_inv in Hst4 as (ly_T2 & Hst4 & -> & ?).
+  simpl in Hst4. assert (ly_T2 = ly_T) as -> by by eapply syn_type_has_layout_inj.
+  iMod (ltype_own_array_subtype_strong _ _ _ _ (maybe_uninit T_ty') _ _ _ (λ _ r2, ⌜r2 = None⌝%I : iProp Σ) with "[] Huninit") as "(%rs'' & HR & Huninit)".
+  { done. }
+  { simpl. rewrite Hst''. apply syn_type_size_eq_refl. }
+  { simpl. rewrite Hst''. done. }
+  { done. }
+  { iModIntro. iIntros (??? Heq). apply lookup_replicate in Heq as (-> & ?).
+    iIntros "Hv". iExists None. iR. 
+    rewrite /ty_own_val/=. rewrite Hst''. by iFrame. }
+  iPoseProof (big_sepL2_Forall2 with "HR") as "%HR".
+  apply Forall2_functional in HR as ->.
+  simpl. 
+  rewrite fmap_replicate.
+
+  rewrite Hlen_eq.
+  iMod (array_t_ofty_merge with "Hls Huninit") as "Hls".
+  { done. } 
+  { simpl. rewrite Hst''. 
+    move: Hbound. case_decide; first lia. 
+    unfold size_of_array_in_bytes. rewrite /size_of_st/use_layout_alg' Hst'.
+    simpl. nia.  }
+  
+  iModIntro. iEval (rewrite ltype_own_ofty_unfold /lty_of_ty_own).
+  simpl. iExists _. iR. iR. iR. iR. 
+  iExists _. iR. iModIntro.
+  iExists _. iFrame.
+  iEval (rewrite /ty_own_val/=).
+  iExists *[_;_].
+  iSplitR "Hv".
+  { unfold name_hint_ty, name_hint. 
+    replace (length rs + (cap - length rs))%nat with cap by lia.
+    iExists _, _, len, _. iR. 
+    rewrite /guarded. iFrame. iPureIntro. 
+    split_and!.
+    - rewrite /project_vec_els. solve_goal.
+    - intros. rewrite lookup_app_l; last solve_goal.
+      opose proof (lookup_lt_is_Some_2 rs' i _) as []; first lia.
+      normalize_and_simpl_goal.
+      eexists. split; first done.
+      solve_goal.
+    - normalize_and_simpl_goal.
+      setoid_rewrite lookup_replicate.
+      exists None. solve_goal.
+    - solve_goal.
+    - solve_goal.
+    - rewrite Hst''. solve_goal.
+    - done. }
+  rewrite Hlen_eq.
+  iApply (struct_t_own_val_mono _ false); last iApply "Hv".
+  unfold struct_t_incl_precond. simpl. 
+  rewrite Hst''. iSplitR; first last.
+  { iL. iR. iApply owned_type_incl_refl. }
+  iR. rewrite /owned_type_incl/=.
+  rewrite Hst''. 
+  iSplitR. { iPureIntro. apply syn_type_size_eq_refl. }
+  iR.
+  iIntros (?) "Hv". 
+  rewrite /ty_own_val/=.
+  iDestruct "Hv" as "(%x & (%a & %Heq & Hfree & _) & Hv)".
+  iExists x. 
+  rewrite Hst''. iFrame.
+  iSplitR. { eauto. }
+  subst.
+  iApply (struct_t_own_val_mono _ false); last iApply "Hv".
+  unfold struct_t_incl_precond. simpl. 
+  rewrite Hst''.
+  iSplitR. { iR. iApply owned_type_incl_refl. }
+  iL. iR. 
+  rewrite /owned_type_incl/=.
+  rewrite Hst''. 
+  iSplitR. { iPureIntro. apply syn_type_size_eq_refl. }
+  iR.
+  iIntros (?) "Hv". 
+  rewrite /ty_own_val/=.
+  iDestruct "Hv" as "(%x & _ & Hv)".
+  iExists x. iR. 
+  iApply (struct_t_own_val_mono _ false); last iApply "Hv".
+  unfold struct_t_incl_precond. done.
+Qed.
+
+Lemma vec_extract_invariant {T_inner_rt T_rt A_rt} (P : ex_inv_def T_inner_rt T_rt) (T_ty : type T_inner_rt) (A_ty : type A_rt) (A_attrs : Allocator_spec_attrs A_rt) π xs l F :
+  lftE ⊆ F →
+  £ 1 -∗
+  l ◁ₗ[π, Owned] #(<#> xs) @ (◁ (Vec_inv_t T_rt A_rt A_attrs <TY> (∃; P, T_ty) <TY> A_ty <INST!>)) ={F}=∗
+  ∃ (xs' : list (RT_rt T_inner_rt)), 
+  ([∗ list] x1; x2 ∈ xs'; xs, P.(inv_P) π x1 x2) ∗
+  (l ◁ₗ[π, Owned] #(<#> xs') @ (◁ (Vec_inv_t T_inner_rt A_rt A_attrs *[] *[T_ty; A_ty]))).
+Proof.
+  iIntros (?) "Hcred Hl". 
+  iMod (vec_access_elems with "Hcred Hl") as "(%l' & Hl & Hcl)"; first done.
+  iPoseProof (ltype_own_has_layout with "Hl") as "(%ly & %Hst & %)".
+  apply syn_type_has_layout_array_inv in Hst as (ly_T & ? & -> & ?).
+  iMod (ltype_own_array_subtype_strong _ _ _ _ T_ty _ _ _ (λ r1 r2, P.(inv_P) π r2 r1) with "[] Hl") as "(%rs' & Hinv & Hl)".
+  { done. } 
+  { apply syn_type_size_eq_refl. }
+  { done. }
+  { done. }
+  { iModIntro. iIntros (????). rewrite {1}/ty_own_val/=. eauto. }
+  iPoseProof (big_sepL2_length with "Hinv") as "%Hlen'".
+  iMod ("Hcl" with "[//] [//] Hl") as "Hl".
+  iFrame. rewrite big_sepL2_flip. done.
+Qed.
+
 Global Program Instance iterator_learn_vec_intoiter_it T_rt A_rt A_attrs p :
   IteratorLearnInductive (IntoIterTAasstd_iter_Iterator_spec_attrs T_rt A_rt A_attrs) p :=
   {| iterator_learn_inductive_Q s1 hist s2 := s1 = hist ++ s2 |}.

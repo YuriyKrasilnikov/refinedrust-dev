@@ -173,6 +173,19 @@ End ne.
 Section subtype.
   Context `{!typeGS Σ}.
 
+  Lemma ty_own_val_Some_maybe_uninit {rt} (ty : type rt) x π v m :
+    v ◁ᵥ{π, m} (Some (#x)) @ maybe_uninit ty -∗ v ◁ᵥ{π, m} x @ ty.
+  Proof.
+    rewrite {1}/ty_own_val/=.
+    iIntros "(% & -> & ?)". done.
+  Qed.
+  Lemma ty_own_val_maybe_uninit_Some {rt} (ty : type rt) x π v m :
+    v ◁ᵥ{π, m} x @ ty -∗ v ◁ᵥ{π, m} (Some #x) @ maybe_uninit ty.
+  Proof.
+    rewrite {2}/ty_own_val/=.
+    iIntros "$". done.
+  Qed.
+
   (** Subtyping *)
   Lemma type_incl_maybe_uninit_Some {rt} (ty : type rt) (x : rt) :
     ⊢ type_incl x (Some (#x)) ty (maybe_uninit ty).
@@ -189,7 +202,7 @@ Section subtype.
   Proof.
     iIntros "#Hsc". iSplitR; first done. iSplitR; first iModIntro. { simpl; eauto. }
     iSplit; iModIntro.
-    - rewrite {1}/ty_own_val/=. iIntros (π m v) "(% & <- & Hv)". done.
+    - iIntros (???). iApply ty_own_val_Some_maybe_uninit.
     - rewrite {1}/ty_shr/=. iIntros (κ π m v) "(% & <- & Hl)". done.
   Qed.
 
