@@ -263,7 +263,7 @@
           {
             pname = "stdlib-result";
             src = ./stdlib/result;
-            libDeps = with packages; [stdlib-clone];
+            libDeps = with packages; [stdlib-clone stdlib-closures];
             withTheories = true;
           }
           {
