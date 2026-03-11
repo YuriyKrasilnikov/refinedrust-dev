@@ -72,7 +72,8 @@ Create HintDb lithium_rewrite discriminated.
 #[export] Hint Rewrite @lookup_total_drop : lithium_rewrite.
 
 
-#[export] Hint Rewrite -> @fmap_app : lithium_rewrite.
+(* fmap_app is not a good idea. *)
+(*#[export] Hint Rewrite -> @fmap_app : lithium_rewrite.*)
 #[export] Hint Rewrite -> @length_zip : lithium_rewrite.
 #[export] Hint Rewrite -> @snd_zip using can_solve : lithium_rewrite.
 #[export] Hint Rewrite -> @fst_zip using can_solve : lithium_rewrite.

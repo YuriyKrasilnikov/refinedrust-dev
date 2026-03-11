@@ -661,7 +661,7 @@ Section obslist.
   Definition simplify_hyp_obslist_singleton_inst := [instance @simplify_hyp_obslist_singleton with 0%N].
   Global Existing Instance simplify_hyp_obslist_singleton_inst.
 
-  Lemma simplify_goal_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} `{!NormalizeTerm xs xs'} T :
+  Lemma simplify_goal_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} T :
     ObsList γs' xs ∗ T
     ⊢ simplify_goal (ObsList γs xs) T.
   Proof.
@@ -671,7 +671,7 @@ Section obslist.
   Definition simplify_goal_obslist_normalize_inst := [instance @simplify_goal_obslist_normalize with 0%N].
   Global Existing Instance simplify_goal_obslist_normalize_inst.
 
-  Lemma simplify_hyp_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} `{!NormalizeTerm xs xs'} T :
+  Lemma simplify_hyp_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} T :
     (ObsList γs' xs -∗ T)
     ⊢ simplify_hyp (ObsList γs xs) T.
   Proof.
