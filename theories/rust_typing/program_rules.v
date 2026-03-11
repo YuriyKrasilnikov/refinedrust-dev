@@ -46,6 +46,9 @@ Section find.
   Global Instance related_to_alloc_locals f locals : RelatedTo (allocated_locals f locals) | 100 :=
     {| rt_fic := FindFrameLocals f |}.
 
+  Global Instance related_to_obslist {rt} γs (rs rs' : list rt) `{!CheckOwnInContext (ObsList γs rs')} :
+    RelatedTo (ObsList γs rs) | 100 := {| rt_fic := FindObsList γs |}.
+
   (** Value ownership *)
   Lemma find_in_context_type_val_id v T :
     (∃ π m rt (ty : type rt) r, v ◁ᵥ{π, m} r @ ty ∗ T (existT rt (ty, r, π, m)))
@@ -466,6 +469,15 @@ Proof. iIntros "(-> & $)". eauto. Qed.
   Definition find_in_context_obs_list_inst := [instance @find_in_context_obs_list with FICSyntactic].
   Global Existing Instance find_in_context_obs_list_inst | 1.
 
+  Lemma subsume_obslist {rt} γs (rs rs' : list rt) T :
+    ⌜rs = rs'⌝ ∗ T
+    ⊢ subsume (ObsList γs rs) (ObsList γs rs') T.
+  Proof.
+    iIntros "(-> & $)". eauto.
+  Qed.
+  Definition subsume_obslist_inst := [instance @subsume_obslist].
+  Global Existing Instance subsume_obslist_inst.
+
   (** FindOptInheritGvarPobs *)
   Lemma find_in_context_opt_inherit_gvar_pobs γ T :
     (∃ rt (r : rt) κs, Inherit κs (gvar_pobs γ r) ∗ T (inl (κs, existT rt r)))
@@ -603,6 +615,72 @@ Proof. iIntros "(-> & $)". eauto. Qed.
   Definition subsume_place_loc_in_bounds_inst := [instance @subsume_place_loc_in_bounds].
   Global Existing Instance subsume_place_loc_in_bounds_inst.
 End find.
+
+Section obslist.
+  Context `{!typeGS Σ}.
+
+  Lemma simplify_goal_obslist_nil (rt : Type) T :
+    T ⊢ simplify_goal (ObsList (rt:=rt) [] []) T.
+  Proof.
+    rewrite /simplify_goal/ObsList.
+    iIntros "$". done.
+  Qed.
+  Definition simplify_goal_obslist_nil_inst := [instance @simplify_goal_obslist_nil with 0%N].
+  Global Existing Instance simplify_goal_obslist_nil_inst.
+
+  Lemma simplify_goal_obslist_app {rt : Type} (rs : list rt) γs γs' T :
+    ObsList γs (take (length γs) rs) ∗
+    ObsList γs' (drop (length γs) rs) ∗ T
+    ⊢ simplify_goal (ObsList (γs ++ γs') rs) T.
+  Proof.
+    rewrite /simplify_goal. iIntros "(Ha & Hb & $)".
+    iEval (rewrite -(take_drop (length γs) rs)).
+    rewrite /ObsList. iApply (big_sepL2_app with "Ha Hb").
+  Qed.
+  Definition simplify_goal_obslist_app_inst := [instance @simplify_goal_obslist_app with 0%N].
+  Global Existing Instance simplify_goal_obslist_app_inst.
+
+  Lemma simplify_goal_obslist_singleton {rt} (xs : list rt) γ T :
+    (∃ x, gvar_pobs γ x ∗ ⌜xs = [x]⌝ ∗ T)
+    ⊢ simplify_goal (ObsList [γ] xs) T.
+  Proof.
+    rewrite /simplify_goal/ObsList/=.
+    iIntros "(%x & Hobs & -> & $)".
+    simpl. by iFrame.
+  Qed.
+  Definition simplify_goal_obslist_singleton_inst := [instance @simplify_goal_obslist_singleton with 0%N].
+  Global Existing Instance simplify_goal_obslist_singleton_inst.
+
+  Lemma simplify_hyp_obslist_singleton {rt} (x : rt) γ T :
+    (gvar_pobs γ x -∗ T)
+    ⊢ simplify_hyp (ObsList [γ] [x]) T.
+  Proof.
+    rewrite /simplify_hyp/ObsList/=.
+    iIntros "Hcont (Hobs & _)". by iApply "Hcont".
+  Qed.
+  Definition simplify_hyp_obslist_singleton_inst := [instance @simplify_hyp_obslist_singleton with 0%N].
+  Global Existing Instance simplify_hyp_obslist_singleton_inst.
+
+  Lemma simplify_goal_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} `{!NormalizeTerm xs xs'} T :
+    ObsList γs' xs ∗ T
+    ⊢ simplify_goal (ObsList γs xs) T.
+  Proof.
+    unfold NormalizeTermProgress, NormalizeTerm in *.
+    subst. iIntros "($ & $)".
+  Qed.
+  Definition simplify_goal_obslist_normalize_inst := [instance @simplify_goal_obslist_normalize with 0%N].
+  Global Existing Instance simplify_goal_obslist_normalize_inst.
+
+  Lemma simplify_hyp_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} `{!NormalizeTerm xs xs'} T :
+    (ObsList γs' xs -∗ T)
+    ⊢ simplify_hyp (ObsList γs xs) T.
+  Proof.
+    unfold NormalizeTermProgress, NormalizeTerm in *.
+    subst. done.
+  Qed.
+  Definition simplify_hyp_obslist_normalize_inst := [instance @simplify_hyp_obslist_normalize with 100%N].
+  Global Existing Instance simplify_hyp_obslist_normalize_inst.
+End obslist.
 
 Section iterate.
   Context `{!typeGS Σ}.
