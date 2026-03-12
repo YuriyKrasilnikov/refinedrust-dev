@@ -51,6 +51,11 @@ impl Point {
             y: (self.y + p.1),
         }
     }
+
+    #[rr::returns("(x, y)")]
+    fn new(x: isize, y: isize) -> Self {
+        Self { x: x, y: y }
+    }
 }
 
 #[rr::refined_by("(s, f)" : "nat * (list (list nat))")]
@@ -82,7 +87,6 @@ impl Board {
     }
 
     #[rr::ensures("ret -> in_bounds self.1 p")]
-    /* TODO(lennard): indexing. (not enough simplification) */
     fn available(&self, p: Point) -> bool {
         0 <= p.x
             && (p.x as usize) < self.size
@@ -144,7 +148,7 @@ fn moves() -> Vec<(isize, isize)> {
 //           exists<i> 0 <= i && i < v@.len() && v[i] == *r)]
 #[rr::only_spec]
 #[rr::ensures("if_Some ret (λ m, m ∈ v)")]
-/* TODO(lennard): figure out wth's going wrong */
+/* TODO(sascha): try to verify when returning by value (instead of ref) */
 fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
     let mut min = None;
     // #[invariant(forall<r: &(usize, Point)> min == Some(r) ==>
@@ -174,12 +178,15 @@ fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
 //#[requires(0 < size@ && size@ <= 1000)]
 //#[requires(x < size)]
 //#[requires(y < size)]
-#[rr::only_spec]
-#[rr::requires("x < size")]
-#[rr::requires("y < size")]
-pub fn knights_tour(size: usize, x: usize, y: usize) -> Option<Board> {
+// #[rr::only_spec]
+#[rr::requires("a < size")]
+#[rr::requires("b < size")]
+#[rr::requires("16 * size ∈ isize")]
+#[rr::requires("size * size ∈ usize")]
+#[rr::requires("size_of_array_in_bytes (tuple2_sls (IntSynType usize) Point_sls) 16 ∈ isize")]
+pub fn knights_tour(size: usize, a: usize, b: usize) -> Option<Board> {
     let mut board = Board::new(size);
-    let mut p = Point { x: x as isize, y: y as isize };
+    let mut p = Point::new(a as isize, b as isize);
     board.set(p, 1);
 
     // snapshot! { dumb_nonlinear_arith(size) };
@@ -188,17 +195,22 @@ pub fn knights_tour(size: usize, x: usize, y: usize) -> Option<Board> {
     // #[invariant(board.in_bounds(p))]
     for step in 2..(size * size) {
         // choose next square by Warnsdorf's rule
-        #[rr::inv_vars("size", "board", "p")]
-        #[rr::invariant("board.1 = size")]
+        #[rr::inv_vars("board", "p")]
+        #[rr::invariant("board.1 = Z.to_nat size")]
         #[rr::invariant("in_bounds board.1 p")]
         #[rr::ignore]||{};
         let mut candidates: Vec<(usize, Point)> = Vec::new();
         // #[invariant(forall<i> 0 <= i && i < candidates@.len() ==>
         //             board.in_bounds(candidates[i].1))]
         for m in moves() {
+            #[rr::params("init_board")]
             #[rr::inv_vars("candidates", "board")]
-            #[rr::invariant("∀ x, x ∈ candidates -> in_bounds board.1 x.:1")]
             #[rr::ignore]||{};
+            #[rr::invariant("board = init_board")]
+            #[rr::invariant(
+                "∀ (z : RT_xt (place_rfnRT (tuple2_rt Z Point_inv_t_rt))), z ∈ candidates -> in_bounds board.1 (z.:1)"
+            )]
+            #[rr::invariant("length candidates ≤ length {Hist}")]
             // proof_assert! { forall<r:Seq<_>, a: Seq<_>, b:Seq<_>> r == a.concat(Seq::singleton(m).concat(b)) ==> m == r[a.len()] };
             let adj = p.mov(&m);
             if board.available(adj) {
