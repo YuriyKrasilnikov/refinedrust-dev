@@ -39,7 +39,8 @@ Create HintDb lithium_rewrite discriminated.
 #[export] Hint Rewrite <- @list_fmap_insert : lithium_rewrite.
 #[export] Hint Rewrite -> @list_lookup_fmap : lithium_rewrite.
 #[export] Hint Rewrite -> @list_fmap_id : lithium_rewrite.
-#[export] Hint Rewrite <- @list_fmap_compose : lithium_rewrite.
+(* NB reversing this one is not a good idea *)
+(*#[export] Hint Rewrite -> @list_fmap_compose : lithium_rewrite.*)
 #[export] Hint Rewrite -> @lookup_take : lithium_rewrite.
 #[export] Hint Rewrite -> @take_take @drop_drop : lithium_rewrite.
 #[export] Hint Rewrite Nat.sub_0_r Nat.add_0_r Nat.sub_diag : lithium_rewrite.

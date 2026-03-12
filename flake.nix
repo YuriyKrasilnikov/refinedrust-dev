@@ -300,6 +300,7 @@
             pname = "stdlib-vec";
             src = ./stdlib/vec;
             libDeps = with packages; [stdlib-alloc stdlib-iterator stdlib-option stdlib-rr_internal stdlib-closures stdlib-index stdlib-cmp stdlib-ptr-advanced stdlib-clone stdlib-controlflow];
+            withTheories = true;
           }
           {
             pname = "stdlib";

@@ -29,7 +29,7 @@ Proof.
 
   all: prepare_sideconditions; normalize_and_simpl_goal; try solve_goal with (nia).
 
-  all: revert select ((PlaceIn ∘ RT_xrt _ <$> _) = _) => Hxs;
+  all: revert select (<#> (<$#@{_}> _) = _) => Hxs;
     specialize (project_vec_els_length' _ _ _ Hxs) as ?.
   {
     rewrite Hxs project_vec_els_insert_ge; [|lia].

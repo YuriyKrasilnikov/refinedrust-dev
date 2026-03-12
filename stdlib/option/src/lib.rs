@@ -90,7 +90,6 @@ impl<T> Option<T> {
     // TODO: maybe ghost drop Self, too, in case pred returns false.
     #[rr::params("op")]
     #[rr::requires(#iris "if_iSome self (λ self, ∃ p, ⌜op = Some p⌝ ∗ {P::Pre} π p predicate *[self])")]
-    #[rr::requires(#iris "if_iNone self (⌜op = None⌝)")]
     #[rr::ensures(#iris "if_iSome ret (λ ret, ⌜self = Some ret⌝ ∗ ∃ p, ⌜op = Some p⌝ ∗ {P::Post} π p predicate *[ret] true)")]
     #[rr::ensures(#iris "if_iNone ret (if_iNone self (ty_ghost_drop {P} π ($# predicate)) ∗ 
                             if_iSome self (λ x, ∃ p, ⌜op = Some p⌝ ∗ {P::Post} π p predicate *[x] false))")]

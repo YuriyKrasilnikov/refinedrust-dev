@@ -427,7 +427,7 @@ Proof.
 Qed.
 
 (** Extra normalization *)
-Hint Rewrite -> @sum_list_Z_with_app : lithium_rewrite.
+#[export] Hint Rewrite -> @sum_list_Z_with_app : lithium_rewrite.
 
 Lemma list_fmap_fmap_id {A} (l : list (list A)) :
   fmap (fmap (M:=list) id) l = l.
@@ -435,5 +435,19 @@ Proof.
   induction l as [ | x l]; simpl; first done.
   rewrite list_fmap_id. f_equiv. done.
 Qed.
-Hint Rewrite @list_fmap_fmap_id : lithium_rewrite.
+#[export] Hint Rewrite @list_fmap_fmap_id : lithium_rewrite.
+
+(** Well, since we anyways assume functional extensionality, ... *)
+Lemma fmap_compose_id_r {A B} (f : A → B) :
+  f ∘ id = f.
+Proof.
+  apply functional_extensionality. done.
+Qed.
+Lemma fmap_compose_id_l {A B} (f : A → B) :
+  id ∘ f = f.
+Proof.
+  apply functional_extensionality. done.
+Qed.
+
+#[export] Hint Rewrite -> @fmap_compose_id_l @fmap_compose_id_r : lithium_rewrite.
 
