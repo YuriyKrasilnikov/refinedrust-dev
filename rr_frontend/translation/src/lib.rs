@@ -1030,10 +1030,27 @@ fn register_shims<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(), base
     }
 
     for shim in vcx.shim_registry.get_adt_shims() {
-        let Some(did) = search::try_resolve_did(vcx.tcx, &shim.path) else {
+        let Some(resolved_did) = search::try_resolve_did(vcx.tcx, &shim.path) else {
             println!("Warning: cannot find defid for shim {:?}, skipping", shim.path);
             continue;
         };
+
+        // If the resolved DefId is a type alias (e.g. nightly where AtomicU8 = Atomic<u8>),
+        // resolve through to the underlying ADT's DefId. For struct DefIds this is idempotent.
+        let did = vcx
+            .tcx
+            .type_of(resolved_did)
+            .instantiate_identity()
+            .ty_adt_def()
+            .map_or(resolved_did, |adt| adt.did());
+
+        // On newer nightlies, multiple type aliases (AtomicU8, AtomicI32, ...) resolve
+        // to the same underlying ADT (Atomic<T>). Skip duplicates — the first registration
+        // marks the ADT as atomic; inner type is determined from substs at call site.
+        if vcx.type_translator.lookup_adt_shim(did).is_some() {
+            info!("ADT shim for {:?} already registered (alias collision), skipping", shim.path);
+            continue;
+        }
 
         let lit = specs::types::Literal {
             rust_name: None,

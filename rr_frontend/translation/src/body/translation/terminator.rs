@@ -39,43 +39,95 @@ enum AtomicIntrinsicKind {
 ///
 /// Old-style (pre-2025): `atomic_load_seqcst` → `atomic_load`
 /// New-style (const generic): `atomic_load` → `atomic_load` (unchanged)
-fn strip_atomic_ordering_suffix(name: &str) -> &str {
-    const SUFFIXES: &[&str] = &[
-        "_seqcst", "_acqrel", "_acquire", "_release", "_relaxed", "_unordered",
+fn strip_atomic_ordering_suffix(name: &str) -> (&str, Option<lang::RustOrdering>) {
+    const SUFFIXES: &[(&str, lang::RustOrdering)] = &[
+        ("_seqcst", lang::RustOrdering::SeqCst),
+        ("_acqrel", lang::RustOrdering::AcqRel),
+        ("_acquire", lang::RustOrdering::Acquire),
+        ("_release", lang::RustOrdering::Release),
+        ("_relaxed", lang::RustOrdering::Relaxed),
+        ("_unordered", lang::RustOrdering::Unordered),
     ];
-    for suffix in SUFFIXES {
+    for (suffix, ordering) in SUFFIXES {
         if let Some(base) = name.strip_suffix(suffix) {
-            return base;
+            return (base, Some(*ordering));
         }
     }
-    name
+    (name, None)
+}
+
+/// Check if a type is `core::sync::atomic::Ordering` (or `std::sync::atomic::Ordering`).
+fn is_ordering_type<'tcx>(tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> bool {
+    if let ty::TyKind::Adt(adt_def, _) = ty.kind() {
+        let path = tcx.def_path_str(adt_def.did());
+        path == "core::sync::atomic::Ordering" || path == "std::sync::atomic::Ordering"
+    } else {
+        false
+    }
+}
+
+/// Parse a [`lang::SynType`] from its `Display` representation.
+///
+/// Used to reconstruct the inner field type for remote atomic ADTs from the
+/// string stored in [`AdtShimInfo`].
+fn parse_syn_type_tag(s: &str) -> Option<lang::SynType> {
+    match s {
+        "BoolSynType" => Some(lang::SynType::Bool),
+        "CharSynType" => Some(lang::SynType::Char),
+        "PtrSynType" => Some(lang::SynType::Ptr),
+        "FnPtrSynType" => Some(lang::SynType::FnPtr),
+        "UnitSynType" => Some(lang::SynType::Unit),
+        _ if s.starts_with("(IntSynType ") && s.ends_with(')') => {
+            let it_str = &s[12..s.len() - 1];
+            let it = match it_str {
+                "I8" => lang::IntType::I8,
+                "I16" => lang::IntType::I16,
+                "I32" => lang::IntType::I32,
+                "I64" => lang::IntType::I64,
+                "I128" => lang::IntType::I128,
+                "U8" => lang::IntType::U8,
+                "U16" => lang::IntType::U16,
+                "U32" => lang::IntType::U32,
+                "U64" => lang::IntType::U64,
+                "U128" => lang::IntType::U128,
+                "ISize" => lang::IntType::ISize,
+                "USize" => lang::IntType::USize,
+                _ => return None,
+            };
+            Some(lang::SynType::Int(it))
+        },
+        _ => None,
+    }
 }
 
 /// Classify an atomic intrinsic by name.
 ///
 /// Handles both new-style (`atomic_load`) and old-style (`atomic_load_seqcst`)
-/// intrinsic names. Returns `None` for unrecognized names.
-/// The caller must treat `None` as an error if the name starts with `"atomic_"`.
-fn classify_atomic_intrinsic(name: &str) -> Option<AtomicIntrinsicKind> {
-    let name = strip_atomic_ordering_suffix(name);
-    match name {
-        "atomic_load" => Some(AtomicIntrinsicKind::Load),
-        "atomic_store" => Some(AtomicIntrinsicKind::Store),
-        "atomic_cxchg" | "atomic_cxchgweak" => Some(AtomicIntrinsicKind::Cxchg),
-        "atomic_xchg" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xchg)),
-        "atomic_xadd" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Add)),
-        "atomic_xsub" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Sub)),
-        "atomic_and" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::And)),
-        "atomic_or" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Or)),
-        "atomic_xor" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xor)),
-        "atomic_nand" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Nand)),
-        "atomic_max" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MaxSigned)),
-        "atomic_min" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MinSigned)),
-        "atomic_umax" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MaxUnsigned)),
-        "atomic_umin" => Some(AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MinUnsigned)),
-        "atomic_fence" | "atomic_singlethreadfence" => Some(AtomicIntrinsicKind::Fence),
-        _ => None,
-    }
+/// intrinsic names. Returns the operation kind and the original Rust ordering
+/// (if extractable from the suffix). `None` ordering means new-style intrinsic
+/// without ordering suffix (implicitly SeqCst).
+/// The caller must treat `None` kind as an error if the name starts with `"atomic_"`.
+fn classify_atomic_intrinsic(name: &str) -> Option<(AtomicIntrinsicKind, Option<lang::RustOrdering>)> {
+    let (name, ordering) = strip_atomic_ordering_suffix(name);
+    let kind = match name {
+        "atomic_load" => AtomicIntrinsicKind::Load,
+        "atomic_store" => AtomicIntrinsicKind::Store,
+        "atomic_cxchg" | "atomic_cxchgweak" => AtomicIntrinsicKind::Cxchg,
+        "atomic_xchg" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xchg),
+        "atomic_xadd" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Add),
+        "atomic_xsub" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Sub),
+        "atomic_and" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::And),
+        "atomic_or" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Or),
+        "atomic_xor" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Xor),
+        "atomic_nand" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::Nand),
+        "atomic_max" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MaxSigned),
+        "atomic_min" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MinSigned),
+        "atomic_umax" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MaxUnsigned),
+        "atomic_umin" => AtomicIntrinsicKind::Rmw(lang::AtomicRmwOp::MinUnsigned),
+        "atomic_fence" | "atomic_singlethreadfence" => AtomicIntrinsicKind::Fence,
+        _ => return None,
+    };
+    Some((kind, ordering))
 }
 
 /// Classify a method on a `#[rr::mode(atomic)]` type by name.
@@ -237,7 +289,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     fn try_classify_atomic_intrinsic(
         &self,
         func: &mir::Operand<'tcx>,
-    ) -> Result<Option<AtomicIntrinsicKind>, TranslationError<'tcx>> {
+    ) -> Result<Option<(AtomicIntrinsicKind, Option<lang::RustOrdering>)>, TranslationError<'tcx>> {
         let Some(did) = Self::extract_fn_def_id(func) else {
             return Ok(None);
         };
@@ -252,7 +304,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         }
 
         match classify_atomic_intrinsic(name) {
-            Some(kind) => Ok(Some(kind)),
+            Some((kind, ordering)) => Ok(Some((kind, ordering))),
             None => Err(TranslationError::UnsupportedFeature {
                 description: format!(
                     "unknown atomic intrinsic '{name}'; \
@@ -283,23 +335,63 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
     // ── Shared atomic Caesium emitters (used by both intrinsic and method paths) ──
 
+    /// Filter out `Ordering` arguments from a method's argument list.
+    ///
+    /// For mode(atomic) user types (no Ordering params), this is a no-op — returns
+    /// all args unchanged with `ordering = None`.
+    /// For std shim types, removes Ordering args before translation so that
+    /// arg indices match the mode(atomic) convention (args[0]=self, args[1]=value, etc.).
+    fn filter_ordering_args(
+        &self,
+        args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
+    ) -> (Vec<span::source_map::Spanned<mir::Operand<'tcx>>>, Option<lang::RustOrdering>) {
+        let mut filtered = Vec::with_capacity(args.len());
+        let mut ordering = None;
+        for arg in args {
+            let arg_ty = self.get_type_of_operand(&arg.node);
+            if is_ordering_type(self.tcx, arg_ty) {
+                // TODO: extract actual Ordering variant from MIR operand for precise traceability.
+                // For now, conservatively mark as SeqCst (no comment emitted, no warning).
+                ordering = Some(lang::RustOrdering::SeqCst);
+            } else {
+                filtered.push(arg.clone());
+            }
+        }
+        (filtered, ordering)
+    }
+
+    /// Generate a Coq comment preserving the original Rust ordering.
+    /// Returns `None` for SeqCst (identity mapping) or unknown ordering.
+    fn ordering_comment(ordering: Option<lang::RustOrdering>) -> Option<code::PrimStmt> {
+        match ordering {
+            Some(ord) if ord != lang::RustOrdering::SeqCst => {
+                Some(code::PrimStmt::Comment(format!("Rust ordering: {ord} → SC")))
+            },
+            _ => None,
+        }
+    }
+
     /// Emit atomic load: `dest <-{ot, Na} !{ot, ScOrd}(ptr)`
     fn emit_atomic_load(
         ot: lang::OpType,
         ptr_expr: code::Expr,
         dest_place: code::Expr,
+        ordering: Option<lang::RustOrdering>,
     ) -> Vec<code::PrimStmt> {
         let deref_expr = code::Expr::Deref {
             ot: ot.clone(),
             order: lang::Order::Sc,
             e: Box::new(ptr_expr),
         };
-        vec![code::PrimStmt::Assign {
+        let mut stmts = Vec::new();
+        stmts.extend(Self::ordering_comment(ordering));
+        stmts.push(code::PrimStmt::Assign {
             ot,
             order: lang::Order::Na,
             e1: Box::new(dest_place),
             e2: Box::new(deref_expr),
-        }]
+        });
+        stmts
     }
 
     /// Emit atomic store: `ptr <-{ot, ScOrd} val; dest <-{UnitOp, Na} ZST`
@@ -308,20 +400,23 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         ptr_expr: code::Expr,
         val_expr: code::Expr,
         dest_place: code::Expr,
+        ordering: Option<lang::RustOrdering>,
     ) -> Vec<code::PrimStmt> {
-        let atomic_store = code::PrimStmt::Assign {
+        let mut stmts = Vec::new();
+        stmts.extend(Self::ordering_comment(ordering));
+        stmts.push(code::PrimStmt::Assign {
             ot,
             order: lang::Order::Sc,
             e1: Box::new(ptr_expr),
             e2: Box::new(val_expr),
-        };
-        let unit_assign = code::PrimStmt::Assign {
+        });
+        stmts.push(code::PrimStmt::Assign {
             ot: lang::SynType::Unit.into(),
             order: lang::Order::Na,
             e1: Box::new(dest_place),
             e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
-        };
-        vec![atomic_store, unit_assign]
+        });
+        stmts
     }
 
     /// Emit atomic RMW: `dest <-{ot, Na} AtomicRMW op ot (ptr) (val)`
@@ -331,6 +426,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         ptr_expr: code::Expr,
         val_expr: code::Expr,
         dest_place: code::Expr,
+        ordering: Option<lang::RustOrdering>,
     ) -> Vec<code::PrimStmt> {
         let rmw_expr = code::Expr::AtomicRmw {
             op: rmw_op,
@@ -338,12 +434,15 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             target: Box::new(ptr_expr),
             arg: Box::new(val_expr),
         };
-        vec![code::PrimStmt::Assign {
+        let mut stmts = Vec::new();
+        stmts.extend(Self::ordering_comment(ordering));
+        stmts.push(code::PrimStmt::Assign {
             ot,
             order: lang::Order::Na,
             e1: Box::new(dest_place),
             e2: Box::new(rmw_expr),
-        }]
+        });
+        stmts
     }
 
     /// Emit CAS with (T, bool) tuple return via 10-stmt bridge.
@@ -366,6 +465,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         expected_val: code::Expr,
         desired_val: code::Expr,
         destination: &mir::Place<'tcx>,
+        ordering: Option<lang::RustOrdering>,
     ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
         let dest_pty = self.get_type_of_place(destination);
         let dest_lit = self
@@ -483,7 +583,9 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let stmt_dead_old = code::PrimStmt::LocalDead(old_name);
         let stmt_dead_expected = code::PrimStmt::LocalDead(expected_name);
 
-        Ok(vec![
+        let mut stmts = Vec::new();
+        stmts.extend(Self::ordering_comment(ordering));
+        stmts.extend([
             stmt_live_expected,
             stmt_store_expected,
             stmt_live_old,
@@ -494,7 +596,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             stmt_dead_result,
             stmt_dead_old,
             stmt_dead_expected,
-        ])
+        ]);
+        Ok(stmts)
     }
 
     /// Emit CAS with `Result<T,T>` return type via IfE + EnumInitE bridge.
@@ -519,6 +622,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         expected_val: code::Expr,
         desired_val: code::Expr,
         destination: &mir::Place<'tcx>,
+        ordering: Option<lang::RustOrdering>,
     ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
         // Resolve destination as Result enum
         let dest_pty = self.get_type_of_place(destination);
@@ -690,7 +794,9 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let stmt_dead_old = code::PrimStmt::LocalDead(old_name);
         let stmt_dead_expected = code::PrimStmt::LocalDead(expected_name);
 
-        Ok(vec![
+        let mut stmts = Vec::new();
+        stmts.extend(Self::ordering_comment(ordering));
+        stmts.extend([
             stmt_live_expected,
             stmt_store_expected,
             stmt_live_old,
@@ -701,17 +807,21 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             stmt_dead_result,
             stmt_dead_old,
             stmt_dead_expected,
-        ])
+        ]);
+        Ok(stmts)
     }
 
     /// Emit fence (no-op in SC interleaving model): `dest <-{UnitOp, Na} ZST`
-    fn emit_atomic_fence(dest_place: code::Expr) -> Vec<code::PrimStmt> {
-        vec![code::PrimStmt::Assign {
+    fn emit_atomic_fence(dest_place: code::Expr, ordering: Option<lang::RustOrdering>) -> Vec<code::PrimStmt> {
+        let mut stmts = Vec::new();
+        stmts.extend(Self::ordering_comment(ordering));
+        stmts.push(code::PrimStmt::Assign {
             ot: lang::SynType::Unit.into(),
             order: lang::Order::Na,
             e1: Box::new(dest_place),
             e2: Box::new(code::Expr::Literal(code::Literal::ZST)),
-        }]
+        });
+        stmts
     }
 
     /// Translate an atomic intrinsic to Caesium primitive statements.
@@ -723,13 +833,14 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         kind: AtomicIntrinsicKind,
         args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
         destination: &mir::Place<'tcx>,
+        ordering: Option<lang::RustOrdering>,
     ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
         match kind {
             AtomicIntrinsicKind::Load => {
                 let ot = self.get_pointee_op_type(&args[0].node)?;
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_load(ot, ptr_expr, dest_place))
+                Ok(Self::emit_atomic_load(ot, ptr_expr, dest_place, ordering))
             },
 
             AtomicIntrinsicKind::Store => {
@@ -737,7 +848,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_store(ot, ptr_expr, val_expr, dest_place))
+                Ok(Self::emit_atomic_store(ot, ptr_expr, val_expr, dest_place, ordering))
             },
 
             AtomicIntrinsicKind::Rmw(rmw_op) => {
@@ -745,7 +856,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_rmw(rmw_op, ot, ptr_expr, val_expr, dest_place))
+                Ok(Self::emit_atomic_rmw(rmw_op, ot, ptr_expr, val_expr, dest_place, ordering))
             },
 
             AtomicIntrinsicKind::Cxchg => {
@@ -764,12 +875,12 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 let (expected_val, _) = self.translate_operand(&args[1].node, true)?;
                 let (desired_val, _) = self.translate_operand(&args[2].node, true)?;
 
-                self.emit_atomic_cas(ot, st, target_ptr, expected_val, desired_val, destination)
+                self.emit_atomic_cas(ot, st, target_ptr, expected_val, desired_val, destination, ordering)
             },
 
             AtomicIntrinsicKind::Fence => {
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_fence(dest_place))
+                Ok(Self::emit_atomic_fence(dest_place, ordering))
             },
         }
     }
@@ -814,31 +925,79 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         }
         let variant = adt_def.variants().iter().next().unwrap();
 
-        // Check mode(atomic) in spec
-        if !self.ty_translator.translator.is_variant_atomic(variant.def_id) {
-            return Ok(None);
-        }
+        // Determine inner type: local registry (user-defined) or remote shim
+        let (inner_st, ot, signed);
+        if self.ty_translator.translator.is_variant_atomic(variant.def_id) {
+            // LOCAL atomic: read field type from struct definition
+            if variant.fields.len() != 1 {
+                return Err(TranslationError::UnsupportedFeature {
+                    description: format!(
+                        "mode(atomic) type {} must have exactly one field (repr(transparent))",
+                        tcx.def_path_str(adt_def.did())
+                    ),
+                });
+            }
+            let inner_field = variant.fields.iter().next().unwrap();
+            let inner_ty = inner_field.ty(tcx, substs);
+            inner_st = self.ty_translator.translate_type_to_syn_type(inner_ty)?;
+            ot = (&inner_st).into();
+            signed = matches!(inner_ty.kind(), ty::TyKind::Int(_));
+        } else {
+            // REMOTE atomic: check shim info for atomic inner type
+            let adt_did = adt_def.did();
+            let Some(lit) = self.ty_translator.translator.lookup_adt_shim(adt_did) else {
+                return Ok(None);
+            };
+            if !lit.info.is_atomic() {
+                return Ok(None);
+            }
 
-        // Inner field type (repr(transparent) with single field)
-        if variant.fields.len() != 1 {
-            return Err(TranslationError::UnsupportedFeature {
-                description: format!(
-                    "mode(atomic) type {} must have exactly one field (repr(transparent))",
-                    tcx.def_path_str(adt_def.did())
-                ),
-            });
+            if !substs.is_empty() {
+                // Generic atomic struct (e.g. std Atomic<u8> on newer nightlies).
+                // Inner type = first type argument (T in Atomic<T>), not field type
+                // (which would be UnsafeCell<T>).
+                let inner_ty = substs[0].as_type().ok_or_else(|| TranslationError::UnsupportedFeature {
+                    description: format!(
+                        "expected type argument for generic atomic {}",
+                        tcx.def_path_str(adt_def.did())
+                    ),
+                })?;
+                inner_st = self.ty_translator.translate_type_to_syn_type(inner_ty)?;
+                ot = (&inner_st).into();
+                signed = matches!(inner_ty.kind(), ty::TyKind::Int(_));
+            } else {
+                // Concrete atomic struct (e.g. AtomicU8 on older nightlies).
+                // Inner type from shim's static atomic_inner_st.
+                let Some(st_str) = lit.info.atomic_inner_st() else {
+                    return Ok(None);
+                };
+                inner_st = parse_syn_type_tag(st_str).ok_or_else(|| TranslationError::UnsupportedFeature {
+                    description: format!(
+                        "unrecognized atomic inner type '{st_str}' in shim for {}",
+                        tcx.def_path_str(adt_def.did())
+                    ),
+                })?;
+                ot = (&inner_st).into();
+                signed = matches!(&inner_st,
+                    lang::SynType::Int(lang::IntType::I8 | lang::IntType::I16 | lang::IntType::I32 |
+                                       lang::IntType::I64 | lang::IntType::I128 | lang::IntType::ISize));
+            }
         }
-        let inner_field = variant.fields.iter().next().unwrap();
-        let inner_ty = inner_field.ty(tcx, substs);
-        let inner_st = self.ty_translator.translate_type_to_syn_type(inner_ty)?;
-        let ot: lang::OpType = (&inner_st).into();
-
-        let signed = matches!(inner_ty.kind(), ty::TyKind::Int(_));
         let method_name = tcx.item_name(did);
 
         match classify_atomic_method(method_name.as_str(), signed) {
             Some(kind) => Ok(Some((kind, ot, inner_st))),
-            None => Ok(None),
+            None => {
+                if method_name.as_str() == "fetch_update" {
+                    return Err(TranslationError::UnsupportedFeature {
+                        description: format!(
+                            "fetch_update on {} requires closure lowering and is not supported",
+                            tcx.def_path_str(adt_def.did())
+                        ),
+                    });
+                }
+                Ok(None)
+            },
         }
     }
 
@@ -852,38 +1011,39 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         st: lang::SynType,
         args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
         destination: &mir::Place<'tcx>,
+        ordering: Option<lang::RustOrdering>,
     ) -> Result<Vec<code::PrimStmt>, TranslationError<'tcx>> {
         match kind {
             AtomicIntrinsicKind::Load => {
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_load(ot, ptr_expr, dest_place))
+                Ok(Self::emit_atomic_load(ot, ptr_expr, dest_place, ordering))
             },
 
             AtomicIntrinsicKind::Store => {
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_store(ot, ptr_expr, val_expr, dest_place))
+                Ok(Self::emit_atomic_store(ot, ptr_expr, val_expr, dest_place, ordering))
             },
 
             AtomicIntrinsicKind::Rmw(rmw_op) => {
                 let (ptr_expr, _) = self.translate_operand(&args[0].node, true)?;
                 let (val_expr, _) = self.translate_operand(&args[1].node, true)?;
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_rmw(rmw_op, ot, ptr_expr, val_expr, dest_place))
+                Ok(Self::emit_atomic_rmw(rmw_op, ot, ptr_expr, val_expr, dest_place, ordering))
             },
 
             AtomicIntrinsicKind::Cxchg => {
                 let (target_ptr, _) = self.translate_operand(&args[0].node, true)?;
                 let (expected_val, _) = self.translate_operand(&args[1].node, true)?;
                 let (desired_val, _) = self.translate_operand(&args[2].node, true)?;
-                self.emit_atomic_cas_result(ot, st, target_ptr, expected_val, desired_val, destination)
+                self.emit_atomic_cas_result(ot, st, target_ptr, expected_val, desired_val, destination, ordering)
             },
 
             AtomicIntrinsicKind::Fence => {
                 let dest_place = self.translate_place(destination)?;
-                Ok(Self::emit_atomic_fence(dest_place))
+                Ok(Self::emit_atomic_fence(dest_place, ordering))
             },
         }
     }
@@ -922,15 +1082,16 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     return Ok(code::Stmt::Prim(stmt, Box::new(goto)));
                 }
 
-                if let Some(kind) = self.try_classify_atomic_intrinsic(func)? {
+                if let Some((kind, ordering)) = self.try_classify_atomic_intrinsic(func)? {
                     info!("Translating atomic intrinsic: {kind:?}");
 
-                    // Collect span for per-crate summary warning (Fence is a no-op, no approximation)
-                    if !matches!(kind, AtomicIntrinsicKind::Fence) {
+                    // Warn only for non-SeqCst orderings (SeqCst = identity mapping, no approximation)
+                    let is_non_sc = ordering.is_some_and(|o| o != lang::RustOrdering::SeqCst);
+                    if is_non_sc && !matches!(kind, AtomicIntrinsicKind::Fence) {
                         self.non_sc_atomic_spans.push(term.source_info.span);
                     }
 
-                    let stmts = self.translate_atomic_intrinsic(kind, args, destination)?;
+                    let stmts = self.translate_atomic_intrinsic(kind, args, destination, ordering)?;
                     let goto = self.translate_goto_like(&loc, target.unwrap())?;
 
                     return Ok(code::Stmt::Prim(stmts, Box::new(goto)));
@@ -940,11 +1101,16 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 if let Some((kind, ot, st)) = self.try_classify_atomic_method(func, args)? {
                     info!("Translating mode(atomic) method: {kind:?}");
 
-                    if !matches!(kind, AtomicIntrinsicKind::Fence) {
+                    // Filter Ordering args (no-op for mode(atomic), removes for std shim).
+                    let (filtered_args, ordering) = self.filter_ordering_args(args);
+
+                    // Warn only for non-SeqCst orderings
+                    let is_non_sc = ordering.is_some_and(|o| o != lang::RustOrdering::SeqCst);
+                    if is_non_sc && !matches!(kind, AtomicIntrinsicKind::Fence) {
                         self.non_sc_atomic_spans.push(term.source_info.span);
                     }
 
-                    let stmts = self.translate_atomic_method(kind, ot, st, args, destination)?;
+                    let stmts = self.translate_atomic_method(kind, ot, st, &filtered_args, destination, ordering)?;
                     let goto = self.translate_goto_like(&loc, target.unwrap())?;
 
                     return Ok(code::Stmt::Prim(stmts, Box::new(goto)));

@@ -597,7 +597,16 @@ impl<'def> Abstract<'def> {
     /// Make a literal type.
     #[must_use]
     pub fn make_literal_type(&self) -> types::Literal {
-        let info = types::AdtShimInfo::new(None, self.has_invariant());
+        let atomic_inner_st = (self.is_atomic()
+            && self.variant_def.repr == Repr::Transparent
+            && self.variant_def.fields.len() == 1)
+            .then(|| {
+                let (_, inner_ty) = &self.variant_def.fields[0];
+                let synty: lang::SynType = inner_ty.into();
+                synty.to_string()
+            });
+
+        let info = types::AdtShimInfo::new(None, self.has_invariant(), atomic_inner_st);
 
         types::Literal {
             rust_name: Some(self.name().to_owned()),

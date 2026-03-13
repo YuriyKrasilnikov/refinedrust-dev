@@ -232,6 +232,27 @@ impl Order {
     }
 }
 
+/// Original Rust memory ordering from source code.
+///
+/// Preserved for traceability: all orderings map to `ScOrd` in the
+/// interleaving semantics model, but the original ordering is emitted
+/// as a Coq comment so the user knows which behaviors are unchecked.
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Display)]
+pub enum RustOrdering {
+    #[display("SeqCst")]
+    SeqCst,
+    #[display("Acquire")]
+    Acquire,
+    #[display("Release")]
+    Release,
+    #[display("AcqRel")]
+    AcqRel,
+    #[display("Relaxed")]
+    Relaxed,
+    #[display("Unordered")]
+    Unordered,
+}
+
 /// Atomic read-modify-write operation (maps to Caesium `atomic_rmw_op`).
 ///
 /// All operations follow the same pattern: atomically read old value,

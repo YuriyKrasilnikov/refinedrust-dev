@@ -63,6 +63,9 @@ mod remote {
 
         #[serde(getter = "Self::needs_trait_attrs")]
         needs_trait_attrs: bool,
+
+        #[serde(getter = "Self::atomic_inner_st")]
+        atomic_inner_st: Option<String>,
     }
 
     impl AdtShimInfo {
@@ -73,11 +76,15 @@ mod remote {
         const fn needs_trait_attrs(adt_shim_info: &specs::types::AdtShimInfo) -> bool {
             adt_shim_info.needs_trait_attrs()
         }
+
+        fn atomic_inner_st(adt_shim_info: &specs::types::AdtShimInfo) -> Option<String> {
+            adt_shim_info.atomic_inner_st().map(str::to_owned)
+        }
     }
 
     impl From<AdtShimInfo> for specs::types::AdtShimInfo {
         fn from(adt_shim_info: AdtShimInfo) -> Self {
-            Self::new(adt_shim_info.enum_name, adt_shim_info.needs_trait_attrs)
+            Self::new(adt_shim_info.enum_name, adt_shim_info.needs_trait_attrs, adt_shim_info.atomic_inner_st)
         }
     }
 }

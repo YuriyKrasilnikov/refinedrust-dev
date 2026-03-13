@@ -16,12 +16,19 @@ pub struct AdtShimInfo {
 
     /// whether the type definition needs trait attributes
     needs_trait_attrs: bool,
+
+    /// For atomic types: the inner field's [`SynType`] `Display` string.
+    ///
+    /// `None` for non-atomic types. When `Some`, the type has `mode(atomic)` and
+    /// the string can be parsed back to determine the [`OpType`] and [`SynType`]
+    /// for atomic operations (e.g. `"BoolSynType"`, `"(IntSynType U8)"`, `"PtrSynType"`).
+    atomic_inner_st: Option<String>,
 }
 
 impl AdtShimInfo {
     #[must_use]
     pub const fn empty() -> Self {
-        Self::new(None, false)
+        Self::new(None, false, None)
     }
 
     #[must_use]
@@ -33,6 +40,16 @@ impl AdtShimInfo {
     // TODO: This field is currently unused
     pub const fn needs_trait_attrs(&self) -> bool {
         self.needs_trait_attrs
+    }
+
+    #[must_use]
+    pub fn is_atomic(&self) -> bool {
+        self.atomic_inner_st.is_some()
+    }
+
+    #[must_use]
+    pub fn atomic_inner_st(&self) -> Option<&str> {
+        self.atomic_inner_st.as_deref()
     }
 }
 

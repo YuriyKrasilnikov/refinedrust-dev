@@ -590,6 +590,9 @@ pub enum PrimStmt {
         a: Vec<Annotation>,
         why: Option<String>,
     },
+
+    #[display("(* {} *)\n", _0)]
+    Comment(String),
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Display)]

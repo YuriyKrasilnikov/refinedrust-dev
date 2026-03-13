@@ -269,12 +269,21 @@ fn is_builtin_trait(tcx: ty::TyCtxt<'_>, trait_did: DefId) -> Option<bool> {
     // Everything is Thin.
     let thin_did = search::try_resolve_did(tcx, &["core", "ptr", "metadata", "Thin"])?;
 
+    // Internal unstable traits that may not exist on all nightlies.
+    // Each is checked independently so that absence of one does not affect others.
+    let atomic_primitive_did =
+        search::try_resolve_did(tcx, &["core", "sync", "atomic", "AtomicPrimitive"]);
+    let atomic_sealed_did =
+        search::try_resolve_did(tcx, &["core", "sync", "atomic", "private", "Sealed"]);
+
     Some(
         trait_did == sized_did
             || trait_did == tuple_did
             || trait_did == meta_sized_did
             || trait_did == destruct_did
             || trait_did == pointee_did
-            || trait_did == thin_did,
+            || trait_did == thin_did
+            || atomic_primitive_did == Some(trait_did)
+            || atomic_sealed_did == Some(trait_did),
     )
 }

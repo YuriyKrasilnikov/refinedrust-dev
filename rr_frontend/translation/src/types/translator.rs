@@ -575,8 +575,8 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         }
     }
 
-    /// Lookup a shim for an ADT.
-    fn lookup_adt_shim(&self, did: DefId) -> Option<specs::types::LiteralRef<'def>> {
+    /// Lookup a shim for an ADT by its DefId.
+    pub(crate) fn lookup_adt_shim(&self, did: DefId) -> Option<specs::types::LiteralRef<'def>> {
         let ordered_did = OrderedDefId::new(self.tcx, did);
         self.adt_shims.borrow().get(&ordered_did).copied()
     }
