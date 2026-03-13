@@ -188,7 +188,7 @@ Next Obligation. solve_fn_vars_nodup. Qed.
 Definition size_of_array_in_bytes `{!LayoutAlg} (st : syn_type) (len : nat) : nat :=
   let ly := use_layout_alg' st in
   ly.(ly_size) * len.
-Local Hint Unfold size_of_array_in_bytes : solve_goal_unfold.
+Global Hint Unfold size_of_array_in_bytes : solve_goal_unfold.
 
 Lemma size_of_array_in_bytes_mono `{!LayoutAlg} st (len1 len2 : nat) :
   len1 ≤ len2 →

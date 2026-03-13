@@ -1,6 +1,5 @@
 From caesium Require Import lang notation.
 From refinedrust Require Import typing.
-From rrstd.rr_internal.theories Require Import shims.
 
 Lemma list_lookup_insert_Some' {A} (l : list A) i x j y :
   <[i:=x]>l !! j = Some y ↔
@@ -98,7 +97,3 @@ Global Opaque project_vec_els.
 
 Global Hint Rewrite @project_vec_els_length : lithium_rewrite.
 Global Hint Rewrite @list_fmap_compose : lithium_rewrite.
-
-
-Global Hint Unfold size_of_array_in_bytes : solve_goal_unfold.
-
