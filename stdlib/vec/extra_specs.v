@@ -36,6 +36,26 @@ Admitted.
 Definition resolve_ghost_Vec_T_uniq_inst := [instance @resolve_ghost_Vec_T_uniq].
 Global Existing Instance resolve_ghost_Vec_T_uniq_inst.
 
+(** Learning instance overriding the default ones: we don't want all the unnecessary facts from Vec's internal representation *)
+Global Program Instance learn_from_hyp_val_vec T_rt A_rt A_attrs (T_ty : type T_rt) (A_ty : type A_rt) r :
+  LearnFromHypVal (Vec_inv_t T_rt A_rt A_attrs <TY> T_ty <TY> A_ty <INST!>) r :=
+  {| learn_from_hyp_val_Q := ⌜length r ≤ MaxInt usize⌝ |}.
+Next Obligation.
+  iIntros (?????).
+  iIntros (r ?? v m ?) "Hv".
+  iMod (learn_from_hyp_val_proof with "[] Hv") as "(Hv & Hp)"; first done.
+  iFrame "Hv".
+  unfold learn_from_hyp_val_Q; simpl.
+  iDestruct "Hp" as "(% & Hp)".
+  repeat setoid_rewrite boringly_exists.
+  repeat setoid_rewrite boringly_sep.
+  iDestruct "Hp" as "(% & % & % & % & % & Hp)".
+  rewrite !boringly_persistent_elim.
+  unfold name_hint.
+  iDestruct "Hp" as "(-> & _ & ? & _ & _ & %Hlen & _ & % & _)".
+  subst. iModIntro. done.
+Qed.
+
 (** Accessors that can be used by unsafe code doing funky stuff *)
 
 Lemma vec_access_elems {T_rt A_rt} (T_ty : type T_rt) (A_ty : type A_rt) (A_attrs : Allocator_spec_attrs A_rt) π rs l F :
@@ -57,7 +77,7 @@ Proof.
   iDestruct "Hl" as "(%v & Hl & Hv)".
   rewrite {1}/ty_own_val/=.
   unfold name_hint.
-  iDestruct "Hv" as "(%fields & (%cap & %l' & %len & %els & -> & Hls & %Heq1 & %Hlook1 & %Hlook2 & %Hlen_eq & %Hcap & %Hbound & _) & Hv)".
+  iDestruct "Hv" as "(%fields & (%cap & %l' & %len & %els & -> & Hls & %Heq1 & %Hlook1 & %Hlook2 & %Hlen_eq & %Hcap & % & %Hbound & _) & Hv)".
   rewrite /guarded.
   iDestruct "Hls" as "(Hcred & Hls)".
   iApply (lc_fupd_add_later with "Hc1"). iNext.
@@ -189,6 +209,7 @@ Proof.
       exists None. solve_goal.
     - solve_goal.
     - solve_goal.
+    - done.
     - rewrite Hst''. solve_goal.
     - done. }
   rewrite Hlen_eq.

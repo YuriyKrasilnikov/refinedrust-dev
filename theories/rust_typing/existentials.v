@@ -226,8 +226,9 @@ Section open.
   Context `{!typeGS Σ}.
   Context {rt X : RT} (P : ex_inv_def rt X).
 
+  (* Allow overrides *)
   Global Program Instance learn_from_hyp_val_ex_plain_t ty r :
-    LearnFromHypVal (∃; P, ty) r :=
+    LearnFromHypVal (∃; P, ty) r | 1000 :=
     {| learn_from_hyp_val_Q := ∃ π, boringly (∃ x : rt, P.(inv_P) π x r) |}.
   Next Obligation.
     rewrite /ty_own_val/=.
