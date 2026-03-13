@@ -23,24 +23,33 @@ fn main() {
     assert!(counter(v).len() == 2);
 }
 
-#[rr::requires("Z.of_nat (length v) ∈ USize")]
-#[rr::ensures("length v = length ret")]
+// !start spec(counter)
+#[rr::returns("v")]
+// !end spec
+// !start code(counter)
 pub fn counter(v: Vec<u32>) -> Vec<u32> {
     let mut cnt: usize = 0;
 
     let x: Vec<u32> = vec_iter(&v)
         .map(
+            // !end code
+            // !start spec(counter)
             #[rr::requires("{cnt} + 1 ∈ USize")]
             #[rr::returns("x")]
             #[rr::ensures("{cnt.*new} = {cnt} + 1")]
+            // !end spec
+            // !start code(counter)
             |x| {
                 cnt += 1;
                 *x
             },
         )
         .collect();
+    assert!(cnt == x.len());
     x
 }
+// !end code
+
 #[rr::requires("n >= 0")]
 #[rr::returns("n")]
 pub fn sum_range(n: isize) -> isize {
