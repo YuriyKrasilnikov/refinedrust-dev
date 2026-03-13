@@ -3,4 +3,4 @@
 (package extra-proofs)
 (name refinedrust.extra_proofs.minivec)
 (generate_project_file)
-(theories stdpp iris iris_contrib Ltac2 Equations lrust caesium lithium refinedrust Stdlib))
+(theories stdpp iris iris_contrib Ltac2 Equations lrust caesium lithium refinedrust Stdlib rrstd.rr_internal.theories))

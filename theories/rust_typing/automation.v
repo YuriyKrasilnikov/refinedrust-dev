@@ -1209,33 +1209,28 @@ Ltac normalize_aggressively :=
 
 (** The main automation tactic after normalizing *)
 Ltac solve_goal_final_hook ::=
+  unfold reverse_coercion in *; simpl in *;
   refined_solver lia
 .
 
 (** The main sidecondition tactic, called after [sidecond_solver]: basically, an adaptation of [solve_goal].
   Important: does not change the goal if it doesn't fully solve it. *)
 Ltac sidecond_hammer_it :=
-  simpl;
-  try fast_done;
   solve_goal_prepare_hook;
 
   normalize_and_simpl_goal;
   solve_goal_normalized_prepare_hook; reduce_closed_Z; enrich_context;
   repeat case_bool_decide => //; repeat case_decide => //; repeat case_match => //;
 
-  try solve_goal_final_hook;
-
-  (* if the goal isn't solved yet, try harder to normalize *)
-  normalize_aggressively;
-  normalize_and_simpl_goal;
-  solve_goal_normalized_prepare_hook; reduce_closed_Z; enrich_context;
-  repeat case_bool_decide => //; repeat case_decide => //; repeat case_match => //;
-
-  solve_goal_final_hook
-.
+  solve_goal_final_hook.
 Ltac sidecond_hammer :=
   sidecond_hammer_normalize;
-  try sidecond_hammer_it
+  simpl;
+  try fast_done;
+  try sidecond_hammer_it;
+  (* if the goal isn't solved yet, try harder to normalize *)
+  (* NB [normalize_aggressively] needs the layout facts still in the goal *)
+  try (normalize_aggressively; sidecond_hammer_it)
 .
 
 (** For solving [CanSolve] conditions *)
