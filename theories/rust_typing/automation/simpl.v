@@ -451,3 +451,26 @@ Qed.
 
 #[export] Hint Rewrite -> @fmap_compose_id_l @fmap_compose_id_r : lithium_rewrite.
 
+
+
+Lemma fmap_fst_snd {A B C} (l : list (A * B * C)) :
+  (λ a, a.1.2) <$> l = (l.*1).*2.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Lemma fmap_snd_fst {A B C} (l : list (A * (B * C))) :
+  (λ a, a.2.1) <$> l = (l.*2).*1.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Lemma fmap_snd_snd {A B C} (l : list (A * (B * C))) :
+  (λ a, a.2.2) <$> l = (l.*2).*2.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Lemma fmap_fst_fst {A B C} (l : list (A * B * C)) :
+  (λ a, a.1.1) <$> l = (l.*1).*1.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Hint Rewrite -> @fmap_fst_fst @fmap_snd_snd @fmap_fst_snd @fmap_snd_fst : lithium_rewrite.

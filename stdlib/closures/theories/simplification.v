@@ -618,7 +618,7 @@ End test.
 
 Lemma Forall2_simplify_relation {A B} (Φ : A → B → Prop) l1 l2 C Ψ map_C prog :
   simplify_relation A B Φ C Ψ map_C prog →
-  Forall2 Φ l1 l2 ↔ (∃ l3, l2 = fmap (λ '(a, c), map_C a c) (zip l1 l3) ∧ Forall2 Ψ l1 l3).
+  Forall2 Φ l1 l2 ↔ (∃ l3, l2 = fmap (λ p, map_C p.1 p.2) (zip l1 l3) ∧ Forall2 Ψ l1 l3).
 Proof.
   intros [Hsimpl1 Hsimpl2].
   induction l1 as [ | a l1 IH] in l2 |-*; destruct l2 as [ | b l2]; simpl.
@@ -644,7 +644,7 @@ Qed.
 Lemma simpl_impl_Forall2_simplify A B C Φ Ψ map_C l1 l2 prog :
   simplify_relation_passes A B Φ C Ψ map_C prog →
   prog = true →
-  SimplImpl prog (Forall2 Φ l1 l2) (λ T, (∃ l3, l2 = fmap (λ '(a, c), map_C a c) (zip l1 l3) ∧ Forall2 Ψ l1 l3) → T).
+  SimplImpl prog (Forall2 Φ l1 l2) (λ T, (∃ l3, l2 = fmap (λ p, map_C p.1 p.2) (zip l1 l3) ∧ Forall2 Ψ l1 l3) → T).
 Proof.
   intros Hsimpl _ T.
   unfold simplify_relation_passes in Hsimpl.
