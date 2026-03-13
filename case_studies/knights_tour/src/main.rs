@@ -150,20 +150,20 @@ fn moves() -> Vec<(isize, isize)> {
 #[rr::only_spec]
 #[rr::ensures("if_Some ret (λ m, m ∈ v)")]
 /* TODO(sascha): try to verify when returning by value (instead of ref) */
-fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
-    let mut min = None;
     // #[invariant(forall<r: &(usize, Point)> min == Some(r) ==>
     //                   exists<i> 0 <= i && i < v@.len() && v[i] == *r)]
+fn min(v: &Vec<(usize, Point)>) -> Option<(usize, Point)> {
+    let mut min: Option<(usize, Point)> = None;
     for x in vec_iter(v) {
-        #[rr::inv_vars("min", "v")]
+        #[rr::inv_vars("min")]
         #[rr::invariant("if_Some min (λ m, m ∈ v)")]
         #[rr::ignore]
         || {};
-        match min {
-            None => min = Some(x),
+        match &min {
+            None => min = Some(*x),
             Some(m) => {
                 if x.0 < m.0 {
-                    min = Some(x)
+                    min = Some(*x)
                 }
             }
         };
@@ -214,7 +214,7 @@ pub fn knights_tour(size: usize, a: usize, b: usize) -> Option<Board> {
             }
         }
         match min(&candidates) {
-            Some(&(_, adj)) => p = adj,
+            Some((_, adj)) => p = adj,
             None => return None,
         };
         board.set(p, step);
