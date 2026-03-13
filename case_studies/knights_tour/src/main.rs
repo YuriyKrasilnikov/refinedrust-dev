@@ -73,13 +73,14 @@ pub struct Board {
 }
 
 impl Board {
-    #[rr::only_spec]
     #[rr::requires("Z.to_nat 16 * size ∈ isize")]
     #[rr::ensures("ret.1 = Z.to_nat size")]
     fn new(size: usize) -> Self {
         let rows = (0..size)
             .map(
                 #[rr::requires("Z.to_nat 16 * {size} ∈ isize")]
+                #[rr::ensures("∀ (i : nat), i < {size} -> (ret !! i) = Some 0")]
+                #[rr::ensures("length ret = Z.to_nat {size}")]
                 |_| vec![0; size],
             )
             .collect();
