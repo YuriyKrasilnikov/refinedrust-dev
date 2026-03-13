@@ -1,16 +1,16 @@
 From caesium Require Import lang notation.
 From refinedrust Require Import typing shims.
-From refinedrust.examples.tests.generated Require Import generated_code_tests generated_specs_tests generated_template_iterator_test_iterator_3.
+From refinedrust.examples.iterators.generated Require Import generated_code_iterators generated_specs_iterators generated_template_test_iterator_3.
 
 Set Default Proof Using "Type".
 
 Section proof.
 Context `{RRGS : !refinedrustGS Σ}.
 
-Lemma iterator_test_iterator_3_proof (π : thread_id) :
-  iterator_test_iterator_3_lemma π.
+Lemma test_iterator_3_proof (π : thread_id) :
+  test_iterator_3_lemma π.
 Proof.
-  iterator_test_iterator_3_prelude.
+  test_iterator_3_prelude.
 
   rep <-! liRStep; liShow.
   rep liRStep; liShow.
@@ -30,8 +30,11 @@ Proof.
   - case_bool_decide; last done.
     simplify_eq. lia. 
   - case_bool_decide; last done.
-    simplify_eq. lia. 
+    simplify_eq. lia.
 
+  all: print_remaining_goal.
+  Unshelve. all: sidecond_solver.
+  Unshelve. all: sidecond_hammer.
   Unshelve. all: print_remaining_sidecond.
 Qed.
 End proof.
