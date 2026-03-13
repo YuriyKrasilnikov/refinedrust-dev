@@ -7,6 +7,9 @@ Set Default Proof Using "Type".
 Section proof.
 Context `{RRGS : !refinedrustGS Σ}.
 
+(* TODO upstream *)
+Hint Rewrite -> wrap_to_it_id using can_solve : lithium_rewrite.
+
 Lemma Board_available_proof (π : thread_id) :
   Board_available_lemma π.
 Proof.
@@ -21,26 +24,9 @@ Proof.
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
-  - rewrite! wrap_to_it_id; [ | solve_goal..].
-    rename select (wrap_to_it p usize < _) into Hpbound.
-    rename select (wrap_to_it p0 usize < _) into Hp0bound.
-    rewrite wrap_to_it_id in Hpbound; last solve_goal.
-    rewrite wrap_to_it_id in Hp0bound; last solve_goal.
-
-    rewrite list_lookup_total_fmap; last solve_goal.
-    rewrite length_fmap.
-    rewrite Hnestedlen; last solve_goal.
-    solve_goal.
-  - rename select (wrap_to_it p usize < _) into Hpbound.
-    rewrite wrap_to_it_id in Hpbound; last solve_goal.
-    solve_goal.
-  - rename select (wrap_to_it p usize < _) into Hpbound.
-    rewrite wrap_to_it_id in Hpbound; last solve_goal.
-    rename select (wrap_to_it p0 usize < _) into Hp0bound.
-    rewrite! wrap_to_it_id in Hp0bound; [ | solve_goal..].
-    rewrite list_lookup_total_fmap in Hp0bound; last solve_goal.
-    rewrite length_fmap in Hp0bound.
-    rewrite Hnestedlen in Hp0bound; first apply Hp0bound.
-    solve_goal.
+  rewrite list_lookup_total_fmap; last solve_goal.
+  rewrite length_fmap.
+  rewrite Hnestedlen; last solve_goal.
+  solve_goal.
 Qed.
 End proof.

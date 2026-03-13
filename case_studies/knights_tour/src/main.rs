@@ -86,7 +86,7 @@ impl Board {
         Self { size, field: rows }
     }
 
-    #[rr::ensures("ret -> in_bounds self.1 p")]
+    #[rr::ensures("if ret then in_bounds self.1 p else True")]
     fn available(&self, p: Point) -> bool {
         0 <= p.x
             && (p.x as usize) < self.size
@@ -127,8 +127,8 @@ impl Board {
     }
 }
 
-#[rr::trust_me]
 // #[rr::returns("[ *[2; 1]; *[1; 2]; *[-1; 2]; *[-2; 1]; *[-2; -1]; *[-1; -2]; *[1; -2]; *[2; -1]]")]
+#[rr::requires("Hbounds": "size_of_array_in_bytes (tuple2_sls (IntSynType isize) (IntSynType isize)) 16 ≤ MaxInt isize")]
 #[rr::ensures("∀ (a b : Z), *[a; b] ∈ ret -> (a ≤ 2)%Z ∧ (-2 ≤ a)%Z ∧ (b ≤ 2)%Z ∧ (-2 ≤ b)%Z")]
 #[rr::ensures("length ret = 8%nat")]
 fn moves() -> Vec<(isize, isize)> {
@@ -179,39 +179,33 @@ fn min(v: &Vec<(usize, Point)>) -> Option<&(usize, Point)> {
 //#[requires(x < size)]
 //#[requires(y < size)]
 // #[rr::only_spec]
-#[rr::requires("a < size")]
-#[rr::requires("b < size")]
+#[rr::requires("Hx_upper": "a < size")]
+#[rr::requires("Hy_upper": "b < size")]
 #[rr::requires("16 * size ∈ isize")]
 #[rr::requires("size * size ∈ usize")]
-#[rr::requires("size_of_array_in_bytes (tuple2_sls (IntSynType usize) Point_sls) 16 ∈ isize")]
+#[rr::requires("size_of_array_in_bytes (tuple2_sls (IntSynType usize) Point_sls) 16 ≤ MaxInt isize")]
+#[rr::requires("size_of_array_in_bytes (tuple2_sls (IntSynType isize) (IntSynType isize)) 16 ≤ MaxInt isize")]
 pub fn knights_tour(size: usize, a: usize, b: usize) -> Option<Board> {
     let mut board = Board::new(size);
     let mut p = Point::new(a as isize, b as isize);
     board.set(p, 1);
 
-    // snapshot! { dumb_nonlinear_arith(size) };
-    // #[invariant(board.size == size)]
-    // #[invariant(board.wf())]
-    // #[invariant(board.in_bounds(p))]
     for step in 2..(size * size) {
         // choose next square by Warnsdorf's rule
         #[rr::inv_vars("board", "p")]
         #[rr::invariant("board.1 = Z.to_nat size")]
-        #[rr::invariant("in_bounds board.1 p")]
+        #[rr::invariant("Hboard_inbounds": "in_bounds board.1 p")]
         #[rr::ignore]||{};
         let mut candidates: Vec<(usize, Point)> = Vec::new();
-        // #[invariant(forall<i> 0 <= i && i < candidates@.len() ==>
-        //             board.in_bounds(candidates[i].1))]
         for m in moves() {
             #[rr::params("init_board")]
             #[rr::inv_vars("candidates", "board")]
-            #[rr::ignore]||{};
             #[rr::invariant("board = init_board")]
-            #[rr::invariant(
+            #[rr::invariant("Hcandidate_bounds": 
                 "∀ (z : RT_xt (place_rfnRT (tuple2_rt Z Point_inv_t_rt))), z ∈ candidates -> in_bounds board.1 (z.:1)"
             )]
             #[rr::invariant("length candidates ≤ length {Hist}")]
-            // proof_assert! { forall<r:Seq<_>, a: Seq<_>, b:Seq<_>> r == a.concat(Seq::singleton(m).concat(b)) ==> m == r[a.len()] };
+            #[rr::ignore]||{};
             let adj = p.mov(&m);
             if board.available(adj) {
                 let degree = board.count_degree(adj);

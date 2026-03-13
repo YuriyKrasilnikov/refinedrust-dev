@@ -7,13 +7,15 @@ Set Default Proof Using "Type".
 Section proof.
 Context `{RRGS : !refinedrustGS Σ}.
 
-Check SimplImpl.
-
+(* TODO upstream *)
 Global Instance simpl_impl_elem_of_nil {A} (x : A) :
   SimplImpl true (x ∈ []) (λ T, False → T).
 Proof.
   unfold SimplImpl. intros. rewrite elem_of_nil. done.
-Qed. 
+Qed.
+
+(* TODO upstream *)
+Hint Rewrite -> wrap_to_it_id using can_solve : lithium_rewrite.
 
 Lemma knights_tour_proof (π : thread_id) :
   knights_tour_lemma π.
@@ -35,66 +37,65 @@ Proof.
   rep  500 liRStep.
   rep  500 liRStep.
   rep  500 liRStep.
-  { rep liRStep. }
+  { rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    { rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    { rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep. }
+
+    rep  500 liRStep.
+    rep  500 liRStep.
+    rep  500 liRStep. }
+    rep  500 liRStep.
+    rep  500 liRStep.
+    { rep  liRStep. }
+    rep liRStep. }
   rep liRStep.
-  (*rep <-! liRStep; liShow.*)
-
-
-  (*{ rep <- 20 liRStep. liShow.*)
-  (*  rewrite! wrap_to_it_id; [ | solve_goal..].*)
-  (*  (*liInst Hevar_x1 0.*)*)
-  (*  admit.*)
-  (*}*)
 
   all: print_remaining_goal.
-  
+
   Unshelve.
-(*18: { }*)
   all: sidecond_solver.
-  all: try rewrite! wrap_to_it_id; [ | solve_goal..].
-  all: try solve [exfalso; rename select (_ ∈ []) into Hempt;inversion Hempt].
-  all: cbn.
-  - sidecond_hammer.
-  - sidecond_hammer.
-  - sidecond_hammer.
-  - sidecond_hammer.
-  - rename select (∀ a b : Z, _ -> a ≤ 2 ∧ _) into Hbound.
-    have Hmem : *[x'5; s] ∈ _iter_hist_35 ++ -[x'5; s] :: x'3.
-    { rewrite elem_of_app. right. rewrite elem_of_cons. left. done. }
-    apply Hbound in Hmem.
+  all: try (revert select (_ ∈ []); solve_goal).
+  all: try rename select (∀ a b : Z, _ -> a ≤ 2 ∧ _) into Hbound.
+  all: cbn in *.
+  all: unfold name_hint in *.
+  all: try rename select (in_bounds (Z.to_nat size) _) into Hinbounds.
+  all: try solve_goal.
+  - opose proof (Hbound _ _ _); [ apply elem_of_app; right; apply elem_of_cons; eauto | ].
     solve_goal.
-  - rename select (∀ a b : Z, _ -> a ≤ 2 ∧ _) into Hbound.
-    have Hmem : *[x'5; s] ∈ _iter_hist_35 ++ -[x'5; s] :: x'3.
-    { rewrite elem_of_app. right. rewrite elem_of_cons. left. done. }
-    apply Hbound in Hmem.
+  - opose proof (Hbound _ _ _); [ apply elem_of_app; right; apply elem_of_cons; eauto | ].
     solve_goal.
-  - rename select (True -> in_bounds _ _) into Hinbounds.
-    cbn in Hinbounds. unfold in_bounds in Hinbounds. cbn in Hinbounds. by apply Hinbounds.
-  - rename select (True -> in_bounds _ _) into Hinbounds.
-    cbn in Hinbounds. unfold in_bounds in Hinbounds. 
-    cbn in Hinbounds. unfold name_hint in Hinbounds.
-    solve_goal.
-  - rename select (True -> in_bounds _ _) into Hinbounds.
-    cbn in Hinbounds. unfold in_bounds in Hinbounds. cbn in Hinbounds. unfold name_hint in Hinbounds.
-    solve_goal.
-  - rename select (in_bounds (Z.to_nat size) _) into Hinbounds.
-    cbn in Hinbounds. unfold in_bounds in Hinbounds. cbn in Hinbounds. unfold name_hint in Hinbounds.
-    rewrite Z2Nat.id in Hinbounds; last done.
-    solve_goal.
-  - rename select (in_bounds (Z.to_nat size) _) into Hinbounds.
-    cbn in Hinbounds. unfold in_bounds in Hinbounds. cbn in Hinbounds. unfold name_hint in Hinbounds.
-    rewrite Z2Nat.id in Hinbounds; last done.
-    solve_goal.
-  - sidecond_hammer.
-  - assert (length candidates + length candidates ≤ 16). 
-    { lia. }
-    assert (Hsoab_mono : ∀ (a b : nat) τ, a ≤ b -> size_of_array_in_bytes τ a ≤ size_of_array_in_bytes τ b).
-    { intros a' b' st Haleb. unfold size_of_array_in_bytes. by nia. }
-    etrans.
-    { apply (Hsoab_mono (length candidates + length candidates)%nat 16%nat). solve_goal. }
-    done.
-  - unfold name_hint.
-    rename select (_ ∈ _) into Hincands.
+  - etrans; first eapply size_of_array_in_bytes_mono; last done. lia.
+  - rename select (_ ∈ _) into Hincands.
     rename select (∀ z, z ∈ candidates -> _) into Hcandsinbnds.
     cbn in Hincands. apply elem_of_app in Hincands.
     destruct Hincands as [Hcand | Hsing].
@@ -106,20 +107,12 @@ Proof.
       rename select (in_bounds (Z.to_nat size) _) into Hib.
       cbn in Hib. unfold in_bounds in Hib.
       by apply Hib.
-  - rewrite! Nat2Z.inj_succ.
-    rewrite -Z.succ_le_mono.
-    done.
-  - rewrite! Nat2Z.inj_succ.
-    apply Z.le_le_succ_r.
-    done.
-  - unfold name_hint.
-    rename select (_ ∈ _) into Hincands.
+  - rename select (_ ∈ _) into Hincands.
     rename select (∀ z, z ∈ candidates -> _) into Hcandsinbnds.
-    cbn in Hincands. 
+    cbn in Hincands.
     apply Hcandsinbnds in Hincands. cbn in Hincands.
     unfold in_bounds in Hincands. cbn in Hincands.
     unfold name_hint in Hincands.
     unfold in_bounds. unfold name_hint. solve_goal.
-  - solve_goal.
 Qed.
 End proof.

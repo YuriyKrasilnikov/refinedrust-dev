@@ -27,11 +27,5 @@ Proof.
     have Hmem : *[x'1; s] ∈ _iter_hist_7 ++ -[x'1; s] :: x'.
     { rewrite elem_of_app. right. rewrite elem_of_cons. left. done. }
     apply Hbound in Hmem. lia.
-  - rewrite Nat2Z.inj_succ.
-    rewrite -Z.succ_le_mono.
-    done.
-  - rewrite Nat2Z.inj_succ.
-    change (count ≤ Z.of_nat (length _iter_hist_7) + 1).
-    lia.
 Qed.
 End proof.
