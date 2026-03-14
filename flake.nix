@@ -411,6 +411,10 @@
             src = ./case_studies/refinedrust-20-paper-examples;
           }
           {
+            pname = "iterators";
+            src = ./case_studies/iterators;
+          }
+          {
             pname = "tests";
             src = ./case_studies/tests;
           }
