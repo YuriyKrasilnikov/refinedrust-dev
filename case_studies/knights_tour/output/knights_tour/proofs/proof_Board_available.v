@@ -17,6 +17,8 @@ Proof.
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
+  (* !start proof(knights_tour.available) *)
   rewrite Hnestedlen; solve_goal.
+  (* !end proof *)
 Qed.
 End proof.

@@ -13,15 +13,18 @@ Proof.
   Board_new_prelude.
 
   rep liRStep. liShow.
-  {
-    liInst Hevar_Inv (λ _ (p : Z * Z) '( *[x]), (⌜(16 * (x))%Z ∈ isize⌝ ∗ ⌜p.2 = size⌝)%I).
+  (* !start proof(knights_tour.new) *)
+  { liInst Hevar_Inv (λ _ (p : Z * Z) '( *[x]), (⌜(16 * (x))%Z ∈ isize⌝ ∗ ⌜p.2 = size⌝)%I).
     rep liRStep. }
+  (* !end proof *)
 
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
   Unshelve.
+  (* !start proof(knights_tour.new) *)
   { rewrite lookup_total_replicate_2; solve_goal. }
+  (* !end proof *)
   all: print_remaining_sidecond.
 Qed.
 End proof.

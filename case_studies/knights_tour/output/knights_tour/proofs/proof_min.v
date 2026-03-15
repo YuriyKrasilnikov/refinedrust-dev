@@ -17,8 +17,10 @@ Proof.
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
+  (* !start proof(knights_tour.min) *)
   - rewrite elem_of_app. right. solve_goal.
   - rewrite elem_of_app. right. solve_goal.
+  (* !end proof *)
   Unshelve. all: print_remaining_sidecond.
 Qed.
 End proof.

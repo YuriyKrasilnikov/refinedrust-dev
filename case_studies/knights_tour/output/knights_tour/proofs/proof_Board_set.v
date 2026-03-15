@@ -13,14 +13,17 @@ Proof.
   Board_set_prelude.
 
   rep <-! liRStep; liShow.
+  (* !start proof(knights_tour.set) *)
   rep <- 2 liRStep; liShow.
   liInst Hevar_x2 (<[Z.to_nat (wrap_to_it p usize) := (<[Z.to_nat (wrap_to_it p0 usize):= v]> (self0 !!! Z.to_nat (wrap_to_it p usize))) ]> self0).
   rep liRStep. 
+  (* !end proof *)
 
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
 
+  (* !start proof(knights_tour.set) *)
   - rewrite Hnestedlen; solve_goal.
   - apply list_subequiv_fmap.
     apply list_subequiv_insert_in_r; first solve_goal.
@@ -32,5 +35,6 @@ Proof.
   - rewrite list_lookup_total_insert.
     case_decide; first rewrite length_insert.
     all: apply Hnestedlen; solve_goal.
+  (* !end proof *)
 Qed.
 End proof.

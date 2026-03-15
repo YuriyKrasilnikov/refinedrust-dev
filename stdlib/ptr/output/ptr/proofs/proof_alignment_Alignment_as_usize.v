@@ -19,13 +19,13 @@ Proof.
   Transparent alignment_AlignmentEnum_els.
   liRStep.
   Opaque alignment_AlignmentEnum_els.
-  repeat liRStep. 
+  (* otherwise, [solve_goal] will take a long time to fail when the rewrite with [wrap_to_it_id] tries to apply *)
+  rewrite int_elem_of_u64_usize.
+  repeat liRStep; liShow.
 
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. 
-  rewrite wrap_to_it_id; first last.
-  { apply int_elem_of_u64_usize. done. }
   destruct self.
   all: vm_compute; reflexivity.
 

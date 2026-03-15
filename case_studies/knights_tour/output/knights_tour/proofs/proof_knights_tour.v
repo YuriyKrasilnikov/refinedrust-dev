@@ -18,6 +18,7 @@ Proof.
 
   Unshelve.
   all: sidecond_solver.
+  (* !start proof(knights_tour.knights_tour) *)
   all: try (revert select (_ ∈ []); solve_goal).
   all: try rename select (∀ a b : Z, _ -> a ≤ 2 ∧ _) into Hbound.
   all: cbn in *.
@@ -48,5 +49,6 @@ Proof.
     unfold in_bounds in Hincands. cbn in Hincands.
     unfold name_hint in Hincands.
     unfold in_bounds. unfold name_hint. solve_goal.
+  (* !end proof *)
 Admitted. (* TODO: admitted due to long Qed time *)
 End proof.

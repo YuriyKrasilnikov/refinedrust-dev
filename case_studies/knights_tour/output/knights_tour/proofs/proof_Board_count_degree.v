@@ -18,6 +18,7 @@ Proof.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
   Unshelve.
+  (* !start proof(knights_tour.count_degree) *)
   all: cbn.
   all: rename select (∀ a b : Z, _ -> a ≤ 2 ∧ _) into Hbound.
   - have Hmem : *[x'1; s] ∈ _iter_hist_7 ++ -[x'1; s] :: x'.
@@ -27,5 +28,6 @@ Proof.
     have Hmem : *[x'1; s] ∈ _iter_hist_7 ++ -[x'1; s] :: x'.
     { rewrite elem_of_app. right. rewrite elem_of_cons. left. done. }
     apply Hbound in Hmem. lia.
+  (* !end proof *)
 Qed.
 End proof.

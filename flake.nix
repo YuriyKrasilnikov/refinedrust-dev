@@ -415,6 +415,10 @@
             src = ./case_studies/iterators;
           }
           {
+            pname = "knights-tour";
+            src = ./case_studies/knights_tour;
+          }
+          {
             pname = "tests";
             src = ./case_studies/tests;
           }
