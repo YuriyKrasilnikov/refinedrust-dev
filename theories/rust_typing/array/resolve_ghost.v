@@ -11,7 +11,7 @@ Section resolve_ghost.
     T L rs True false ⊢
     resolve_ghost_iter π E L m b l st lts bk rs idx n T.
   Proof.
-    iIntros "HT".
+iIntros "HT".
     unfold resolve_ghost_iter.
     iIntros (???) "#CTX #HE HL %Hlen Ha".
     iFrame. iApply maybe_logical_step_intro. by iFrame.
@@ -168,6 +168,43 @@ Section resolve_ghost.
   Qed.
   Definition resolve_ghost_iter_insert_not_ignored_inst := [instance @resolve_ghost_iter_insert_not_ignored].
   Global Existing Instance resolve_ghost_iter_insert_not_ignored_inst.
+
+  Import EqNotations.
+  Lemma resolve_ghost_iter_obslist π E L rm lb l st {rt} (ty : type rt) n b (γs : list gname) (T : resolve_ghost_iter_cont_t rt) :
+    find_in_context (FindObsList γs) (λ '(existT rt' rs),
+      ∃ (Heq : rt' = RT_rt rt),
+        T L (<#> (rew [ λ x, (list (RT_rt x)) ] Heq in rs)) True%I true)
+    ⊢ resolve_ghost_iter π E L rm lb l st (replicate n (◁ ty)) b (PlaceGhost <$> γs) [] 0 T.
+  Proof.
+    iIntros "Hfind".
+    iIntros (???) "#CTX #HE HL %Hlen Hx".
+    iDestruct "Hfind" as "(%p & Hobs & HT)".
+    destruct p as [rt' rs].
+    iDestruct "HT" as "(%Heq & HT)". subst rt'.
+    simpl.
+    unfold ObsList.
+    rewrite length_replicate length_fmap in Hlen.
+    rewrite big_sepL2_replicate_r; first last.
+    { rewrite length_fmap//. }
+    rewrite big_sepL_fmap.
+    iPoseProof (big_sepL2_length with "Hobs") as "%Hlen'".
+    iPoseProof (big_sepL_extend_r rs with "Hx") as "Hx"; first done.
+    iPoseProof (big_sepL2_sep_1 with "Hobs Hx") as "Hv".
+    iFrame.
+    iApply maybe_logical_step_intro. iL.
+    rewrite big_sepL2_replicate_r; first last.
+    { rewrite length_fmap. lia. }
+    rewrite big_sepL_fmap.
+    iApply big_sepL2_elim_l.
+    iApply (big_sepL2_wand with "Hv").
+    iApply big_sepL2_intro; first done.
+    iModIntro. iModIntro.
+    iIntros (? γ r ??) "(Hobs & Hown)".
+    iApply (ltype_own_ofty_use_obs with "Hown [Hobs]").
+    done.
+  Qed.
+  Definition resolve_ghost_iter_obslist_inst := [instance @resolve_ghost_iter_obslist].
+  Global Existing Instance resolve_ghost_iter_obslist_inst | 100.
 
   Lemma resolve_ghost_iter_nil π E L rm lb l st {rt} (lts : list (ltype rt)) b ig i0 T :
     T L [] True%I false

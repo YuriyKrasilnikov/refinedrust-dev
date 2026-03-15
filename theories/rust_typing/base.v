@@ -50,6 +50,14 @@ Local Definition coPset_disjoint_empty_r := disjoint_empty_r (C:=coPset).
 Local Definition coPset_disjoint_empty_l := disjoint_empty_l (C:=coPset).
 Global Hint Extern 1 (CoPsetFact ?P) => (change P; clear; eauto using coPset_disjoint_empty_r, coPset_disjoint_empty_r with solve_ndisj) : typeclass_instances.
 
+(** Sealing things for Lithium, in user-defined specs *)
+Definition li_sealed {Σ} (P : iProp Σ) : iProp Σ := P.
+Global Typeclasses Opaque li_sealed.
+Lemma li_sealed_use_pers {Σ} (P : iProp Σ) `{!Persistent P} :
+  li_sealed P -∗ □ P.
+Proof.
+  unfold li_sealed. iIntros "#Ha". iModIntro. done.
+Qed.
 
 Class LayoutSizeEq (ly1 ly2 : layout) := layout_size_eq_proof : ly_size ly1 = ly_size ly2.
 Global Instance layout_size_eq_refl ly : LayoutSizeEq ly ly.
@@ -178,7 +186,7 @@ Definition if_iErr {A B} (x : result A B) (ϕ : B → iProp Σ) : iProp Σ :=
   end.
 End iris.
 
-
+(** For options *)
 Definition if_Some {A} (x : option A) (ϕ : A → Prop) : Prop :=
   match x with
   | Some x => ϕ x
@@ -207,6 +215,24 @@ Definition if_iNone {A} (x : option A) (ϕ : iProp Σ) : iProp Σ :=
 End iris.
 Global Typeclasses Opaque if_iSome.
 Global Typeclasses Opaque if_iNone.
+
+(** For booleans *)
+Definition if_True (b : bool) (ϕ : Prop) : Prop :=
+  if b then ϕ else True.
+Definition if_False (b : bool) (ϕ : Prop) : Prop :=
+  if b then True else ϕ.
+
+(** The same for Iris *)
+Section iris.
+Context `{!refinedcG Σ}.
+
+Definition if_iTrue (b : bool) (ϕ : iProp Σ) : iProp Σ :=
+  if b then ϕ else True%I.
+Definition if_iFalse (b : bool) (ϕ : iProp Σ) : iProp Σ :=
+  if b then True%I else ϕ.
+End iris.
+Global Typeclasses Opaque if_iFalse.
+Global Typeclasses Opaque if_iTrue.
 
 (* TODO: upstream: overwritten to allow for more parameters *)
 Ltac my_f_equiv :=

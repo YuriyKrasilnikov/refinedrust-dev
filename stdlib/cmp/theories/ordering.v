@@ -884,6 +884,31 @@ Section max_list.
     by apply correct_ord_antisym.
   Qed.
 
+  Lemma max_list_cmp_elem_of xs def :
+    max_list_cmp cmp xs def = def ∨ ∃ x, max_list_cmp cmp xs def = Some x ∧ x ∈ xs.
+  Proof.
+  induction xs as [ | x xs IH] in def |-*; simpl; first by left.
+    destruct (IH (max_by (option_cmp cmp) def (Some x))) as [Hdef | (y & Hmax & Hel)].
+    - rewrite Hdef. destruct def as [def | ]; simpl.
+      + rewrite max_by_Some.
+        unfold max_by. destruct (cmp def x); last by left.
+        all: right; set_solver.
+      + right. rewrite max_by_None_l. set_solver.
+    - rewrite Hmax. right. set_solver.
+  Qed.
+  Lemma min_list_cmp_elem_of xs def :
+    min_list_cmp cmp xs def = def ∨ ∃ x, min_list_cmp cmp xs def = Some x ∧ x ∈ xs.
+  Proof.
+  induction xs as [ | x xs IH] in def |-*; simpl; first by left.
+    destruct (IH (min_by (option_cmp_rev cmp) def (Some x))) as [Hdef | (y & Hmax & Hel)].
+    - rewrite Hdef. destruct def as [def | ]; simpl.
+      + rewrite min_by_Some_rev.
+        unfold min_by. destruct (cmp def x); [by left .. | ].
+        right; set_solver.
+      + right. rewrite min_by_None_l_rev. set_solver.
+    - rewrite Hmax. right. set_solver.
+  Qed.
+
   Lemma min_list_cmp_by_acc l acc :
     min_list_cmp cmp l acc = min_by (option_cmp_rev cmp) (min_list_cmp cmp l None) acc.
   Proof.

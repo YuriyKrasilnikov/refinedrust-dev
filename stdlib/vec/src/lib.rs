@@ -4,6 +4,10 @@
 #![allow(unused)]
 
 #![feature(allocator_api)]
+#![allow(internal_features)]
+#![feature(ptr_internals)]
+
+#![rr::import("rrstd.vec.theories", "vec")]
 
 #![rr::package("refinedrust-stdlib")]
 #![rr::coq_prefix("rrstd.alloc")]
@@ -17,20 +21,61 @@
 #![rr::include("ptr")]
 #![rr::include("ptr_advanced")]
 #![rr::include("clone")]
+#![rr::include("controlflow")]
 
 use std::alloc::{Allocator, Global};
 use std::marker::PhantomData;
-use core::ptr::NonNull;
+use core::ptr::{Unique, NonNull};
 
+#[rr::export_as(alloc::raw_vec::RawVec)]
+#[rr::refined_by("(l, cap)" : "(loc * nat)")]
+#[rr::exists("a")]
+#[rr::invariant(#iris "freeable_nz l (size_of_array_in_bytes {st_of T} cap) 1 HeapAlloc")]
+pub(crate) struct RawVec<T, A: Allocator = Global> {
+    #[rr::field("(l, cap, a)")]
+    inner: RawVecInner<A>,
+    #[rr::field("tt")]
+    _marker: PhantomData<T>,
+}
 
-#[rr::refined_by("xs" : "list (place_rfn {rt_of T})")]
-#[rr::exists("x", "y")]
+// NB: The real rustc impl uses usize with a niche on the highest bit, but we can't handle that.
+type Cap = usize;
+
+/// Like a `RawVec`, but only generic over the allocator, not the type.
+///
+/// As such, all the methods need the layout passed-in as a parameter.
+///
+/// Having this separation reduces the amount of code we need to monomorphize,
+/// as most operations don't need the actual type, just its layout.
+#[rr::refined_by("(l, cap, alloc)" : "(loc * nat * {rt_of A} : RT)%type")]
+struct RawVecInner<A: Allocator = Global> {
+    #[rr::field("l")]
+    ptr: Unique<u8>,
+    #[rr::field("Z.of_nat cap")]
+    cap: Cap,
+    #[rr::field("alloc")]
+    alloc: A,
+}
+
+// Uses the invariant from our "MiniVec" case study.
 #[rr::export_as(alloc::vec::Vec)]
+#[rr::refined_by("xs" : "list (place_rfn {rt_of T})")]
+#[rr::exists("cap" : "nat", "l" : "loc", "len" : "nat", "els")]
+#[rr::invariant(#type "l" : "els" @ "array_t cap (maybe_uninit {T})")]
+#[rr::invariant("Hxs" : "xs = project_vec_els len els")]
+#[rr::invariant("Hlook_1": "∀ i, (0 ≤ i < len)%nat → els !! i = Some (#(Some (xs !!! i)))")]
+#[rr::invariant("Hlook_2": "∀ i, (len ≤ i < cap)%nat → els !! i = Some (#None)")]
+#[rr::invariant("Hlen_eq": "len = length xs")]
+#[rr::invariant("Hcap": "len ≤ cap")]
+#[rr::invariant("Hbound" : "len ≤ MaxInt usize")]
+// invariant due to GEP / ptr::offset limits: the total size of the allocation should not exceed isize::max bytes
+// we need the ZST case to know that we never call grow except when we have reached the capacity limit
+#[rr::invariant("if decide (size_of_st {st_of T} = 0%nat) then cap = Z.to_nat (MaxInt USize) else (size_of_array_in_bytes {st_of T} cap ≤ MaxInt ISize)%Z")]
 pub struct Vec<T, A: Allocator = Global> {
-    #[rr::field("x")]
-    _x: PhantomData<T>,
-    #[rr::field("y")]
-    _y: A,
+    #[rr::field("(l, cap)")]
+    buf: RawVec<T, A>,
+    #[rr::field("Z.of_nat len")]
+    len: usize,
 }
 
 #[rr::export_as(alloc::vec::Vec)]
@@ -93,7 +138,21 @@ impl<T, A: Allocator> Vec<T, A> {
     #[rr::args("(xs, γ)", "Z.of_nat i")]
     #[rr::requires("i < length xs")]
     #[rr::observe("γ": "delete i (<$#> xs)")]
+    #[rr::returns("xs !!! i")]
     pub fn remove(&mut self, index: usize) -> T {
+        unreachable!(); 
+    }
+
+    #[rr::requires("index < length self.cur")]
+    //#[rr::observe("self.ghost": "take index self.cur ++ take 1%nat (drop (length self.cur - (1+index) ) (drop (1 + index) self.cur))")]
+    // TODO: very weak specification for now, getting this right in all boundary conditions is
+    // tricky
+    #[rr::exists("xs")]
+    #[rr::ensures("take (Z.to_nat index) self.cur = take (Z.to_nat index) xs")]
+    #[rr::ensures("length xs = (length self.cur - 1)%nat")]
+    #[rr::observe("self.ghost": "<$#> xs")]
+    #[rr::returns("self.cur !!! Z.to_nat index")]
+    pub fn swap_remove(&mut self, index: usize) -> T {
         unreachable!(); 
     }
 

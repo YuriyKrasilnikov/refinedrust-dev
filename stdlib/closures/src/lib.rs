@@ -4,18 +4,14 @@
 
 #![rr::package("refinedrust-stdlib")]
 #![rr::coq_prefix("rrstd.closures")]
+#![rr::import("rrstd.closures.theories", "closures")]
 
 // NOTE: Our translation of trait requirements erases `Tuple` requirements.
 #[rr::export_as(core::marker::Tuple)]
 pub trait Tuple { }
 
 #[rr::export_as(core::ops::FnOnce)]
-#[rr::exists("Params" : "Type")]
-#[rr::exists("Pre" : "thread_id → {Params} → {xt_of Self} → {xt_of Args} → iProp Σ")]
-#[rr::exists("Post" : "thread_id → {Params} → {xt_of Self} → {xt_of Args} → {xt_of Output} → iProp Σ")]
-// Note: the relation gets both the current and the next state
-#[rr::exists("PostMut" : "thread_id → {Params} → {xt_of Self} → {xt_of Args} → {xt_of Self} → {xt_of Output} → iProp Σ")]
-#[rr::nondependent]
+#[rr::external_attrs("Params", "Pre", "Post", "PostMut")]
 pub trait FnOnce<Args> {
     /// The returned type after the call operator is used.
     type Output;

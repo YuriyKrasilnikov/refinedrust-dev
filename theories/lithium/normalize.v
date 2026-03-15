@@ -39,7 +39,8 @@ Create HintDb lithium_rewrite discriminated.
 #[export] Hint Rewrite <- @list_fmap_insert : lithium_rewrite.
 #[export] Hint Rewrite -> @list_lookup_fmap : lithium_rewrite.
 #[export] Hint Rewrite -> @list_fmap_id : lithium_rewrite.
-#[export] Hint Rewrite <- @list_fmap_compose : lithium_rewrite.
+(* NB reversing this one is not a good idea *)
+(*#[export] Hint Rewrite -> @list_fmap_compose : lithium_rewrite.*)
 #[export] Hint Rewrite -> @lookup_take : lithium_rewrite.
 #[export] Hint Rewrite -> @take_take @drop_drop : lithium_rewrite.
 #[export] Hint Rewrite Nat.sub_0_r Nat.add_0_r Nat.sub_diag : lithium_rewrite.
@@ -70,6 +71,27 @@ Create HintDb lithium_rewrite discriminated.
 #[export] Hint Rewrite Nat.add_sub : lithium_rewrite.
 
 #[export] Hint Rewrite @lookup_total_drop : lithium_rewrite.
+
+
+(* fmap_app is not a good idea. *)
+(*#[export] Hint Rewrite -> @fmap_app : lithium_rewrite.*)
+#[export] Hint Rewrite -> @length_zip : lithium_rewrite.
+#[export] Hint Rewrite -> @snd_zip using can_solve : lithium_rewrite.
+#[export] Hint Rewrite -> @fst_zip using can_solve : lithium_rewrite.
+
+
+(** Classes for simplifying a particular term *)
+Class NormalizeTermProgress {A} (a b : A) := normalize_term_progress_proof : a = b.
+Global Hint Mode NormalizeTermProgress + + - : typeclass_instances.
+
+Hint Extern 10 (NormalizeTermProgress ?a ?b) =>
+  progress autorewrite with lithium_rewrite; reflexivity : typeclass_instances.
+
+Class NormalizeTerm {A} (a b : A) := normalize_term_proof : a = b.
+Global Hint Mode NormalizeTerm + + - : typeclass_instances.
+
+Hint Extern 10 (NormalizeTerm ?a ?b) =>
+  autorewrite with lithium_rewrite; reflexivity : typeclass_instances.
 
 (** ** Additional normalization instances *)
 

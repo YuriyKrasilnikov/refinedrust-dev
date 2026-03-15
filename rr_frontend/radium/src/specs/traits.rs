@@ -370,6 +370,9 @@ impl<'def> LiteralSpecUse<'def> {
             push_str_list!(specialized_semantic, &args, " ", |x| { format!("{}", x.get_rfn_type()) });
             specialized_semantic.push(' ');
             push_str_list!(specialized_semantic, &args, " ", |x| { x.to_string() });
+
+            push_str_list!(specialized_semantic, inst.get_lfts(), " ", |x| { x.to_string() });
+
             Some(specialized_semantic)
         } else {
             None
@@ -1017,6 +1020,10 @@ impl SpecDecl<'_> {
             params.0.insert(0, coq::binder::Binder::new_rrgs());
             params.append(ordered_params.get_semantic_ty_params().0);
 
+            for lft in self.generics.get_lfts() {
+                params.0.push(coq::binder::Binder::new(Some(lft.lft.to_string()), model::Type::Lft));
+            }
+
             let body = semantic_interp.to_owned();
 
             Some(coq::command::Command::Definition(coq::command::Definition {
@@ -1559,6 +1566,10 @@ impl ImplSpec<'_> {
             let all_tys = generics.get_all_ty_params_with_assocs();
             let mut params = all_tys.get_coq_ty_rt_params();
             params.append(all_tys.get_semantic_ty_params().0);
+
+            for lft in generics.get_lfts() {
+                params.0.push(coq::binder::Binder::new(Some(lft.lft.to_string()), model::Type::Lft));
+            }
 
             params.append(self.extra_context_items.0.clone());
 

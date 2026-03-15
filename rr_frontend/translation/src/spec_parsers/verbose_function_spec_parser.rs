@@ -608,8 +608,7 @@ where
             if lit.raw == specs::structs::TypeIsRaw::Yes {
                 ty.make_raw();
             }
-            // TODO should use the xt?
-            let rt = ty.get_rfn_type();
+            let rt = ty.get_xt_type();
             (specs::TypeWithRef::new(ty, lit.rfn.to_string()), Some(rt))
         }
     }
@@ -1087,6 +1086,7 @@ where
                             let altered_rfn = format!("(({}), {ghost_var})", processed_ty.1);
                             pre_types.push(specs::TypeWithRef::new(altered_ty, altered_rfn));
 
+                            // NB: needs the rfn type, not the xt type.
                             let type_hint = auto_type.get_rfn_type().to_string();
                             if let Some(post) = post {
                                 post_patterns.push(CapturePostRfn::Mut(
@@ -1360,20 +1360,17 @@ where
 
             let capture_ty = if matches!(kind, ty::UpvarCapture::ByRef(_)) {
                 if let specs::Type::MutRef(ty, _) = ty {
-                    ty.get_rfn_type()
+                    ty.get_xt_type()
                 } else if let specs::Type::ShrRef(ty, _) = ty {
-                    ty.get_rfn_type()
+                    ty.get_xt_type()
                 } else {
                     unreachable!();
                 }
             } else {
-                ty.get_rfn_type()
+                ty.get_xt_type()
             };
 
-            let capture_binder = coq::binder::Binder::new(
-                Some(capture_name),
-                coq::term::Type::UserDefined(model::Type::RTXT(Box::new(capture_ty.clone()))),
-            );
+            let capture_binder = coq::binder::Binder::new(Some(capture_name), capture_ty.clone());
             let pre_ty = LiteralTypeWithRef {
                 rfn: IdentOrTerm::Term(capture_binder.get_name_ref().as_ref().unwrap().to_owned()),
                 ty: None,

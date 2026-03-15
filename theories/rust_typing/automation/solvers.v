@@ -2072,7 +2072,7 @@ Ltac solve_place_update_kind_incl :=
   | |- lctx_place_update_kind_incl ?E ?L UpdWeak UpdWeak =>
       refine (tac_lctx_place_update_kind_incl_weak_weak _ _); solve[fail]
   | |- lctx_place_update_kind_incl ?E ?L ?b1 ?b2 =>
-      fail 1000 "solve_place_update_kind_incl: unable to solve inclusion"
+      fail 1 "solve_place_update_kind_incl: unable to solve inclusion"
   end.
 
 (** [check_llctx_place_update_kind_incl] *)

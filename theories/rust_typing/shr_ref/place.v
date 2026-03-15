@@ -205,14 +205,24 @@ Section place.
   Definition prove_place_cond_unfold_shr_r_inst := [instance @prove_place_cond_unfold_shr_r].
   Global Existing Instance prove_place_cond_unfold_shr_r_inst | 10.
 
-  (* TODO *)
-  (*
-  Lemma prove_place_cond_ShrLtype E L {rt1 rt2} (lt1 : ltype rt1) (lt2 : ltype rt2) κ k T :
-    prove_place_cond E L (Shared κ ⊓ₖ k) lt1 lt2 (λ upd, T $ access_result_lift place_rfn upd)
-    ⊢ prove_place_cond E L k (ShrLtype lt1 κ) (ShrLtype lt2 κ) T.
+  Lemma prove_place_cond_shr_ltype E L {rt1 rt2} (lt1 : ltype rt1) (lt2 : ltype rt2) κ1 κ2 k T :
+    ⌜lctx_lft_incl E L κ1 κ2⌝ ∗ ⌜lctx_lft_incl E L κ2 κ1⌝ ∗
+    prove_place_cond E L k lt1 lt2 (λ upd, T (mkPUKRes
+        upd.(puk_res_k) (opt_place_update_eq_lift place_rfnRT (upd).(puk_res_eq_1)) (opt_place_update_eq_lift place_rfnRT (upd).(puk_res_eq_2))))
+    ⊢ prove_place_cond E L k (ShrLtype lt1 κ1) (ShrLtype lt2 κ2) T.
   Proof.
-    (* TODO *)
-  Abort.
-   *)
+    iIntros "(%Hincl1 & %Hincl2 & HT)". iIntros (F ?) "#CTX #HE HL".
+    iPoseProof (lctx_lft_incl_incl with "HL HE") as "#Hincl1"; first apply Hincl1.
+    iPoseProof (lctx_lft_incl_incl with "HL HE") as "#Hincl2"; first apply Hincl2.
+    iMod ("HT" with "[//] CTX HE HL") as "($ & (%upd & ? & Hcond & % & HT))".
+    iFrame. iL.
+    simpl.
+    iApply ltype_eq_place_cond_ty_trans; simpl; first last.
+    { by iApply shr_ltype_place_cond. }
+    iIntros (??). iApply shr_ltype_eq; [ | done..].
+    iIntros (??). iApply ltype_eq_refl.
+  Qed.
+  Definition prove_place_cond_shr_ltype_inst := [instance @prove_place_cond_shr_ltype].
+  Global Existing Instance prove_place_cond_shr_ltype_inst | 5.
 
 End place.

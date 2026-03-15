@@ -1,7 +1,7 @@
 RUST_TARGET = $(shell rustc -vV | sed -n 's|host: ||p')
 RUST_PATH =	target/$(RUST_TARGET)/release
 
-CASE_STUDIES = case_studies/paper_examples case_studies/tests case_studies/minivec case_studies/minicell case_studies/evenint case_studies/refinedrust-20-paper-examples case_studies/hillel
+CASE_STUDIES = case_studies/paper_examples case_studies/tests case_studies/minivec case_studies/linkedlist case_studies/minicell case_studies/evenint case_studies/refinedrust-20-paper-examples case_studies/hillel case_studies/iterators
 
 ### generic build targets
 all: frontend typesystem stdlib.proof

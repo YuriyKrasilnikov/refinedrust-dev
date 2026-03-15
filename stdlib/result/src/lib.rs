@@ -7,6 +7,7 @@
 #![rr::coq_prefix("rrstd.result")]
 #![rr::import("rrstd.result.theories", "result")]
 #![rr::include("clone")]
+#![rr::include("closures")]
 
 use std::marker::PhantomData;
 use std::hint;
@@ -65,6 +66,37 @@ impl<T, E> Result<T, E> {
             Ok(t) => t,
             // SAFETY: the safety contract must be upheld by the caller.
             Err(_) => unsafe { hint::unreachable_unchecked() },
+        }
+    }
+}
+
+#[rr::export_as(core::result::Result)]
+impl<T, E> Result<T, E> {
+    #[rr::params("oparam")]
+    #[rr::ensures(#iris "if_iOk self (λ self, ⌜ret = Ok self⌝ ∗ ty_ghost_drop {O} π ($# op))")]
+    #[rr::requires(#iris "if_iErr self (λ self, ∃ p, ⌜oparam = Some p⌝ ∗ {O::Pre} π p op *[self])")]
+    #[rr::ensures(#iris "if_iErr self (λ self, ∃ p x, ⌜oparam = Some p⌝ ∗ ⌜ret = Err x⌝ ∗ {O::Post} π p op *[self] x)")]
+    pub fn map_err<F, O>(self, op: O) -> Result<T, F>
+    where
+        O: FnOnce(E) -> F,
+    {
+        match self {
+            Ok(t) => Ok(t),
+            Err(e) => Err(op(e)),
+        }
+    }
+
+    #[rr::params("oparam")]
+    #[rr::ensures(#iris "if_iErr self (λ self, ⌜ret = Err self⌝ ∗ ty_ghost_drop {F} π ($# op))")]
+    #[rr::requires(#iris "if_iOk self (λ self, ∃ p, ⌜oparam = Some p⌝ ∗ {F::Pre} π p op *[self])")]
+    #[rr::ensures(#iris "if_iOk self (λ self, ∃ p x, ⌜oparam = Some p⌝ ∗ ⌜ret = Ok x⌝ ∗ {F::Post} π p op *[self] x)")]
+    pub fn map<U, F>(self, op: F) -> Result<U, E>
+    where
+        F: FnOnce(T) -> U,
+    {
+        match self {
+            Ok(t) => Ok(op(t)),
+            Err(e) => Err(e),
         }
     }
 }

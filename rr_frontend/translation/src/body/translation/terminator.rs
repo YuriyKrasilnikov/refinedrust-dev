@@ -462,8 +462,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let dest_lit = self
             .ty_translator
             .generate_structlike_use(dest_pty.ty, dest_pty.variant_index)?;
-        let dest_sls = dest_lit
-            .map_or(lang::SynType::Unit, |x| x.generate_raw_syn_type_term());
+        let dest_sls = dest_lit.generate_raw_syn_type_term();
         let dest_place = self.translate_place(destination)?;
 
         let expected_name = "__cas_expected".to_owned();

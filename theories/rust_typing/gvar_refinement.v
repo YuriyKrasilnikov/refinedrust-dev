@@ -149,6 +149,15 @@ Lemma gvar_update_strong `{!ghost_varG Σ RT} {T1 T2 : Type} {γ} {t1 t2 : T1} (
   gvar_auth γ t1 -∗ gvar_obs γ t2 ==∗ gvar_auth γ t ∗ gvar_obs γ t.
 Proof. iApply ghost_var_update_halves. Qed.
 
+(** List of observations *)
+Section obs_list.
+  Context `{!ghost_varG Σ RT}.
+  Definition ObsList {rt} (γs : list gname) (vs : list rt) : iProp Σ :=
+    [∗ list] γ; v ∈ γs; vs, gvar_pobs γ v.
+End obs_list.
+Global Typeclasses Opaque ObsList.
+Global Arguments ObsList : simpl never.
+
 (** Heterogeneous version *)
 Section Rel2.
   Context `{!ghost_varG Σ RT} {T1 T2 : Type}.

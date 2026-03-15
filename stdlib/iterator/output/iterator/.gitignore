@@ -1,5 +1,2 @@
 interface.rrlib
 generated
-proofs
-!proofs/proof_adapters_map_Map_BIF_new.v
-!proofs/proof_adapters_map_MapMBMIMFastraits_iterator_Iterator_next.v

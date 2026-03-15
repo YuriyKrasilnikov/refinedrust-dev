@@ -23,7 +23,7 @@ Section find.
     {| rt_fic := FindValP v |}.
 
   Global Instance related_to_named_lfts M : RelatedTo (named_lfts M) | 100 :=
-{| rt_fic:= FindNamedLfts |}.
+    {| rt_fic:= FindNamedLfts |}.
 
   Global Instance related_to_gvar_pobs {rt} γ (r : rt) : RelatedTo (gvar_pobs γ r) | 100 :=
     {| rt_fic := FindGvarPobsP γ |}.
@@ -40,11 +40,14 @@ Section find.
   Global Instance related_to_loc_in_bounds l pre suf : RelatedTo (loc_in_bounds l pre suf) | 100 :=
     {| rt_fic := FindLocInBounds l |}.
 
-Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) | 100 :=
+  Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) | 100 :=
     {| rt_fic := FindLocal f x |}.
 
   Global Instance related_to_alloc_locals f locals : RelatedTo (allocated_locals f locals) | 100 :=
     {| rt_fic := FindFrameLocals f |}.
+
+  Global Instance related_to_obslist {rt} γs (rs rs' : list rt) `{!CheckOwnInContext (ObsList γs rs')} :
+    RelatedTo (ObsList γs rs) | 100 := {| rt_fic := FindObsList γs |}.
 
   (** Value ownership *)
   Lemma find_in_context_type_val_id v T :
@@ -272,7 +275,7 @@ Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) 
   (** FindOptLftDead *)
   Lemma subsume_lft_dead κ1 κ2 T :
     ⌜κ1 = κ2⌝ ∗ T ⊢ subsume (Σ := Σ) ([† κ1]) ([† κ2]) T.
-  Proof. iIntros "(-> & $)". eauto. Qed.
+Proof. iIntros "(-> & $)". eauto. Qed.
   Global Instance subsume_lft_dead_inst κ1 κ2 :
     Subsume ([† κ1]) ([† κ2]) := λ T, i2p (subsume_lft_dead κ1 κ2 T).
 
@@ -435,6 +438,46 @@ Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) 
   Definition find_in_context_opt_gvar_pobs_dummy_inst := [instance @find_in_context_opt_gvar_pobs_dummy with FICSyntactic].
   Global Existing Instance find_in_context_opt_gvar_pobs_dummy_inst | 10.
 
+  (** FindOptObsList *)
+  Lemma find_in_context_opt_obs_list γs T :
+    (∃ rt (rs : list rt), ObsList γs rs ∗ T (inl (existT rt rs)))
+    ⊢ find_in_context (FindOptObsList γs) T.
+  Proof.
+    iIntros "(%rt & %r & Hobs & HT)".
+    iExists _ => /=. iFrame.
+  Qed.
+  Definition find_in_context_opt_obs_list_inst := [instance @find_in_context_opt_obs_list with FICSyntactic].
+  Global Existing Instance find_in_context_opt_obs_list_inst | 1.
+  (* we have a dummy instance with lower priority for the case that we cannot find an observation in the context *)
+  Lemma find_in_context_opt_obs_list_dummy γ T :
+    (True ∗ T (inr ())) ⊢ find_in_context (FindOptObsList γ) T.
+  Proof.
+    iIntros "[_ HT]".
+    iExists _ => /=. iFrame.
+  Qed.
+  Definition find_in_context_opt_obs_list_dummy_inst := [instance @find_in_context_opt_obs_list_dummy with FICSyntactic].
+  Global Existing Instance find_in_context_opt_obs_list_dummy_inst | 10.
+
+  (** FindObsList *)
+  Lemma find_in_context_obs_list γs T :
+    (∃ rt (rs : list rt), ObsList γs rs ∗ T ((existT rt rs)))
+    ⊢ find_in_context (FindObsList γs) T.
+  Proof.
+    iIntros "(%rt & %r & Hobs & HT)".
+    iExists _ => /=. iFrame.
+  Qed.
+  Definition find_in_context_obs_list_inst := [instance @find_in_context_obs_list with FICSyntactic].
+  Global Existing Instance find_in_context_obs_list_inst | 1.
+
+  Lemma subsume_obslist {rt} γs (rs rs' : list rt) T :
+    ⌜rs = rs'⌝ ∗ T
+    ⊢ subsume (ObsList γs rs) (ObsList γs rs') T.
+  Proof.
+    iIntros "(-> & $)". eauto.
+  Qed.
+  Definition subsume_obslist_inst := [instance @subsume_obslist].
+  Global Existing Instance subsume_obslist_inst.
+
   (** FindOptInheritGvarPobs *)
   Lemma find_in_context_opt_inherit_gvar_pobs γ T :
     (∃ rt (r : rt) κs, Inherit κs (gvar_pobs γ r) ∗ T (inl (κs, existT rt r)))
@@ -572,6 +615,72 @@ Global Instance related_to_local_live f x st l : RelatedTo (x is_live{f, st} l) 
   Definition subsume_place_loc_in_bounds_inst := [instance @subsume_place_loc_in_bounds].
   Global Existing Instance subsume_place_loc_in_bounds_inst.
 End find.
+
+Section obslist.
+  Context `{!typeGS Σ}.
+
+  Lemma simplify_goal_obslist_nil (rt : Type) T :
+    T ⊢ simplify_goal (ObsList (rt:=rt) [] []) T.
+  Proof.
+    rewrite /simplify_goal/ObsList.
+    iIntros "$". done.
+  Qed.
+  Definition simplify_goal_obslist_nil_inst := [instance @simplify_goal_obslist_nil with 0%N].
+  Global Existing Instance simplify_goal_obslist_nil_inst.
+
+  Lemma simplify_goal_obslist_app {rt : Type} (rs : list rt) γs γs' T :
+    ObsList γs (take (length γs) rs) ∗
+    ObsList γs' (drop (length γs) rs) ∗ T
+    ⊢ simplify_goal (ObsList (γs ++ γs') rs) T.
+  Proof.
+    rewrite /simplify_goal. iIntros "(Ha & Hb & $)".
+    iEval (rewrite -(take_drop (length γs) rs)).
+    rewrite /ObsList. iApply (big_sepL2_app with "Ha Hb").
+  Qed.
+  Definition simplify_goal_obslist_app_inst := [instance @simplify_goal_obslist_app with 0%N].
+  Global Existing Instance simplify_goal_obslist_app_inst.
+
+  Lemma simplify_goal_obslist_singleton {rt} (xs : list rt) γ T :
+    (∃ x, gvar_pobs γ x ∗ ⌜xs = [x]⌝ ∗ T)
+    ⊢ simplify_goal (ObsList [γ] xs) T.
+  Proof.
+    rewrite /simplify_goal/ObsList/=.
+    iIntros "(%x & Hobs & -> & $)".
+    simpl. by iFrame.
+  Qed.
+  Definition simplify_goal_obslist_singleton_inst := [instance @simplify_goal_obslist_singleton with 0%N].
+  Global Existing Instance simplify_goal_obslist_singleton_inst.
+
+  Lemma simplify_hyp_obslist_singleton {rt} (x : rt) γ T :
+    (gvar_pobs γ x -∗ T)
+    ⊢ simplify_hyp (ObsList [γ] [x]) T.
+  Proof.
+    rewrite /simplify_hyp/ObsList/=.
+    iIntros "Hcont (Hobs & _)". by iApply "Hcont".
+  Qed.
+  Definition simplify_hyp_obslist_singleton_inst := [instance @simplify_hyp_obslist_singleton with 0%N].
+  Global Existing Instance simplify_hyp_obslist_singleton_inst.
+
+  Lemma simplify_goal_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} T :
+    ObsList γs' xs ∗ T
+    ⊢ simplify_goal (ObsList γs xs) T.
+  Proof.
+    unfold NormalizeTermProgress, NormalizeTerm in *.
+    subst. iIntros "($ & $)".
+  Qed.
+  Definition simplify_goal_obslist_normalize_inst := [instance @simplify_goal_obslist_normalize with 0%N].
+  Global Existing Instance simplify_goal_obslist_normalize_inst.
+
+  Lemma simplify_hyp_obslist_normalize {rt} (xs : list rt) `{!NormalizeTermProgress γs γs'} T :
+    (ObsList γs' xs -∗ T)
+    ⊢ simplify_hyp (ObsList γs xs) T.
+  Proof.
+    unfold NormalizeTermProgress, NormalizeTerm in *.
+    subst. done.
+  Qed.
+  Definition simplify_hyp_obslist_normalize_inst := [instance @simplify_hyp_obslist_normalize with 100%N].
+  Global Existing Instance simplify_hyp_obslist_normalize_inst.
+End obslist.
 
 Section iterate.
   Context `{!typeGS Σ}.
@@ -1156,25 +1265,26 @@ Section prove_subtype.
     iIntros "(%b & HT)". done.
   Qed.
 
-  (** Before, some simplification instances that trigger if we shouldn't destruct. *)
-  Lemma simplify_goal_if_iSome_Some {A} (x : A) Φ T :
-    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iSome (Some x) Φ) T.
-  Proof. simpl. done. Qed.
+  (** Instances for Option *)
+  (** first some simplification instances that trigger if we shouldn't destruct. *)
+  Lemma simplify_goal_if_iSome_Some {A} (x : A) Φ `{Heq: !TCDone (y = Some x)} T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iSome y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iSome_Some_inst := [instance @simplify_goal_if_iSome_Some with 0%N].
   Global Existing Instance simplify_goal_if_iSome_Some_inst.
-  Lemma simplify_goal_if_iSome_None {A} (Φ : A → iProp Σ) T :
-    T ⊢@{iProp Σ} simplify_goal (if_iSome None Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iSome_None {A} (Φ : A → iProp Σ) `{Heq : !TCDone (y = None)} T :
+    T ⊢@{iProp Σ} simplify_goal (if_iSome y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iSome_None_inst := [instance @simplify_goal_if_iSome_None with 0%N].
   Global Existing Instance simplify_goal_if_iSome_None_inst.
-  Lemma simplify_goal_if_iNone_None {A} Φ T :
-    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) None Φ) T.
-  Proof. simpl. done. Qed.
+  Lemma simplify_goal_if_iNone_None {A} Φ `{Heq: !TCDone (y = None)} T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
   Definition simplify_goal_if_iNone_None_inst := [instance @simplify_goal_if_iNone_None with 0%N].
   Global Existing Instance simplify_goal_if_iNone_None_inst.
-  Lemma simplify_goal_if_iNone_Some {A} (x : A) Φ T :
-    (T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) (Some x) Φ) T.
-  Proof. simpl. iIntros "$". Qed.
+  Lemma simplify_goal_if_iNone_Some {A} (x : A) Φ `{Heq : !TCDone (y = Some x)} T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iNone (A:=A) y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
   Definition simplify_goal_if_iNone_Some_inst := [instance @simplify_goal_if_iNone_Some with 0%N].
   Global Existing Instance simplify_goal_if_iNone_Some_inst.
 
@@ -1189,6 +1299,71 @@ Section prove_subtype.
   Definition prove_with_subtype_destruct_if_iNone_inst := [instance @prove_with_subtype_destruct_if_iNone].
   Global Existing Instance prove_with_subtype_destruct_if_iNone_inst | 100.
 
+  (** Instances for Result *)
+  Lemma simplify_goal_if_iOk_Ok {A B} (x : A) Φ `{Heq : !TCDone (y = Ok x)} T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iOk (B:=B) y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
+  Definition simplify_goal_if_iOk_Ok_inst := [instance @simplify_goal_if_iOk_Ok with 0%N].
+  Global Existing Instance simplify_goal_if_iOk_Ok_inst.
+  Lemma simplify_goal_if_iOk_Err {A B} (x : B) (Φ : A → iProp Σ) `{Heq : !TCDone (y = Err x)} T :
+    T ⊢@{iProp Σ} simplify_goal (if_iOk y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iOk_Err_inst := [instance @simplify_goal_if_iOk_Err with 0%N].
+  Global Existing Instance simplify_goal_if_iOk_Err_inst.
+  Lemma simplify_goal_if_iErr_Err {A B} (x : B) Φ `{Heq : !TCDone (y = Err x)} T :
+    (Φ x ∗ T) ⊢@{iProp Σ} simplify_goal (if_iErr (A:=A) y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
+  Definition simplify_goal_if_iErr_Err_inst := [instance @simplify_goal_if_iErr_Err with 0%N].
+  Global Existing Instance simplify_goal_if_iErr_Err_inst.
+  Lemma simplify_goal_if_iErr_Ok {A B} (x : A) Φ `{Heq : !TCDone (y = Ok x)} T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iErr (B:=B) y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iErr_Ok_inst := [instance @simplify_goal_if_iErr_Ok with 0%N].
+  Global Existing Instance simplify_goal_if_iErr_Ok_inst.
+
+  Definition prove_with_subtype_destruct_if_iOk {A B} (x : result A B) P :=
+    prove_with_subtype_destruct x (if_iOk x P).
+  Definition prove_with_subtype_destruct_if_iOk_inst := [instance @prove_with_subtype_destruct_if_iOk].
+  Global Existing Instance prove_with_subtype_destruct_if_iOk_inst | 100.
+
+  Definition prove_with_subtype_destruct_if_iErr {A B} (x : result A B) P :=
+    prove_with_subtype_destruct x (if_iErr x P).
+  Definition prove_with_subtype_destruct_if_iErr_inst := [instance @prove_with_subtype_destruct_if_iErr].
+  Global Existing Instance prove_with_subtype_destruct_if_iErr_inst | 100.
+
+  (** Instances for bool *)
+  Lemma simplify_goal_if_iTrue_true Φ `{Heq : !TCDone (y = true)} T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iTrue y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
+  Definition simplify_goal_if_iTrue_true_inst := [instance @simplify_goal_if_iTrue_true with 0%N].
+  Global Existing Instance simplify_goal_if_iTrue_true_inst.
+  Lemma simplify_goal_if_iTrue_false (Φ : iProp Σ) `{Heq : !TCDone (y = false)} T :
+    T ⊢@{iProp Σ} simplify_goal (if_iTrue y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iTrue_false_inst := [instance @simplify_goal_if_iTrue_false with 0%N].
+  Global Existing Instance simplify_goal_if_iTrue_false_inst.
+  Lemma simplify_goal_if_iFalse_false Φ `{Heq : !TCDone (y = false)} T :
+    (Φ ∗ T) ⊢@{iProp Σ} simplify_goal (if_iFalse y Φ) T.
+  Proof. rewrite Heq. simpl. done. Qed.
+  Definition simplify_goal_if_iFalse_false_inst := [instance @simplify_goal_if_iFalse_false with 0%N].
+  Global Existing Instance simplify_goal_if_iFalse_false_inst.
+  Lemma simplify_goal_if_iFalse_true Φ `{Heq : !TCDone (y = true)} T :
+    (T) ⊢@{iProp Σ} simplify_goal (if_iFalse y Φ) T.
+  Proof. rewrite Heq. simpl. iIntros "$". Qed.
+  Definition simplify_goal_if_iFalse_true_inst := [instance @simplify_goal_if_iFalse_true with 0%N].
+  Global Existing Instance simplify_goal_if_iFalse_true_inst.
+
+  Definition prove_with_subtype_destruct_if_iTrue (b : bool) P :=
+    prove_with_subtype_destruct b (if_iTrue b P).
+  Definition prove_with_subtype_destruct_if_iTrue_inst := [instance @prove_with_subtype_destruct_if_iTrue].
+  Global Existing Instance prove_with_subtype_destruct_if_iTrue_inst | 100.
+
+  Definition prove_with_subtype_destruct_if_ifalse (b : bool) P :=
+    prove_with_subtype_destruct b (if_iFalse b P).
+  Definition prove_with_subtype_destruct_if_ifalse_inst := [instance @prove_with_subtype_destruct_if_ifalse].
+  Global Existing Instance prove_with_subtype_destruct_if_ifalse_inst | 100.
+
+  (** Guarded *)
   Lemma prove_with_subtype_guarded E L b pm wl P T :
     prove_with_subtype E L b pm (maybe_creds wl ∗ P) T ⊢
     prove_with_subtype E L b pm (guarded wl P) T.
@@ -1605,6 +1780,18 @@ Section subsume.
   Qed.
   Definition prove_place_cond_blocked_r_Strong_inst := [instance @prove_place_cond_blocked_r_Strong].
   Global Existing Instance prove_place_cond_blocked_r_Strong_inst | 5.
+
+  Lemma prove_place_cond_blocked_blocked E L {rt} (ty : type rt) κ' T :
+    T (mkPUKRes (UpdUniq [κ']) opt_place_update_eq_refl opt_place_update_eq_refl) ⊢
+    prove_place_cond E L UpdStrong (BlockedLtype ty κ') (BlockedLtype ty κ') T.
+  Proof.
+    iIntros "HT". iIntros (F ?) "#CTX HE HL".
+    iFrame. iL. simpl.
+    iApply typed_place_cond_blocked_l.
+    iApply ofty_blocked_place_cond. iApply place_update_kind_incl_refl.
+  Qed.
+  Definition prove_place_cond_blocked_blocked_inst := [instance @prove_place_cond_blocked_blocked].
+  Global Existing Instance prove_place_cond_blocked_blocked_inst | 4.
   (* no shared lemma *)
 
   Lemma prove_place_cond_blocked_l E L {rt rt2} (ty : type rt) (lt : ltype rt2) b κ'  T :
@@ -1856,52 +2043,26 @@ Section subsume.
   Global Instance resolve_ghost_id_inst {rt} π E L l (lt : ltype rt) rm lb k r :
     ResolveGhost π E L rm lb l lt k r | 200 := λ T, i2p (resolve_ghost_id π E L l lt rm lb k r T).
 
-  Lemma resolve_ghost_ofty_Owned {rt} π E L l (ty : type rt) γ rm lb T :
+  Lemma resolve_ghost_ofty {rt} π E L l (ty : type rt) γ rm lb b T :
     find_observation rt γ FindObsModeDirect (λ or,
       match or with
       | None =>
           ⌜fast_eq_hint (rm = ResolveTry)⌝ ∗ T L (PlaceGhost γ) True false
       | Some r =>
           (* try again in case we should descend into the type or we have still got a PlaceGhost *)
-          resolve_ghost π E L rm lb l (◁ ty)%I (Owned) r T
+          resolve_ghost π E L rm lb l (◁ ty)%I b r T
       end)
-    ⊢ resolve_ghost π E L rm lb l (◁ ty)%I (Owned) (PlaceGhost γ) T.
+    ⊢ resolve_ghost π E L rm lb l (◁ ty)%I b (PlaceGhost γ) T.
   Proof.
     iIntros "HT". iIntros (F ??) "#CTX #HE HL Hl".
     iMod ("HT" with "[//]") as "HT". iDestruct "HT" as "[(%r & Hobs & HT) | (-> & HT)]".
-    - rewrite ltype_own_ofty_unfold /lty_of_ty_own.
-      iDestruct "Hl" as "(%ly & ? & ? & ? & ? & %r' & Hrfn & Hb)".
-      iPoseProof (place_rfn_interp_owned_find_observation with "Hrfn Hobs") as "Hobs".
-      iMod ("HT" with "[] [] CTX HE HL [-]") as "Ha"; [done.. | | ].
-      { rewrite ltype_own_ofty_unfold /lty_of_ty_own. eauto with iFrame. }
+    - iPoseProof (ltype_own_ofty_use_obs with "Hl Hobs") as "Hl".
+      iMod ("HT" with "[] [] CTX HE HL [$]") as "Ha"; [done.. | ].
       done.
     - iExists L, _, True%I, _. iFrame. iApply maybe_logical_step_intro. eauto with iFrame.
   Qed.
-  Definition resolve_ghost_ofty_Owned_inst := [instance @resolve_ghost_ofty_Owned].
-  Global Existing Instance resolve_ghost_ofty_Owned_inst | 7.
-
-  Lemma resolve_ghost_ofty_Uniq {rt} π E L l (ty : type rt) γ rm lb κ γ' T :
-    find_observation rt γ FindObsModeDirect (λ or,
-      match or with
-      | None => ⌜fast_eq_hint (rm = ResolveTry)⌝ ∗ T L (PlaceGhost γ) True false
-      | Some r =>
-          (* try again in case we should descend into the type or we have still got a PlaceGhost *)
-          resolve_ghost π E L rm lb l (◁ ty)%I (Uniq κ γ') r T
-      end)
-    ⊢ resolve_ghost π E L rm lb l (◁ ty)%I (Uniq κ γ') (PlaceGhost γ) T.
-  Proof.
-    iIntros "HT". iIntros (F ??) "#CTX #HE HL Hl".
-    iMod ("HT" with "[//]") as "HT". iDestruct "HT" as "[(%r & Hobs & HT) | (-> & HT)]".
-    - rewrite ltype_own_ofty_unfold /lty_of_ty_own.
-      iDestruct "Hl" as "(%ly & ? & ? & ? & ? & ? & Hrfn & Hb)".
-      iPoseProof (place_rfn_interp_mut_find_observation with "Hrfn Hobs") as "Hrfn".
-      iMod ("HT" with "[] [] CTX HE HL [-]") as "Ha"; [done.. | | ].
-      { rewrite ltype_own_ofty_unfold /lty_of_ty_own. eauto with iFrame. }
-      done.
-    - iExists L, _, True%I, _. iFrame. iApply maybe_logical_step_intro. eauto with iFrame.
-  Qed.
-  Definition resolve_ghost_ofty_Uniq_inst := [instance @resolve_ghost_ofty_Uniq].
-  Global Existing Instance resolve_ghost_ofty_Uniq_inst | 7.
+  Definition resolve_ghost_ofty_inst := [instance @resolve_ghost_ofty].
+  Global Existing Instance resolve_ghost_ofty_inst | 7.
 
   (* Low-priority default instance. Can be overridden in case we want to descend into the type for deeper resolution, for instance for ADTs. See the instances in [existentials.v]. *)
   Lemma resolve_ghost_ofty_default {rt} (ty : type rt) π E L l r rm lb bk T :
@@ -5107,7 +5268,7 @@ Section subsume.
   Definition typed_context_fold_extract_interp (π : thread_id) := λ '(ctx, R), (type_ctx_interp π ctx ∗ R)%I.
   Lemma typed_context_fold_step_extract π E L l {rt} (lt : ltype rt) (r : place_rfn rt) (tctx : list loc) acc R κ T :
     stratify_ltype_extract π E L StratNoRefold l lt r (Owned) κ
-      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_stratify_interp π) E L' (CtxFoldExtractAll κ) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
+      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_extract_interp π) E L' (CtxFoldExtractAll κ) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
     ⊢ typed_context_fold_step (typed_context_fold_extract_interp π) π E L (CtxFoldExtractAll κ) l lt r tctx (acc, R) T.
   Proof.
     iIntros "Hstrat". iIntros (????) "#CTX #HE HL Hdel Hl".
@@ -5125,8 +5286,8 @@ Section subsume.
 
   Lemma typed_context_fold_extract_init π E L κ T :
     li_tactic find_spatial_locs_goal (λ tctx,
-    typed_context_fold (typed_context_fold_stratify_interp π) E L (CtxFoldExtractAll κ) tctx ([], True%I) (λ L' m' acc, True ∗
-      typed_context_fold_end (typed_context_fold_stratify_interp π) E L' acc T))
+    typed_context_fold (typed_context_fold_extract_interp π) E L (CtxFoldExtractAll κ) tctx ([], True%I) (λ L' m' acc, True ∗
+      typed_context_fold_end (typed_context_fold_extract_interp π) E L' acc T))
     ⊢ typed_pre_context_fold π E L (CtxFoldExtractAllInit κ) T.
   Proof.
     rewrite /find_spatial_locs_goal.
@@ -5173,7 +5334,7 @@ Section subsume.
   Definition typed_context_fold_close_inv_interp (π : thread_id) := λ '(ctx, R), (type_ctx_interp π ctx ∗ R)%I.
   Lemma typed_context_fold_step_close_inv π E L l {rt} (lt : ltype rt) (r : place_rfn rt) (tctx : list loc) acc R κs T :
     stratify_ltype_close_inv κs π E L l lt r (Owned)
-      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_resolve_interp π) E L' (CtxFoldCloseInvAll κs) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
+      (λ L' R' rt' lt' r', typed_context_fold (typed_context_fold_close_inv_interp π) E L' (CtxFoldCloseInvAll κs) tctx ((l, mk_bltype _ r' lt') :: acc, R' ∗ R) T)
     ⊢ typed_context_fold_step (typed_context_fold_close_inv_interp π) π E L (CtxFoldCloseInvAll κs) l lt r tctx (acc, R) T.
   Proof.
     iIntros "Hstrat". iIntros (????) "#CTX #HE HL Hdel Hl".

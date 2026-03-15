@@ -80,6 +80,19 @@ Proof.
   - apply IH.
 Qed.
 
+Lemma option_fmap_mjoin {A B} (f : A → B) (ls : option (option A)) :
+  f <$> mjoin ls = mjoin ((λ x, f <$> x) <$> ls).
+Proof.
+  destruct ls as [ [? | ] | ]; done.
+Qed.
+Lemma list_fmap_mjoin {A B} (f : A → B) (ls : list (list A)) :
+  f <$> mjoin ls = mjoin ((λ x, f <$> x) <$> ls).
+Proof.
+  induction ls as [ | l ls IH]; simpl; first done.
+  rewrite fmap_app. f_equiv.
+  apply IH.
+Qed.
+
 Lemma aligned_to_2_max_l l n1 n2 :
   l `aligned_to` 2 ^ (max n1 n2) →
   l `aligned_to` 2 ^ n1.
@@ -122,6 +135,26 @@ Proof.
   { rewrite !Forall_nil//. }
   rewrite Forall_cons. rewrite Forall_app.
   naive_solver.
+Qed.
+
+Lemma Forall3_to_Forall2_l {A B C} Φ (l1 : list A) (l2 : list B) (l3 : list C) :
+  Forall3 Φ l1 l2 l3 →
+  Forall2 (λ '(a, b) c, Φ a b c) (zip l1 l2) l3.
+Proof.
+  induction 1; simpl; econstructor; done.
+Qed.
+Lemma Forall3_to_Forall2_r {A B C} Φ (l1 : list A) (l2 : list B) (l3 : list C) :
+  Forall3 Φ l1 l2 l3 →
+  Forall2 (λ a '(b, c), Φ a b c) l1 (zip l2 l3).
+Proof.
+  induction 1; simpl; econstructor; done.
+Qed.
+
+Lemma Forall2_functional {A B} (f : A → B) ls1 ls2 :
+  Forall2 (λ x1 x2, x2 = f x1) ls1 ls2 →
+  ls2 = f <$> ls1.
+Proof.
+  induction 1; simpl; try naive_solver.
 Qed.
 
 Lemma and_proper (A B C : Prop) :

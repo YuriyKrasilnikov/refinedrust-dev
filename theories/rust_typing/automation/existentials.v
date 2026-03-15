@@ -44,6 +44,11 @@ Ltac ex_t_solve_timeless :=
   intro_adt_params;
   rewrite /TCNoResolve; intros; prepare_initial_coq_context; apply _.
 
+Ltac ex_t_solve_shr_eq ::=
+  simpl;
+  intro_adt_params;
+  intros; prepare_initial_coq_context; done.
+
 (** Solve the monotonicity assumption. *)
 Class AsShared `{!typeGS Σ} (κ : lft) (P : iProp Σ) := {
   as_shared_pred : lft → iProp Σ;

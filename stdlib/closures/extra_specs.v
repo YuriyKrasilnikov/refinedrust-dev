@@ -10,12 +10,3 @@ Definition Fn_default_attrs {Self_rt Args_rt Output_rt : RT} :
   Fn_spec_attrs (RRGS:=RRGS) Self_rt Args_rt Output_rt :=
   mk_Fn_spec_attrs.
 End extra_specs.
-
-(*Global Arguments FnOnce_Post : simpl never.*)
-(*Global Typeclasses Opaque FnOnce_Post.*)
-
-(*Global Arguments FnOnce_Pre : simpl never.*)
-(*Global Typeclasses Opaque FnOnce_Pre.*)
-
-(*Global Arguments FnMut_PostMut : simpl never.*)
-(*Global Typeclasses Opaque FnMut_PostMut.*)

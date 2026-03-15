@@ -122,6 +122,24 @@ Ltac liDestruct_hook term ::=
         iRevert H
     end
   );
+  repeat iSelect (if_iFalse _ _) (fun H =>
+    match iTypeOf H with
+    | Some (_, if_iFalse ?x _) =>
+        match term with
+        | context [x] => idtac
+        end;
+        iRevert H
+    end
+  );
+  repeat iSelect (if_iTrue _ _) (fun H =>
+    match iTypeOf H with
+    | Some (_, if_iTrue ?x _) =>
+        match term with
+        | context [x] => idtac
+        end;
+        iRevert H
+    end
+  );
   try let_bind_envs
 .
 
@@ -806,14 +824,6 @@ Global Instance simpl_exist_tysized `{!typeGS Σ} {rt} (ty : type rt) `{!TySized
 Proof.
   intros ?. eauto.
 Qed.
-
-(** A typeclass to check whether a relation is the identity relation *)
-Class RelationIsIdentity {A} (R : A → A → Prop) := {
-  relation_is_identity_proof : ∀ a b, R a b → a = b;
-}.
-Global Hint Extern 100 (RelationIsIdentity _) =>
-    simpl; econstructor; solve_goal : typeclass_instances.
-Global Hint Mode RelationIsIdentity + + : typeclass_instances.
 
 (** Unfold [ty_ghost_drop] if necessary *)
 Class TyIsNotVar `{!typeGS Σ} {rt} (ty : type rt) := {}.

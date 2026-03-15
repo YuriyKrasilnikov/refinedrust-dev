@@ -458,6 +458,22 @@ Definition FindOptGvarPobs `{!typeGS Σ} (γ : gname) :=
   |}.
 Global Typeclasses Opaque FindOptGvarPobs.
 
+Definition FindOptObsList `{!typeGS Σ} (γs : list gname) :=
+  {| fic_A := (@sigT RT (λ rt, list rt) + unit)%type;
+    fic_Prop a :=
+      match a with
+      | inl (existT rt rs) => (ObsList γs rs)%I
+      | inr _ => True%I
+      end
+  |}.
+Global Typeclasses Opaque FindOptObsList.
+
+Definition FindObsList `{!typeGS Σ} (γs : list gname) :=
+  {| fic_A := (@sigT RT (λ rt, list rt));
+    fic_Prop '(existT rt rs) := (ObsList γs rs)%I;
+  |}.
+Global Typeclasses Opaque FindObsList.
+
 (** attempt to find an inheritance for an observation, or give up *)
 Definition FindOptInheritGvarPobs `{!typeGS Σ} (γ : gname) :=
   {| fic_A := ((list lft * @sigT RT (λ rt, rt))%type + unit)%type;
@@ -2312,6 +2328,26 @@ Section judgments.
       iDestruct "Hrel" as "(% & % & ? & Hobs' & <-)".
       iPoseProof (gvar_pobs_agree with "Hobs' Hobs") as "<-".
       done.
+  Qed.
+
+  Lemma ltype_own_ofty_use_obs {rt} (ty : type rt) π l b γ r :
+    (l ◁ₗ[π, b] (PlaceGhost γ) @ ◁ ty) -∗
+    find_observation_result γ r -∗
+    (l ◁ₗ[π, b] (r) @ ◁ ty).
+  Proof.
+    rewrite !ltype_own_ofty_unfold /lty_of_ty_own.
+    iIntros "(%ly & % & % & ? & ? & Hb) Hobs".
+    iExists _. iR. iR. iFrame.
+    destruct b.
+    - iDestruct "Hb" as "(%r' & Hrfn & Hb)".
+      iPoseProof (place_rfn_interp_owned_find_observation with "Hrfn Hobs") as "Hobs".
+      iFrame.
+    - iDestruct "Hb" as "(%r' & Hrfn & Hb)".
+      iPoseProof (place_rfn_interp_shared_find_observation with "Hrfn Hobs") as "Hobs".
+      iFrame.
+    - iDestruct "Hb" as "(? & Hrfn & Hb)".
+      iPoseProof (place_rfn_interp_mut_find_observation with "Hrfn Hobs") as "Hobs".
+      iFrame.
   Qed.
 
   Definition find_observation_cont_t (rt : RT) : Type := option (place_rfn rt) → iProp Σ.

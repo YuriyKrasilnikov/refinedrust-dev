@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::mem;
 
 use log::trace;
-use rr_rustc_interface::hir::def_id::DefId;
+use rr_rustc_interface::hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rr_rustc_interface::middle::{metadata, ty};
 use rr_rustc_interface::{hir, span};
 
@@ -14,6 +14,38 @@ use crate::{types, unification};
 
 /// Gets an instance for a path.
 /// Taken from Miri <https://github.com/rust-lang/miri/blob/31fb32e49f42df19b45baccb6aa80c3d726ed6d5/src/helpers.rs#L48>.
+pub(crate) fn try_resolve_did_direct_in_crate<T>(
+    tcx: ty::TyCtxt<'_>,
+    krate: CrateNum,
+    path: &[T],
+) -> Option<DefId>
+where
+    T: AsRef<str>,
+{
+    let krate = DefId {
+        krate,
+        index: hir::def_id::CRATE_DEF_INDEX,
+    };
+
+    let mut items: &[metadata::ModChild] = tcx.module_children(krate);
+    let mut path_it = path.iter().peekable();
+
+    while let Some(segment) = path_it.next() {
+        for item in mem::take(&mut items) {
+            let item: &metadata::ModChild = item;
+            if item.ident.name.as_str() == segment.as_ref() {
+                if path_it.peek().is_none() {
+                    return Some(item.res.def_id());
+                }
+
+                items = tcx.module_children(item.res.def_id());
+                break;
+            }
+        }
+    }
+    None
+}
+
 pub(crate) fn try_resolve_did_direct<T>(tcx: ty::TyCtxt<'_>, path: &[T]) -> Option<DefId>
 where
     T: AsRef<str>,
@@ -21,36 +53,62 @@ where
     tcx.crates(())
         .iter()
         .find(|&&krate| tcx.crate_name(krate).as_str() == path[0].as_ref())
-        .and_then(|krate| {
-            let krate = DefId {
-                krate: *krate,
-                index: hir::def_id::CRATE_DEF_INDEX,
-            };
+        .and_then(|krate| try_resolve_did_direct_in_crate(tcx, *krate, &path[1..]))
+}
 
-            let mut items: &[metadata::ModChild] = tcx.module_children(krate);
-            let mut path_it = path.iter().skip(1).peekable();
+/// If we want to search in the local crate, we cannot use `module_children`, but need to use
+/// `module_children_local`.
+pub(crate) fn try_resolve_did_direct_in_local_crate<T>(tcx: ty::TyCtxt<'_>, path: &[T]) -> Option<DefId>
+where
+    T: AsRef<str>,
+{
+    let krate = DefId {
+        krate: LOCAL_CRATE,
+        index: hir::def_id::CRATE_DEF_INDEX,
+    };
+    let krate = krate.as_local().unwrap();
 
-            while let Some(segment) = path_it.next() {
-                for item in mem::take(&mut items) {
-                    let item: &metadata::ModChild = item;
-                    if item.ident.name.as_str() == segment.as_ref() {
-                        if path_it.peek().is_none() {
-                            return Some(item.res.def_id());
-                        }
+    let mut items: &[metadata::ModChild] = tcx.module_children_local(krate);
+    let mut path_it = path.iter().peekable();
 
-                        items = tcx.module_children(item.res.def_id());
-                        break;
-                    }
+    while let Some(segment) = path_it.next() {
+        for item in mem::take(&mut items) {
+            let item: &metadata::ModChild = item;
+            if item.ident.name.as_str() == segment.as_ref() {
+                if path_it.peek().is_none() {
+                    return Some(item.res.def_id());
+                }
+
+                if let Some(did) = item.res.def_id().as_local() {
+                    items = tcx.module_children_local(did);
+                    break;
                 }
             }
-            None
-        })
+        }
+    }
+    None
 }
 
 pub(crate) fn try_resolve_did<T>(tcx: ty::TyCtxt<'_>, path: &[T]) -> Option<DefId>
 where
     T: AsRef<str>,
 {
+    // current crate?
+    if path[0].as_ref() == "crate" {
+        return try_resolve_did_direct_in_local_crate(tcx, &path[1..]);
+    }
+
+    // relative to global root (::...) ?
+    if path[0].as_ref() == "" {
+        return try_resolve_did_direct(tcx, &path[1..]);
+    }
+
+    // otherwise, first resolve in current crate
+    if let Some(did) = try_resolve_did_direct_in_local_crate(tcx, path) {
+        return Some(did);
+    }
+
+    // otherwise, try relative to global root
     if let Some(did) = try_resolve_did_direct(tcx, path) {
         return Some(did);
     }

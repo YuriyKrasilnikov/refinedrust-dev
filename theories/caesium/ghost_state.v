@@ -1118,7 +1118,7 @@ Section heap.
   (* for simplicity: restricting to uniform sizes *)
   Lemma heap_pointsto_mjoin_uniform l (vs : list val) (sz : nat) q :
     (∀ v, v ∈ vs → length v = sz) →
-    l ↦{q} mjoin vs ⊣⊢ loc_in_bounds l 0 (length vs * sz) ∗ ([∗ list] i ↦ v ∈ vs, (l +ₗ (sz * i)) ↦{q} v).
+    l ↦{q} mjoin vs ⊣⊢ loc_in_bounds l 0 0 ∗ ([∗ list] i ↦ v ∈ vs, (l +ₗ (sz * i)) ↦{q} v).
   Proof.
     intros Hsz.
     assert (length (mjoin vs) = length vs * sz)%nat as Hlen.
@@ -1128,10 +1128,10 @@ Section heap.
     induction vs as [ | v vs IH] in l, Hlen, Hsz |-*; simpl.
     { rewrite right_id. by rewrite heap_pointsto_nil. }
     iSplit.
-    - iIntros "Hl". iPoseProof (heap_pointsto_loc_in_bounds with "Hl") as "#Hlb".
+    - iIntros "Hl". iPoseProof (heap_pointsto_loc_in_bounds_0 with "Hl") as "#Hlb".
       rewrite heap_pointsto_app. iDestruct "Hl" as "[Hl1 Hl]".
       rewrite Z.mul_0_r shift_loc_0_nat. iFrame "Hl1".
-      iSplitR. { rewrite Hlen. done. }
+      iSplitR; first done.
       iPoseProof (IH with "Hl") as "Ha".
       { intros. apply Hsz. apply elem_of_cons; by right. }
       { simpl in Hlen. rewrite length_app in Hlen. rewrite Hsz in Hlen; [ | apply elem_of_cons; by left]. lia. }
@@ -1144,21 +1144,21 @@ Section heap.
       eauto.
     - iIntros "(Hlb & Hv)".
       rewrite Z.mul_0_r shift_loc_0_nat heap_pointsto_app.
-      iDestruct "Hv" as "($ & Hv)".
+      iDestruct "Hv" as "(Hl & Hv)".
+      iPoseProof (heap_pointsto_loc_in_bounds with "Hl") as "#Hlb'".
+      iPoseProof (loc_in_bounds_shift_suf with "Hlb'") as "Hlb''".
+      iFrame "Hl".
       iApply IH.
       { intros. apply Hsz. apply elem_of_cons; by right. }
       { simpl in Hlen. rewrite length_app in Hlen. rewrite Hsz in Hlen; [ | apply elem_of_cons; by left]. lia. }
-      iSplitL "Hlb".
-      + iApply (loc_in_bounds_offset with "Hlb"); first done.
-        { simpl. lia. }
-        { simpl. rewrite Hsz; [ | apply elem_of_cons; by left]. lia. }
-      + iApply (big_sepL_wand with "Hv").
-        iApply big_sepL_intro.
-        iIntros "!>" (???) "Hv".
-        rewrite shift_loc_assoc.
-        rewrite (Hsz v); [ | apply elem_of_cons; by left].
-        assert ((sz + sz * k)%Z = (sz * S k)%Z) as -> by lia.
-        eauto.
+      iSplitR. { iApply loc_in_bounds_shorten_pre; last done. lia. }
+      iApply (big_sepL_wand with "Hv").
+      iApply big_sepL_intro.
+      iIntros "!>" (???) "Hv".
+      rewrite shift_loc_assoc.
+      rewrite (Hsz v); [ | apply elem_of_cons; by left].
+      assert ((sz + sz * k)%Z = (sz * S k)%Z) as -> by lia.
+      eauto.
   Qed.
 End heap.
 

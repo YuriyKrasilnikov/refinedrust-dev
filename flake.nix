@@ -182,7 +182,7 @@
           {
             pname = "stdlib-alloc";
             src = ./stdlib/alloc;
-            libDeps = with packages; [stdlib-ptr stdlib-result stdlib-clone stdlib-mem stdlib-clone];
+            libDeps = with packages; [stdlib-ptr stdlib-result stdlib-clone stdlib-mem stdlib-closures];
             withTheories = true;
           }
           {
@@ -207,6 +207,7 @@
           {
             pname = "stdlib-closures";
             src = ./stdlib/closures;
+            withTheories = true;
           }
           {
             pname = "stdlib-cmp";
@@ -222,7 +223,7 @@
           {
             pname = "stdlib-iterator";
             src = ./stdlib/iterator;
-            libDeps = with packages; [stdlib-clone stdlib-closures stdlib-cmp stdlib-option stdlib-range];
+            libDeps = with packages; [stdlib-clone stdlib-closures stdlib-cmp stdlib-option stdlib-range stdlib-result stdlib-controlflow];
             withTheories = true;
           }
           {
@@ -262,7 +263,7 @@
           {
             pname = "stdlib-result";
             src = ./stdlib/result;
-            libDeps = with packages; [stdlib-clone];
+            libDeps = with packages; [stdlib-clone stdlib-closures];
             withTheories = true;
           }
           {
@@ -298,7 +299,8 @@
           {
             pname = "stdlib-vec";
             src = ./stdlib/vec;
-            libDeps = with packages; [stdlib-alloc stdlib-iterator stdlib-option stdlib-rr_internal stdlib-closures stdlib-index stdlib-cmp stdlib-ptr-advanced stdlib-clone];
+            libDeps = with packages; [stdlib-alloc stdlib-iterator stdlib-option stdlib-rr_internal stdlib-closures stdlib-index stdlib-cmp stdlib-ptr-advanced stdlib-clone stdlib-controlflow];
+            withTheories = true;
           }
           {
             pname = "stdlib";
@@ -397,12 +399,20 @@
             src = ./case_studies/minivec;
           }
           {
+            pname = "linkedlist";
+            src = ./case_studies/linkedlist;
+          }
+          {
             pname = "paper-examples";
             src = ./case_studies/paper_examples;
           }
           {
             pname = "paper-examples-rr20";
             src = ./case_studies/refinedrust-20-paper-examples;
+          }
+          {
+            pname = "iterators";
+            src = ./case_studies/iterators;
           }
           {
             pname = "tests";

@@ -27,6 +27,12 @@ Proof.
   - intros (Heq & HT). injection Heq. done.
 Qed.
 
+Global Instance simpl_both_plist_eq_cons {A B} (a a' : A) (b b' : B) :
+  SimplBothRel (=) (a *:: b) (a' *:: b') (a = a' ∧ b = b').
+Proof.
+  unfold SimplBothRel. naive_solver.
+Qed.
+
 Global Instance simpl_eq_phd {A} {F : A → Type} (Xs : list A) (X : A) (xs : plist F (X :: Xs)) (x : F X)   :
   SimplBothRel (eq) (x) (phd xs) (∃ c : plist F Xs, xs = pcons x c).
 Proof.
@@ -176,7 +182,7 @@ Proof.
 Qed.
 
 (** Things for fallible ops *)
-Global Typeclasses Opaque if_None if_Ok if_Some if_Err.
+Global Typeclasses Opaque if_None if_Ok if_Some if_Err if_True if_False.
 Global Instance simpl_both_if_ok_inl {A B} (x : A) P :
   SimplBoth (if_Ok (A:=A)(B:=B) (inl x) P) (P x).
 Proof.
@@ -194,6 +200,16 @@ Proof.
 Qed.
 Global Instance simpl_both_if_none_none {A} P :
   SimplBoth (if_None (A:=A) (None) P) (P).
+Proof.
+  rewrite /SimplBoth. naive_solver.
+Qed.
+Global Instance simpl_both_if_true_true P :
+  SimplBoth (if_True true P) P.
+Proof.
+  rewrite /SimplBoth. naive_solver.
+Qed.
+Global Instance simpl_both_if_false_false P :
+  SimplBoth (if_False false P) P.
 Proof.
   rewrite /SimplBoth. naive_solver.
 Qed.
@@ -232,6 +248,8 @@ Proof.
   destruct x; naive_solver.
 Qed.
 
+
+(** miscellaneous *)
 Global Instance simplify_all_xtype `{!typeGS Σ} Q :
   SimplForall xtype 4 Q (∀ (rt : RT) (ty : type rt) (Hsz : TySized ty) (r : RT_xt rt), Q (mk_xtype (xtype_rt:=rt) ty r Hsz)).
 Proof.
@@ -399,16 +417,17 @@ Proof.
 Qed.
 
 
-Global Instance simpl_and_fmap {A B} (f1 f2 : A → B) (l1 : list A) l2 :
-  SimplAndUnsafe (fmap f1 l1 = fmap f2 l2) (λ T, l1 = l2 ∧ (∀ x : A, x ∈ l1 → f1 x = f2 x) ∧ T).
+Global Instance simpl_and_fmap {A B} (f1 f2 : A → B) (l1 : list A) l2 `{!TCDone ((∀ x : A, x ∈ l1 → f1 x = f2 x))}:
+  SimplAndUnsafe (fmap f1 l1 = fmap f2 l2) (λ T, l1 = l2 ∧ T).
 Proof.
   unfold SimplAndUnsafe. intros T.
-  intros (-> & Hext & ?). split; last done.
+  unfold TCDone in *.
+  intros (-> & ?). split; last done.
   apply list_fmap_ext'; done.
 Qed.
 
 (** Extra normalization *)
-Hint Rewrite -> @sum_list_Z_with_app : lithium_rewrite.
+#[export] Hint Rewrite -> @sum_list_Z_with_app : lithium_rewrite.
 
 Lemma list_fmap_fmap_id {A} (l : list (list A)) :
   fmap (fmap (M:=list) id) l = l.
@@ -416,5 +435,42 @@ Proof.
   induction l as [ | x l]; simpl; first done.
   rewrite list_fmap_id. f_equiv. done.
 Qed.
-Hint Rewrite @list_fmap_fmap_id : lithium_rewrite.
+#[export] Hint Rewrite @list_fmap_fmap_id : lithium_rewrite.
 
+(** Well, since we anyways assume functional extensionality, ... *)
+Lemma fmap_compose_id_r {A B} (f : A → B) :
+  f ∘ id = f.
+Proof.
+  apply functional_extensionality. done.
+Qed.
+Lemma fmap_compose_id_l {A B} (f : A → B) :
+  id ∘ f = f.
+Proof.
+  apply functional_extensionality. done.
+Qed.
+
+#[export] Hint Rewrite -> @fmap_compose_id_l @fmap_compose_id_r : lithium_rewrite.
+
+
+
+Lemma fmap_fst_snd {A B C} (l : list (A * B * C)) :
+  (λ a, a.1.2) <$> l = (l.*1).*2.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Lemma fmap_snd_fst {A B C} (l : list (A * (B * C))) :
+  (λ a, a.2.1) <$> l = (l.*2).*1.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Lemma fmap_snd_snd {A B C} (l : list (A * (B * C))) :
+  (λ a, a.2.2) <$> l = (l.*2).*2.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Lemma fmap_fst_fst {A B C} (l : list (A * B * C)) :
+  (λ a, a.1.1) <$> l = (l.*1).*1.
+Proof.
+  by rewrite list_fmap_compose.
+Qed.
+Hint Rewrite -> @fmap_fst_fst @fmap_snd_snd @fmap_fst_snd @fmap_snd_fst : lithium_rewrite.

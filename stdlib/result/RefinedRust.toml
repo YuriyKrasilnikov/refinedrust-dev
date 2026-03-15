@@ -1,4 +1,5 @@
 extra_specs = "extra_specs.v"
 generate_dune_project = false
-lib_load_paths = ["../clone"]
+lib_load_paths = ["../clone", "../closures"]
 trust_debug = true
+output_dir = "output"

@@ -499,15 +499,28 @@ impl Spec {
 
         let rt_instantiations = all_ty_params.get_coq_ty_rt_params().make_using_terms();
 
+        let attr_binders = scope.get_all_attr_trait_parameters(IncludeSelfReq::Dont);
+        let attr_binders_uses = attr_binders.make_using_terms();
+
         // For transparent atomic single-field structs, use the inner field type directly
-        // as at_ex_plain_t base type. Otherwise, apply the struct type/rfn definitions.
+        // as at_ex_plain_t base type. Otherwise, apply the struct type/rfn definitions
+        // with trait attribute parameters.
         let (applied_base_rt_str, applied_base_type) =
             if let Some((inner_ty, inner_rt)) = transparent_inner_override {
+                debug_assert!(
+                    attr_binders_uses.is_empty(),
+                    "atomic transparent type should not have trait attribute parameters"
+                );
                 (inner_rt.to_owned(), format!("({})", inner_ty))
             } else {
                 let applied_base_rt = coq::term::App::new(base_rfn_type, rt_instantiations.clone());
-                let applied_base_type =
-                    coq::term::App::new(base_type_name, rt_instantiations.clone());
+                let applied_base_type = coq::term::App::new(
+                    coq::term::Term::App(Box::new(coq::term::App::new(
+                        coq::term::Term::Literal(base_type_name.to_owned()),
+                        rt_instantiations.clone(),
+                    ))),
+                    attr_binders_uses,
+                );
                 let applied_base_type =
                     format!("({applied_base_type} {})", scope.identity_instantiation_term());
                 (applied_base_rt.to_string(), applied_base_type)

@@ -104,7 +104,7 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         &self,
         ty: ty::Ty<'tcx>,
         variant: Option<abi::VariantIdx>,
-    ) -> Result<Option<specs::types::LiteralUse<'def>>, TranslationError<'tcx>> {
+    ) -> Result<specs::types::LiteralUse<'def>, TranslationError<'tcx>> {
         let mut scope = self.scope.borrow_mut();
         self.translator.generate_structlike_use(ty, variant, &mut scope)
     }
@@ -128,7 +128,7 @@ impl<'def, 'tcx> LocalTX<'def, 'tcx> {
         &self,
         variant_id: DefId,
         args: ty::GenericArgsRef<'tcx>,
-    ) -> Result<Option<specs::types::LiteralUse<'def>>, TranslationError<'tcx>> {
+    ) -> Result<specs::types::LiteralUse<'def>, TranslationError<'tcx>> {
         let mut scope = self.scope.borrow_mut();
         self.translator.generate_struct_use(variant_id, args, &mut scope)
     }

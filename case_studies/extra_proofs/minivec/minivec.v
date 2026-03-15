@@ -81,9 +81,8 @@ Section project_vec_els.
   Qed.
 
   Lemma project_vec_els_length' xs x2 len :
-    (PlaceIn ∘ RT_xrt rt <$> xs) = project_vec_els len x2 → length xs ≤ min len (length x2).
+    <#> (<$#@{rt}> xs) = project_vec_els len x2 → length xs ≤ min len (length x2).
   Proof.
-    rewrite list_fmap_compose.
     intros Ha.
     assert (length (<#> <$#> xs) = length (project_vec_els len x2)) as Hlen.
     { rewrite Ha. done. }

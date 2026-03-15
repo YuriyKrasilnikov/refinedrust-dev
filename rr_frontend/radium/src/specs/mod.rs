@@ -157,6 +157,17 @@ impl Type<'_> {
             },
         }
     }
+
+    /// Determines the surface refinement type.
+    #[must_use]
+    pub fn get_xt_type(&self) -> coq::term::Type {
+        let app =
+            coq::term::App::new(coq::term::Term::Literal("RT_xt".to_owned()), vec![coq::term::Term::Type(
+                Box::new(self.get_rfn_type()),
+            )]);
+        let app = coq::term::Term::App(Box::new(app));
+        coq::term::Type::Term(Box::new(app))
+    }
 }
 
 /// Encodes a RR type with an accompanying refinement.

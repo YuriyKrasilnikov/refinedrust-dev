@@ -26,7 +26,7 @@ Proof.
     iPoseProof (li_sealed_use_pers with "Hsome") as "#Hsome'".
     iPoseProof (li_sealed_use_pers with "Hnone") as "#Hnone'".
     iPoseProof (boringly_intro with "Hnext") as "#Hnext_x".
-    iPoseProof ("Hsome'" with "Hnext_x Hinv") as "(%p & Hpre & Hinv_clos)".
+    iPoseProof ("Hsome'" with "Hnext_x Hinv") as "(%p & %Hpred & Hpre & Hinv_clos)".
     iPoseProof (boringly_intro with "Hpre") as "#Hpre_x".
 
     rep liRStep; liShow.
