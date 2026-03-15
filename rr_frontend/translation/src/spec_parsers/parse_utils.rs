@@ -18,9 +18,36 @@ use rr_rustc_interface::{ast, hir};
 
 pub(crate) fn attr_args_tokens(x: &hir::AttrArgs) -> ast::tokenstream::TokenStream {
     match x {
-        hir::AttrArgs::Delimited(args) => args.tokens.clone(),
+        hir::AttrArgs::Delimited(args) => flatten_invisible_groups(&args.tokens),
         hir::AttrArgs::Empty | hir::AttrArgs::Eq { .. } => ast::tokenstream::TokenStream::default(),
     }
+}
+
+/// Recursively removes `Delimiter::Invisible` groups from a token stream,
+/// splicing their contents in place. Macro expansions wrap `$($tt:tt)*`
+/// fragments in invisible groups, which the attribute parsers cannot handle.
+fn flatten_invisible_groups(stream: &ast::tokenstream::TokenStream) -> ast::tokenstream::TokenStream {
+    use ast::token::Delimiter;
+    use ast::tokenstream::TokenTree;
+
+    let mut out = Vec::new();
+    for tt in stream.iter() {
+        match tt {
+            TokenTree::Delimited(_, _, Delimiter::Invisible(_), inner) => {
+                // Splice the inner tokens, recursively flattening nested groups.
+                for inner_tt in flatten_invisible_groups(inner).iter() {
+                    out.push(inner_tt.clone());
+                }
+            }
+            TokenTree::Delimited(span, spacing, delim, inner) => {
+                // Preserve real delimiters (parens, braces, brackets) but
+                // flatten any invisible groups inside them.
+                out.push(TokenTree::Delimited(*span, *spacing, *delim, flatten_invisible_groups(inner)));
+            }
+            other => out.push(other.clone()),
+        }
+    }
+    ast::tokenstream::TokenStream::new(out)
 }
 
 /// Parse either a literal string (a term/pattern) or an identifier, e.g.

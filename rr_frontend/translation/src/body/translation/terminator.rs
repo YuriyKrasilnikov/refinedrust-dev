@@ -12,7 +12,7 @@ use rr_rustc_interface::hir::def_id::DefId;
 use rr_rustc_interface::middle::{mir, ty};
 use rr_rustc_interface::type_ir::TypeFolder as _;
 
-use super::TX;
+use super::{TX, is_ordering_type};
 use rr_rustc_interface::span;
 
 use crate::base::*;
@@ -56,15 +56,6 @@ fn strip_atomic_ordering_suffix(name: &str) -> (&str, Option<lang::RustOrdering>
     (name, None)
 }
 
-/// Check if a type is `core::sync::atomic::Ordering` (or `std::sync::atomic::Ordering`).
-fn is_ordering_type<'tcx>(tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> bool {
-    if let ty::TyKind::Adt(adt_def, _) = ty.kind() {
-        let path = tcx.def_path_str(adt_def.did());
-        path == "core::sync::atomic::Ordering" || path == "std::sync::atomic::Ordering"
-    } else {
-        false
-    }
-}
 
 /// Parse a [`lang::SynType`] from its `Display` representation.
 ///
@@ -953,15 +944,45 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             }
 
             if !substs.is_empty() {
-                // Generic atomic struct (e.g. std Atomic<u8> on newer nightlies).
-                // Inner type = first type argument (T in Atomic<T>), not field type
-                // (which would be UnsafeCell<T>).
-                let inner_ty = substs[0].as_type().ok_or_else(|| TranslationError::UnsupportedFeature {
+                // Generic atomic struct (e.g. AtomicPtr<T> or future Atomic<T>).
+                // Derive inner type from field, unwrapping single-data-field wrappers
+                // (UnsafeCell, alignment wrappers). If unwrap reaches a non-ADT
+                // primitive, use it (covers old-style AtomicPtr<T> where field =
+                // UnsafeCell<*mut T>). Otherwise fall back to substs[0] which is the
+                // semantic type (covers new-style Atomic<T> where storage may differ
+                // from T, e.g. bool stored as Align1<u8>).
+                let inner_field = variant.fields.iter().next().ok_or_else(|| TranslationError::UnsupportedFeature {
                     description: format!(
-                        "expected type argument for generic atomic {}",
+                        "generic atomic {} has no fields",
                         tcx.def_path_str(adt_def.did())
                     ),
                 })?;
+                let mut unwrapped = inner_field.ty(tcx, substs);
+                while let ty::TyKind::Adt(wrapper_def, wrapper_substs) = unwrapped.kind() {
+                    let wrapper_variant = wrapper_def.variants().iter().next().unwrap();
+                    let data_fields: Vec<_> = wrapper_variant.fields.iter().filter(|f| {
+                        let ft = f.ty(tcx, *wrapper_substs);
+                        !matches!(ft.kind(), ty::TyKind::Adt(d, _) if d.is_phantom_data())
+                            && !ft.is_unit()
+                    }).collect();
+                    if data_fields.len() != 1 {
+                        break;
+                    }
+                    unwrapped = data_fields[0].ty(tcx, *wrapper_substs);
+                }
+                let inner_ty = if matches!(unwrapped.kind(),
+                    ty::TyKind::Int(_) | ty::TyKind::Uint(_) | ty::TyKind::Bool |
+                    ty::TyKind::RawPtr(_, _) | ty::TyKind::Ref(_, _, _))
+                {
+                    unwrapped
+                } else {
+                    substs[0].as_type().ok_or_else(|| TranslationError::UnsupportedFeature {
+                        description: format!(
+                            "expected type argument for generic atomic {}",
+                            tcx.def_path_str(adt_def.did())
+                        ),
+                    })?
+                };
                 inner_st = self.ty_translator.translate_type_to_syn_type(inner_ty)?;
                 ot = (&inner_st).into();
                 signed = matches!(inner_ty.kind(), ty::TyKind::Int(_));

@@ -34,6 +34,17 @@ use crate::regions::inclusion_tracker::InclusionTracker;
 use crate::traits::registry;
 use crate::{consts, procedures, regions, rustcmp, types};
 
+/// Check if a type is `core::sync::atomic::Ordering` (or `std::sync::atomic::Ordering`).
+/// Used to filter out Ordering-typed locals and arguments from atomic method calls.
+fn is_ordering_type<'tcx>(tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> bool {
+    if let ty::TyKind::Adt(adt_def, _) = ty.kind() {
+        let path = tcx.def_path_str(adt_def.did());
+        path == "core::sync::atomic::Ordering" || path == "std::sync::atomic::Ordering"
+    } else {
+        false
+    }
+}
+
 pub(crate) enum ExprInfo<'tcx, 'def> {
     Call(ProcedureInst<'tcx, 'def>),
 }

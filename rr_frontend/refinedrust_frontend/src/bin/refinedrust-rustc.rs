@@ -109,6 +109,37 @@ fn main() {
                     .expect("failed to configure nll-facts-dir")
             ));
         }
+
+        // Auto-inject register_tool(rr) + feature gates if source file does not
+        // already contain them. This lets users omit the boilerplate:
+        //   #![feature(register_tool)]
+        //   #![register_tool(rr)]
+        //   #![feature(custom_inner_attributes)]
+        let source_has_register_tool = rustc_args.iter().any(|arg| {
+            arg.ends_with(".rs")
+                && std::fs::read_to_string(arg).map_or(false, |content| {
+                    let mut in_block_comment: u32 = 0;
+                    content.lines().any(|line| {
+                        let trimmed = line.trim();
+                        in_block_comment += trimmed.matches("/*").count() as u32;
+                        in_block_comment =
+                            in_block_comment.saturating_sub(trimmed.matches("*/").count() as u32);
+                        in_block_comment == 0
+                            && !trimmed.starts_with("//")
+                            && trimmed.contains("register_tool(rr)")
+                    })
+                })
+        });
+        if source_has_register_tool {
+            info!("Source already contains register_tool(rr), skipping injection. \
+                   You can remove #![feature(register_tool)], #![register_tool(rr)], \
+                   and #![feature(custom_inner_attributes)] — refinedrust-rustc \
+                   injects them automatically.");
+        } else {
+            rustc_args.push("-Zcrate-attr=feature(register_tool)".to_owned());
+            rustc_args.push("-Zcrate-attr=register_tool(rr)".to_owned());
+            rustc_args.push("-Zcrate-attr=feature(custom_inner_attributes)".to_owned());
+        }
     }
 
     rrconfig::register_stdlib_paths();

@@ -120,6 +120,12 @@ impl<'def> LiteralUse<'def> {
     /// Get the `syn_type` term for this type use.
     #[must_use]
     pub fn generate_raw_syn_type_term(&self) -> lang::SynType {
+        // For atomic transparent single-field types, the syn_type is already
+        // the inner field's fully-determined SynType (e.g. PtrSynType).
+        // Don't apply type params — the inner layout doesn't depend on them.
+        if self.def.info.is_atomic() {
+            return self.def.syn_type.clone();
+        }
         let ty_inst: Vec<lang::SynType> = self
             .scope_inst
             .as_ref()
@@ -134,6 +140,12 @@ impl<'def> LiteralUse<'def> {
 
     #[must_use]
     pub fn generate_syn_type_term(&self) -> lang::SynType {
+        // For atomic transparent single-field types, the syn_type is already
+        // the inner field's fully-determined SynType (e.g. PtrSynType).
+        // Don't apply type params — the inner layout doesn't depend on them.
+        if self.def.info.is_atomic() {
+            return self.def.syn_type.clone();
+        }
         let ty_inst: Vec<lang::SynType> = self
             .scope_inst
             .as_ref()

@@ -160,6 +160,20 @@ impl From<InvariantSpecFlags> for specs::invariants::SpecFlags {
     }
 }
 
+/// Detect whether any `#[rr::mode(atomic)]` attribute is present.
+/// Reuses `InvariantSpecFlags` parser for uniformity with `parse_invariant_spec`.
+pub(crate) fn detect_atomic_mode(attrs: &[&hir::AttrItem]) -> bool {
+    attrs.iter().any(|it| {
+        it.path.segments.get(1).is_some_and(|seg| seg.as_str() == "mode") && {
+            let buffer = parse::Buffer::new(&attr_args_tokens(&it.args));
+            // InvariantSpecFlags implements Parse<U> for any U — scope unused
+            buffer
+                .parse::<(), InvariantSpecFlags>(&())
+                .is_ok_and(|f| specs::invariants::SpecFlags::from(f) == specs::invariants::SpecFlags::Atomic)
+        }
+    })
+}
+
 impl<U> Parse<U> for InvariantSpecFlags {
     fn parse(stream: parse::Stream<'_>, meta: &U) -> parse::Result<Self> {
         let mode: parse::Ident = stream.parse(meta)?;

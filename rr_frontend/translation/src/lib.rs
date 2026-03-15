@@ -1173,7 +1173,33 @@ fn is_only_spec_function(vcx: &VerificationCtxt<'_, '_>, did: DefId) -> bool {
         }
     }
 
+    if is_method_on_atomic_type(vcx.tcx, did) {
+        return true;
+    }
+
     false
+}
+
+/// Check if `did` is a method on a `mode(atomic)` type by reading attrs directly.
+/// Works before variant_registry is populated (no dependency on type translation).
+pub(crate) fn is_method_on_atomic_type(tcx: ty::TyCtxt<'_>, did: DefId) -> bool {
+    use crate::spec_parsers::struct_spec_parser;
+
+    let Some(assoc_item) = tcx.opt_associated_item(did) else {
+        return false;
+    };
+    if assoc_item.container != ty::AssocContainer::InherentImpl {
+        return false;
+    }
+    let impl_did = assoc_item.container_id(tcx);
+    let self_ty = tcx.type_of(impl_did).instantiate_identity();
+    let ty::TyKind::Adt(adt_def, _) = self_ty.kind() else {
+        return false;
+    };
+    let variant_did = adt_def.variants().iter().next().unwrap().def_id;
+    let attrs = environment::get_attributes(tcx, variant_did);
+    let filtered = attrs::filter_for_tool(attrs);
+    struct_spec_parser::detect_atomic_mode(&filtered)
 }
 
 /// Get the most restrictive function mode arising from annotations on a function.
@@ -1511,6 +1537,10 @@ fn check_consider_function<'tcx>(
 
     // check if this is an impl of a trait
     if !vcx.tcx.impl_is_of_trait(impl_did) {
+        // mode(atomic) methods are auto-inferred, consider them even without annotations
+        if is_method_on_atomic_type(vcx.tcx, id.to_def_id()) {
+            return Ok(true);
+        }
         return Ok(false);
     }
     let trait_ref = vcx.tcx.impl_trait_ref(impl_did).skip_binder();

@@ -1,3 +1,4 @@
+*.wip.*
 _build/
 _opam
 .coq-native/

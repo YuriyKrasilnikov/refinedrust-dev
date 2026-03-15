@@ -1099,8 +1099,40 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
         // parse attributes
         let outer_attrs = environment::get_attributes(self.tcx, ty.def_id);
 
+        // Detect mode(atomic) early — needed for auto-inference when refined_by is absent.
+        let has_atomic_mode = {
+            let filtered = attrs::filter_for_tool(outer_attrs);
+            struct_spec_parser::detect_atomic_mode(&filtered)
+        };
+
+        // mode(atomic) requires repr(transparent) + single field for layout soundness:
+        // at_ex_plain_t delegates ty_syn_type to the inner type, so the struct layout
+        // MUST match the inner field's layout.
+        if has_atomic_mode {
+            if repr != specs::structs::Repr::Transparent {
+                return Err(TranslationError::UnsupportedFeature {
+                    description: format!(
+                        "mode(atomic) type {} requires #[repr(transparent)]: \
+                         atomic verification uses the inner field's layout directly, \
+                         and #[repr(transparent)] guarantees the struct layout matches it",
+                        struct_name
+                    ),
+                });
+            }
+            if ty.fields.len() != 1 {
+                return Err(TranslationError::UnsupportedFeature {
+                    description: format!(
+                        "mode(atomic) type {} requires exactly one field, found {}",
+                        struct_name,
+                        ty.fields.len()
+                    ),
+                });
+            }
+        }
+
         let expect_refinement;
         let mut invariant_spec;
+        let mut auto_inferred_atomic = false;
         if attrs::has_tool_attr(outer_attrs, "refined_by") {
             let outer_attrs = attrs::filter_for_tool(outer_attrs);
             let mut spec_parser = struct_spec_parser::VerboseInvariantSpecParser::new(state.param_scope());
@@ -1110,6 +1142,13 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
             invariant_spec = Some(res.0);
             expect_refinement = !res.1;
+        } else if has_atomic_mode {
+            // Auto-inference for mode(atomic): transparent + single field already validated above.
+            // Generate refined_by("()" : "unit") + exists("x" : inner_rt) + invariant("True")
+            // The inner field's refinement type will be filled in after the field loop.
+            auto_inferred_atomic = true;
+            invariant_spec = None; // will be created after field processing
+            expect_refinement = false; // field("x") will be injected programmatically
         } else {
             invariant_spec = None;
             expect_refinement = false;
@@ -1117,6 +1156,7 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
         // assemble the field definition
         let mut field_refinements = Vec::new();
+        let mut inner_field_rfn_type = None; // for auto-inferred atomic
         for f in &ty.fields {
             let f_name = f.ident(self.tcx).to_string();
 
@@ -1125,6 +1165,11 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
 
             let f_ty = self.tcx.type_of(f.did).instantiate_identity();
             let ty = self.translate_type_in_state(f_ty, state)?;
+
+            // Save inner field rfn type for auto-inferred atomic
+            if auto_inferred_atomic && inner_field_rfn_type.is_none() {
+                inner_field_rfn_type = Some(ty.get_rfn_type());
+            }
 
             let mut parser = struct_spec_parser::VerboseStructFieldSpecParser::new(
                 &ty,
@@ -1150,12 +1195,38 @@ impl<'def, 'tcx: 'def> TX<'def, 'tcx> {
             }
         }
 
+        // Auto-inference: create invariant spec for mode(atomic) + transparent + 1 field
+        if auto_inferred_atomic {
+            let inner_rt = inner_field_rfn_type.expect("atomic struct must have at least one field");
+            let spec = specs::invariants::Spec::new(
+                struct_name.to_owned(),
+                specs::invariants::SpecFlags::Atomic,
+                coq::term::Type::Unit,                          // rfn_type = unit
+                "()".to_owned(),                                // rfn_pat = ()
+                vec![coq::binder::Binder::new_with_name_hint(    // exists("x" : inner_rt)
+                    "x".to_owned(),
+                    inner_rt,
+                )],
+                vec![(                                           // invariant("True")
+                    coq::iris::IProp::Pure(Box::new(coq::term::Term::Literal("True".to_owned()))),
+                    specs::invariants::Mode::All,
+                )],
+                vec![],                                         // ty_own_invariants
+                vec![],                                         // ty_lfts
+                vec![],                                         // ty_wf_elctx
+                None,                                           // abstracted_refinement (filled below)
+                vec![],                                         // coq_params
+            );
+            invariant_spec = Some(spec);
+            field_refinements = vec!["x".to_owned()];           // field("x") auto-injected
+        }
+
         let struct_def = builder.finish();
         info!("finished variant def: {:?}", struct_def);
 
-        // now add the invariant, if one was annotated
+        // now add the invariant, if one was annotated (or auto-inferred)
         if let Some(invariant_spec) = &mut invariant_spec
-            && expect_refinement
+            && (expect_refinement || auto_inferred_atomic)
         {
             let rfn = if invariant_spec.is_atomic() {
                 // For atomic types, inner_rfn is the base type's refinement directly

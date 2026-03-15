@@ -606,13 +606,22 @@ impl<'def> Abstract<'def> {
                 synty.to_string()
             });
 
-        let info = types::AdtShimInfo::new(None, self.has_invariant(), atomic_inner_st);
+        let info = types::AdtShimInfo::new(None, self.has_invariant(), atomic_inner_st.clone());
+
+        // For mode(atomic) + repr(transparent) + single field, use the inner
+        // field's syn_type instead of the struct's sls. This ensures that
+        // local_live allocations match at_ex_plain_t's ty_syn_type delegation.
+        let syn_type = if let Some(ref inner_st) = atomic_inner_st {
+            lang::SynType::Literal(inner_st.clone())
+        } else {
+            lang::SynType::Literal(self.sls_def_name().to_owned())
+        };
 
         types::Literal {
             rust_name: Some(self.name().to_owned()),
             type_term: self.public_type_name(),
             refinement_type: coq::term::Type::Literal(self.public_rt_def_name()),
-            syn_type: lang::SynType::Literal(self.sls_def_name().to_owned()),
+            syn_type,
             info,
         }
     }
@@ -757,6 +766,17 @@ impl<'def> AbstractUse<'def> {
 
         let def = def.borrow();
         let def = def.as_ref().unwrap();
+
+        // For mode(atomic) + repr(transparent) + single field, use the inner
+        // field's syn_type. This matches at_ex_plain_t's ty_syn_type delegation.
+        if def.is_atomic()
+            && def.variant_def.repr == Repr::Transparent
+            && def.variant_def.fields.len() == 1
+        {
+            let (_, inner_ty) = &def.variant_def.fields[0];
+            return inner_ty.into();
+        }
+
         let specialized_spec = coq::term::App::new(def.st_def_name().to_owned(), param_sts);
         lang::SynType::Literal(specialized_spec.to_string())
     }

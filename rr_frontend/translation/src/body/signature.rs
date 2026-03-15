@@ -125,14 +125,22 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             .collect();
         info!("arg names: {arg_names:?}");
 
-        let spec_builder = Self::process_attrs(
-            attrs,
-            &type_translator,
-            &mut translated_fn,
-            &arg_names,
-            inputs.as_slice(),
-            output,
-        )?;
+        let spec_builder = if attrs.is_empty()
+            && crate::is_method_on_atomic_type(tcx, proc_did)
+        {
+            Self::auto_infer_atomic_method_spec(
+                tcx, proc_did, &type_translator, inputs.as_slice(), output,
+            )?
+        } else {
+            Self::process_attrs(
+                attrs,
+                &type_translator,
+                &mut translated_fn,
+                &arg_names,
+                inputs.as_slice(),
+                output,
+            )?
+        };
         translated_fn.add_function_spec_from_builder(spec_builder);
 
         translated_fn.try_into().map_err(TranslationError::AttributeError)
@@ -595,14 +603,22 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             }
         } else {
             // process attributes
-            let spec_builder = Self::process_attrs(
-                attrs,
-                &t.ty_translator,
-                &mut t.translated_fn,
-                &arg_names,
-                inputs.as_slice(),
-                output,
-            )?;
+            let spec_builder = if attrs.is_empty()
+                && crate::is_method_on_atomic_type(tcx, proc.get_id())
+            {
+                Self::auto_infer_atomic_method_spec(
+                    tcx, proc.get_id(), &t.ty_translator, inputs.as_slice(), output,
+                )?
+            } else {
+                Self::process_attrs(
+                    attrs,
+                    &t.ty_translator,
+                    &mut t.translated_fn,
+                    &arg_names,
+                    inputs.as_slice(),
+                    output,
+                )?
+            };
 
             if spec_builder.has_spec() {
                 t.translated_fn.add_function_spec_from_builder(spec_builder);
@@ -821,6 +837,137 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
             },
             _ => Err(TranslationError::UnknownAttributeParser(parser)),
         }
+    }
+
+    /// Auto-generate spec for a method on a `mode(atomic)` type based on its signature.
+    fn auto_infer_atomic_method_spec(
+        tcx: ty::TyCtxt<'tcx>,
+        proc_did: DefId,
+        ty_translator: &types::LocalTX<'def, 'tcx>,
+        inputs: &[ty::Ty<'tcx>],
+        output: ty::Ty<'tcx>,
+    ) -> Result<specs::functions::LiteralSpecBuilder<'def>, TranslationError<'tcx>> {
+        let mut builder = specs::functions::LiteralSpecBuilder::new();
+
+        // Get inner field refinement type from Self type
+        let assoc_item = tcx.opt_associated_item(proc_did).unwrap();
+        let impl_did = assoc_item.container_id(tcx);
+        let self_ty = tcx.type_of(impl_did).instantiate_identity();
+        let ty::TyKind::Adt(adt_def, substs) = self_ty.kind() else {
+            return Err(TranslationError::UnsupportedFeature {
+                description: format!(
+                    "auto_infer_atomic_method_spec: Self type is not ADT for {}", tcx.def_path_str(proc_did)
+                ),
+            });
+        };
+        let field_def = adt_def.variants().iter().next().unwrap().fields.iter().next().unwrap();
+        let field_ty = field_def.ty(tcx, substs);
+        let translated_field = ty_translator.translate_type(field_ty)?;
+        let inner_rt = translated_field.get_rfn_type();
+
+        // Translate return type
+        let translated_ret = ty_translator.translate_type(output)?;
+
+        // Step 1: Default args — same as add_default_spec (verbose_function_spec_parser.rs:1233)
+        // Add ALL inputs as params (Type::Infer) + args (translated type + Rust name)
+        let arg_idents = tcx.fn_arg_idents(proc_did);
+        for (i, input_ty) in inputs.iter().enumerate() {
+            let arg_name = arg_idents[i]
+                .map_or_else(|| format!("_arg_{i}"), |ident| ident.as_str().to_owned());
+            let translated = ty_translator.translate_type(*input_ty)?;
+            builder.add_param(
+                coq::binder::Binder::new(Some(arg_name.clone()), coq::term::Type::Infer),
+            ).map_err(TranslationError::AttributeError)?;
+            builder.add_arg(specs::TypeWithRef::new(translated, arg_name));
+        }
+
+        // Step 2: Classify receiver for pattern matching
+        let has_self = !inputs.is_empty() && (inputs[0].is_ref() || {
+            matches!(inputs[0].kind(), ty::TyKind::Adt(def, _) if def.did() == adt_def.did())
+        });
+        let (is_shared_ref, is_mut_ref, is_by_value) = if has_self {
+            match inputs[0].kind() {
+                ty::TyKind::Ref(_, _, mutbl) => (mutbl.is_not(), mutbl.is_mut(), false),
+                ty::TyKind::Adt(..) => (false, false, true),
+                _ => (false, false, false),
+            }
+        } else {
+            (false, false, false)
+        };
+        let non_self_args = if has_self { inputs.len() - 1 } else { inputs.len() };
+        let ret_is_unit = output.is_unit();
+        let ret_is_mut_ref = matches!(output.kind(), ty::TyKind::Ref(_, _, mir::Mutability::Mut));
+
+        // Step 3: Pattern-specific existentials + return
+        // Patterns with explicit return: add existential x (+ γ for get_mut) and set return
+        // Patterns without: implicit return (exists ret : _, ret @ ret_type)
+        let has_explicit_return;
+        if is_shared_ref && non_self_args == 0 && !ret_is_unit && !ret_is_mut_ref {
+            // load: (&self) -> T
+            builder.add_existential(
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+            ).map_err(TranslationError::AttributeError)?;
+            builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "x".to_owned()))
+                .map_err(TranslationError::AttributeError)?;
+            has_explicit_return = true;
+        } else if is_shared_ref && non_self_args >= 1 && ret_is_unit {
+            // store: (&self, val: T, ...) — no existential, implicit return
+            has_explicit_return = false;
+        } else if is_shared_ref && non_self_args >= 1 && !ret_is_unit && !ret_is_mut_ref {
+            // swap/fetch_*: (&self, val: T, ...) -> T
+            builder.add_existential(
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+            ).map_err(TranslationError::AttributeError)?;
+            builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "x".to_owned()))
+                .map_err(TranslationError::AttributeError)?;
+            has_explicit_return = true;
+        } else if !has_self && non_self_args >= 1 {
+            // new: (val: T, ...) -> Self — no existential, implicit return
+            has_explicit_return = false;
+        } else if is_by_value && non_self_args == 0 && !ret_is_unit {
+            // into_inner: (self) -> T
+            builder.add_existential(
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+            ).map_err(TranslationError::AttributeError)?;
+            builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "x".to_owned()))
+                .map_err(TranslationError::AttributeError)?;
+            has_explicit_return = true;
+        } else if is_mut_ref && non_self_args == 0 && ret_is_mut_ref {
+            // get_mut: (&mut self) -> &mut T
+            builder.add_existential(
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+            ).map_err(TranslationError::AttributeError)?;
+            builder.add_existential(
+                coq::binder::Binder::new_with_name_hint(
+                    "γ".to_owned(), coq::term::Type::Literal("gname".to_owned()),
+                ),
+            ).map_err(TranslationError::AttributeError)?;
+            builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "(x, γ)".to_owned()))
+                .map_err(TranslationError::AttributeError)?;
+            has_explicit_return = true;
+        } else {
+            return Err(TranslationError::UnsupportedFeature {
+                description: format!(
+                    "mode(atomic) method {} has unrecognized signature for auto-inference \
+                     (shared_ref={is_shared_ref}, mut_ref={is_mut_ref}, by_value={is_by_value}, \
+                     args={non_self_args}, ret_unit={ret_is_unit}, ret_mut_ref={ret_is_mut_ref}). \
+                     Add explicit #[rr::only_spec] annotations.",
+                    tcx.def_path_str(proc_did),
+                ),
+            });
+        }
+
+        // Step 4: Implicit return — same as add_default_spec (verbose_function_spec_parser.rs:1250)
+        if !has_explicit_return {
+            builder.add_existential(
+                coq::binder::Binder::new(Some("ret".to_owned()), coq::term::Type::Infer),
+            ).map_err(TranslationError::AttributeError)?;
+            builder.set_ret_type(specs::TypeWithRef::new(translated_ret, "ret".to_owned()))
+                .map_err(TranslationError::AttributeError)?;
+        }
+
+        builder.have_spec();
+        Ok(builder)
     }
 
     /// Make a specification for a method of a trait impl derived from the trait's default spec.

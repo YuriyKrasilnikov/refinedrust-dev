@@ -485,4 +485,34 @@ Section at_subtype.
     iNext. iExists r'. iFrame.
   Qed.
 
+  (** Subtyping support for [at_ex_plain_t].
+
+      Unlike [ex_plain_t], general subtyping for [at_ex_plain_t] is hard
+      because [ty_shr] uses [&at{}] (atomic borrow via Iris invariant),
+      which requires bidirectional [rr_at_bor_iff] — but [full_subtype]
+      is unidirectional.
+
+      We provide reflexive instances which are sufficient for the automation
+      chain (interpret_typing_hint resolves ty1 = ty2, P1 = P2). *)
+
+  Lemma mut_subtype_at_ex_plain_t_refl E L (P0 : at_ex_inv_def rt X) (ty : type rt) T :
+    T
+    ⊢ mut_subtype E L (∃at; P0, ty) (∃at; P0, ty) T.
+  Proof.
+    iIntros "$". iPureIntro.
+    intros r0. apply subtype_refl.
+  Qed.
+  Definition mut_subtype_at_ex_plain_t_refl_inst := [instance @mut_subtype_at_ex_plain_t_refl].
+  Global Existing Instance mut_subtype_at_ex_plain_t_refl_inst | 10.
+
+  Lemma mut_eqtype_at_ex_plain_t_refl E L (P0 : at_ex_inv_def rt X) (ty : type rt) T :
+    T
+    ⊢ mut_eqtype E L (∃at; P0, ty) (∃at; P0, ty) T.
+  Proof.
+    iIntros "$". iPureIntro.
+    split; intros r0; apply subtype_refl.
+  Qed.
+  Definition mut_eqtype_at_ex_plain_t_refl_inst := [instance @mut_eqtype_at_ex_plain_t_refl].
+  Global Existing Instance mut_eqtype_at_ex_plain_t_refl_inst | 10.
+
 End at_subtype.

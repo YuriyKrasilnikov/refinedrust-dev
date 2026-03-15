@@ -5,6 +5,7 @@
 
 #![rr::package("refinedrust-stdlib")]
 #![rr::coq_prefix("rrstd.atomic")]
+#![rr::export_include("result")]
 
 // --- Integer atomics (10 types) via macro ---
 
@@ -12,10 +13,8 @@ macro_rules! atomic_int_impl {
     ($rust_ty:ident, $inner_ty:ty, $($std_path:tt)*) => {
         #[rr::export_as($($std_path)*)]
         #[rr::mode(atomic)]
-        #[rr::refined_by("()" : "unit")]
         #[repr(transparent)]
         pub struct $rust_ty {
-            #[rr::field("()")]
             v: $inner_ty,
         }
 
@@ -26,6 +25,19 @@ macro_rules! atomic_int_impl {
             #[rr::args("x")]
             #[rr::returns("()")]
             pub fn new(v: $inner_ty) -> Self {
+                unimplemented!();
+            }
+
+            #[rr::exists("x" : "Z")]
+            #[rr::returns("x")]
+            pub fn into_inner(self) -> $inner_ty {
+                unimplemented!();
+            }
+
+            #[rr::exists("x" : "Z")]
+            #[rr::exists("γ" : "gname")]
+            #[rr::returns("(x, γ)")]
+            pub fn get_mut(&mut self) -> &mut $inner_ty {
                 unimplemented!();
             }
         }
@@ -43,14 +55,12 @@ atomic_int_impl!(AtomicI32, i32, core::sync::atomic::AtomicI32);
 atomic_int_impl!(AtomicI64, i64, core::sync::atomic::AtomicI64);
 atomic_int_impl!(AtomicIsize, isize, core::sync::atomic::AtomicIsize);
 
-// --- AtomicBool (inner field = bool, not u8) ---
+// --- AtomicBool ---
 
 #[rr::export_as(core::sync::atomic::AtomicBool)]
 #[rr::mode(atomic)]
-#[rr::refined_by("()" : "unit")]
 #[repr(transparent)]
 pub struct AtomicBool {
-    #[rr::field("()")]
     v: bool,
 }
 
@@ -63,16 +73,27 @@ impl AtomicBool {
     pub fn new(v: bool) -> Self {
         unimplemented!();
     }
+
+    #[rr::exists("x" : "bool")]
+    #[rr::returns("x")]
+    pub fn into_inner(self) -> bool {
+        unimplemented!();
+    }
+
+    #[rr::exists("x" : "bool")]
+    #[rr::exists("γ" : "gname")]
+    #[rr::returns("(x, γ)")]
+    pub fn get_mut(&mut self) -> &mut bool {
+        unimplemented!();
+    }
 }
 
-// --- AtomicPtr<T> (generic, inner field = *mut T) ---
+// --- AtomicPtr<T> ---
 
 #[rr::export_as(core::sync::atomic::AtomicPtr)]
 #[rr::mode(atomic)]
-#[rr::refined_by("()" : "unit")]
 #[repr(transparent)]
 pub struct AtomicPtr<T> {
-    #[rr::field("()")]
     v: *mut T,
 }
 
@@ -83,6 +104,19 @@ impl<T> AtomicPtr<T> {
     #[rr::args("x")]
     #[rr::returns("()")]
     pub fn new(v: *mut T) -> Self {
+        unimplemented!();
+    }
+
+    #[rr::exists("x" : "loc")]
+    #[rr::returns("x")]
+    pub fn into_inner(self) -> *mut T {
+        unimplemented!();
+    }
+
+    #[rr::exists("x" : "loc")]
+    #[rr::exists("γ" : "gname")]
+    #[rr::returns("(x, γ)")]
+    pub fn get_mut(&mut self) -> &mut *mut T {
         unimplemented!();
     }
 }
