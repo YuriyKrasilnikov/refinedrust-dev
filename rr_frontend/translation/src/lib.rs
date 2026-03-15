@@ -493,10 +493,12 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
             // generate the code for closure trait shims
             writeln!(code_file, "(* closure shims *)").unwrap();
-            for info in self.procedure_registry.closure_info.values() {
-                for def in &info.generated_functions {
-                    writeln!(code_file, "{}", def.code).unwrap();
-                    writeln!(code_file).unwrap();
+            for (did, info) in &self.procedure_registry.closure_info {
+                if self.procedure_registry.lookup_function_mode(did.def_id).unwrap().needs_def() {
+                    for def in &info.generated_functions {
+                        writeln!(code_file, "{}", def.code).unwrap();
+                        writeln!(code_file).unwrap();
+                    }
                 }
             }
             write!(code_file, "End code.").unwrap();
@@ -639,11 +641,13 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
         // also write templates for the closure shim proofs
         {
-            for info in self.procedure_registry.closure_info.values() {
-                for fun in &info.generated_functions {
-                    let path = file_path(fun.name());
-                    let mut template_file = io::BufWriter::new(File::create(path.as_path()).unwrap());
-                    write_template(&mut template_file, fun, false);
+            for (did, info) in &self.procedure_registry.closure_info {
+                if self.procedure_registry.lookup_function_mode(did.def_id).unwrap().needs_proof() {
+                    for fun in &info.generated_functions {
+                        let path = file_path(fun.name());
+                        let mut template_file = io::BufWriter::new(File::create(path.as_path()).unwrap());
+                        write_template(&mut template_file, fun, false);
+                    }
                 }
             }
         }
@@ -727,9 +731,12 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         }
 
         // also write proofs for closure shims
-        for info in self.procedure_registry.closure_info.values() {
+        for (did, info) in &self.procedure_registry.closure_info {
             for fun in &info.generated_functions {
-                write_proof(fun);
+                let mode = self.procedure_registry.lookup_function_mode(did.def_id).unwrap();
+                if mode.needs_proof() {
+                    write_proof(fun);
+                }
             }
         }
 
@@ -1740,7 +1747,8 @@ fn register_closure_impls(vcx: &VerificationCtxt<'_, '_>) -> Result<(), String> 
                 code_name,
                 trait_req_incl_name,
                 fn_name,
-                procedures::Mode::Prove,
+                // inherit the mode from the closure itself
+                mode,
                 true,
                 false,
             );

@@ -2847,6 +2847,31 @@ Ltac prove_trait_incl_for trait_spec trait_ty_inst trait_lft_inst cont :=
         notypeclasses refine (H _ _)
       | cont t1 t2 H2 ]
   end.
+
+Ltac get_trait_inclusion_def x :=
+  match x with
+  | ?a _ => get_trait_inclusion_def a
+  | _ => constr:(x)
+  end.
+
+Ltac apply_spec_rec t H :=
+  match type of H with
+  | _ ∧ _ =>
+      let Ha := fresh in
+      destruct H as [Ha H];
+      first [match type of Ha with
+      | context[t] =>
+          apply Ha
+      end | apply_spec_rec t H]
+  | _ => apply H
+  end.
+Ltac apply_spec_for t H :=
+  match type of H with
+  | ?Ht =>
+      let incl_def := get_trait_inclusion_def Ht in
+      unfold incl_def in H;
+      apply_spec_rec t H
+  end.
 (** Given a quantified [trait_spec], find the spec inclusion assumption for this [trait_spec] and generate an instance of it for the instantiation [trait_ty_inst] and [trait_lft_inst].
   Then, get its projection [trait_proj] and apply it to [appspec].
   Calls [cont t1 t2 H] afterwards, where [t1] and [t2] are the projected specs and [H] is the generated proof hypothesis. *)
@@ -2860,10 +2885,13 @@ Ltac prove_trait_proj_incl_for trait_proj appspec trait_spec trait_ty_inst trait
 
     let H2 := fresh in
     assert (function_subtype t1 t2) as H2;
-    [ apply H
+    [ match goal with
+      | |- function_subtype ?a _ =>
+          let x := get_trait_inclusion_def a in
+          apply_spec_for x H
+      end
     | clear H; cont H2 ]
   ).
-
 
 (**
   Given a [function_subtype] proof goal, check whether the left function spec is a projection of an assumed trait spec.

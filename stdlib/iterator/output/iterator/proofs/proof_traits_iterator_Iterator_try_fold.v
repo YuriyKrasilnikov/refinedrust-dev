@@ -17,23 +17,25 @@ Lemma traits_iterator_Iterator_try_fold_proof (π : thread_id) :
 Proof.
   traits_iterator_Iterator_try_fold_prelude.
 
-  rep <-! liRStep; liShow.
   rep liRStep; liShow.
   liInst Hevar_x2 self.
   liInst Hevar_seq [].
   rep <-! liRStep; liShow.
 
-  2: { 
+  2: {
     rep <-! liRStep; liShow.
     rep  liRStep; liShow.
     liInst Hevar_x1 seq.
     liInst Hevar_x2 x7.
-    rep liRStep; liShow. 
+    rep liRStep; liShow.
+    rewrite branchfn_from_output_eq.
+    liInst Hevar_x3  x9.
+    rep liRStep.
   }
 
   (* establishing the precondition *)
   iRename select (∀ _ _ _ _, _)%I into "Hwand".
-  iPoseProof ("Hwand" with "[$] [$]") as "(%pclos & Hpre & Hnext & Hcl)".
+  iPoseProof ("Hwand" with "[$] [$] [$]") as "(%pclos & Hpre & Hnext & ? & Hcl)".
   rep liRStep; liShow.
   liInst Hevar_x1 pclos.
   rep <-! liRStep; liShow.
@@ -41,15 +43,15 @@ Proof.
     rename select (Try_BranchFn _ _ = inl _) into Heq. rewrite Heq.
     rep liRStep; liShow.
     liInst Hevar_x x'1.
-    iPoseProof ("Hcl" with "[$]") as "[Ha Hb]".
-    iRevert "Ha Hb".
+    iPoseProof ("Hcl" with "[$]") as "[Ha _]".
+    iRevert "Ha".
     rewrite Heq.
     rep liRStep; liShow. }
   { rep <-! liRStep; liShow.
     rename select (Try_BranchFn _ _ = inr _) into Heq. rewrite Heq.
     rep <-! liRStep; liShow.
-    iPoseProof ("Hcl" with "[$]") as "[Ha Hb]".
-    iRevert "Ha Hb".
+    iPoseProof ("Hcl" with "[$]") as "[Ha _]".
+    iRevert "Ha".
     rewrite Heq.
 
     rep <-! liRStep; liShow.
@@ -57,12 +59,16 @@ Proof.
     (* TODO: maybe add Lithium instances for Next so we can instantiate evars *)
     liInst Hevar_x2 x'.
     liInst Hevar_x x'1.
-    rep liRStep; liShow. }
+    rep liRStep; liShow.
+    rename select (Try_BranchFn _ _ = _) into Hbranch.
+    rewrite Hbranch.
+    liInst Hevar_x3 x'0.
+    rep liRStep.
+  }
 
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
-  { eapply Forall_app. solve_goal. }
   Unshelve. all: print_remaining_sidecond.
 Qed.
 End proof.
