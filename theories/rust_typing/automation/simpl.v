@@ -426,6 +426,23 @@ Proof.
   apply list_fmap_ext'; done.
 Qed.
 
+Global Instance simpl_impl_elem_of_nil {A} (x : A) :
+  SimplImpl true (x ∈ []) (λ T, False → T).
+Proof.
+  unfold SimplImpl. intros. rewrite elem_of_nil. done.
+Qed.
+
+(*
+Global Instance simpl_impl_Forall2_length {A B} (ls1 : list A) (ls2 : list B) P :
+  SimplImpl false (Forall2 P ls1 ls2) (λ T, Forall2 P ls1 ls2 → length ls1 = length ls2 → T) | 100.
+Proof.
+  rewrite /SimplImpl. intros T. split.
+  - intros Hcont Hf. apply Hcont; first done.
+    eapply Forall2_length; done.
+  - intros Hcont Hf _. by apply Hcont.
+Qed.
+*)
+
 (** Extra normalization *)
 #[export] Hint Rewrite -> @sum_list_Z_with_app : lithium_rewrite.
 
@@ -474,3 +491,14 @@ Proof.
   by rewrite list_fmap_compose.
 Qed.
 Hint Rewrite -> @fmap_fst_fst @fmap_snd_snd @fmap_fst_snd @fmap_snd_fst : lithium_rewrite.
+
+Hint Rewrite -> wrap_to_it_id using can_solve : lithium_rewrite.
+
+
+Lemma list_fmap_const' {A B} (l : list B) (a : A) :
+  (λ _, a) <$> l = replicate (length l) a.
+Proof.
+  apply const_fmap. done.
+Qed.
+Hint Rewrite -> @list_fmap_const' : lithium_rewrite.
+
