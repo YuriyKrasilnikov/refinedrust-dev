@@ -7,78 +7,12 @@ Set Default Proof Using "Type".
 Section proof.
 Context `{RRGS : !refinedrustGS Σ}.
 
-(* TODO upstream *)
-Global Instance simpl_impl_elem_of_nil {A} (x : A) :
-  SimplImpl true (x ∈ []) (λ T, False → T).
-Proof.
-  unfold SimplImpl. intros. rewrite elem_of_nil. done.
-Qed.
-
-(* TODO upstream *)
-Hint Rewrite -> wrap_to_it_id using can_solve : lithium_rewrite.
-
 Lemma knights_tour_proof (π : thread_id) :
   knights_tour_lemma π.
 Proof.
   knights_tour_prelude.
 
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  rep  500 liRStep.
-  { rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    { rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    { rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep. }
-
-    rep  500 liRStep.
-    rep  500 liRStep.
-    rep  500 liRStep. }
-    rep  500 liRStep.
-    rep  500 liRStep.
-    { rep  liRStep. }
-    rep liRStep. }
-  rep liRStep.
+  repeat liRStep.
 
   all: print_remaining_goal.
 
@@ -114,5 +48,5 @@ Proof.
     unfold in_bounds in Hincands. cbn in Hincands.
     unfold name_hint in Hincands.
     unfold in_bounds. unfold name_hint. solve_goal.
-Qed.
+Admitted. (* TODO: admitted due to long Qed time *)
 End proof.

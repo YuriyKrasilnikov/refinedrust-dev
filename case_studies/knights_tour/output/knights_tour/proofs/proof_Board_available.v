@@ -7,9 +7,6 @@ Set Default Proof Using "Type".
 Section proof.
 Context `{RRGS : !refinedrustGS Σ}.
 
-(* TODO upstream *)
-Hint Rewrite -> wrap_to_it_id using can_solve : lithium_rewrite.
-
 Lemma Board_available_proof (π : thread_id) :
   Board_available_lemma π.
 Proof.
@@ -17,16 +14,9 @@ Proof.
 
   rep <-! liRStep; liShow.
 
-  { rep liRStep. liShow.
-    liInst Hevar_x1 (fmap (λ (x : list nat), fmap Z.of_nat x) self0).
-    rep liRStep. }
-  all : rep liRStep.
   all: print_remaining_goal.
   Unshelve. all: sidecond_solver.
   Unshelve. all: sidecond_hammer.
-  rewrite list_lookup_total_fmap; last solve_goal.
-  rewrite length_fmap.
-  rewrite Hnestedlen; last solve_goal.
-  solve_goal.
+  rewrite Hnestedlen; solve_goal.
 Qed.
 End proof.

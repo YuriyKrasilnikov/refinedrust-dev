@@ -10,27 +10,30 @@
 #![rr::import("refinedrust.examples.knights_tour.theories", "defs")]
 #![rr::include("stdlib")]
 
-#[rr::only_spec]
-#[rr::requires("index < length x.cur")]
-#[rr::exists("γi")]
-#[rr::returns("(x.cur !!! Z.to_nat index, γi)")]
-#[rr::observe("x.ghost": "<[Z.to_nat index := PlaceGhost γi]> (<$#> x.cur)")]
-pub fn vec_index_mut<T>(x: &mut Vec<T>, index: usize) -> &mut T {
-    &mut x[index]
-}
+mod wrappers {
+    #[rr::only_spec]
+    #[rr::requires("index < length x.cur")]
+    #[rr::exists("γi")]
+    #[rr::returns("(x.cur !!! Z.to_nat index, γi)")]
+    #[rr::observe("x.ghost": "<[Z.to_nat index := PlaceGhost γi]> (<$#> x.cur)")]
+    pub fn vec_index_mut<T>(x: &mut Vec<T>, index: usize) -> &mut T {
+        &mut x[index]
+    }
 
-#[rr::only_spec]
-#[rr::requires("index < length x")]
-#[rr::returns("x !!! Z.to_nat index")]
-pub fn vec_index<T>(x: &Vec<T>, index: usize) -> &T {
-    &x[index]
-}
+    #[rr::only_spec]
+    #[rr::requires("index < length x")]
+    #[rr::returns("x !!! Z.to_nat index")]
+    pub fn vec_index<T>(x: &Vec<T>, index: usize) -> &T {
+        &x[index]
+    }
 
-#[rr::only_spec]
-#[rr::returns("x")]
-pub fn vec_iter<T>(x: &Vec<T>) -> core::slice::Iter<'_, T> {
-    x.iter()
+    #[rr::only_spec]
+    #[rr::returns("x")]
+    pub fn vec_iter<T>(x: &Vec<T>) -> core::slice::Iter<'_, T> {
+        x.iter()
+    }
 }
+use wrappers::*;
 
 #[derive(Copy, Clone)]
 #[rr::refined_by("(x, y)" : "Z * Z")]
@@ -58,13 +61,13 @@ impl Point {
     }
 }
 
-#[rr::refined_by("(s, f)" : "nat * (list (list nat))")]
+#[rr::refined_by("(s, f)" : "nat * (list (list Z))")]
 #[rr::exists("field" : "list _")]
 #[rr::invariant(
-    "field = fmap (λ (x : list nat), #(fmap (λ (y: nat), #(Z.of_nat y)) x) : place_rfn (list (place_rfn Z))) f"
+    "field = fmap (λ (x : list Z), #(fmap (λ (y: Z), #y) x) : place_rfn (list (place_rfn Z))) f"
 )]
 #[rr::invariant("s = length f")]
-#[rr::invariant("Hnestedlen" : "∀ i : nat, i < length f -> length (f !!! i) = s")]
+#[rr::invariant("Hnestedlen" : "∀ i : nat, i < length f → length (f !!! i) = s")]
 pub struct Board {
     #[rr::field("Z.of_nat s")]
     pub size: usize,
@@ -79,8 +82,7 @@ impl Board {
         let rows = (0..size)
             .map(
                 #[rr::requires("Z.to_nat 16 * {size} ∈ isize")]
-                #[rr::ensures("∀ (i : nat), i < {size} -> (ret !! i) = Some 0")]
-                #[rr::ensures("length ret = Z.to_nat {size}")]
+                #[rr::returns("replicate (Z.to_nat {size}) 0")]
                 |_| vec![0; size],
             )
             .collect();
@@ -97,19 +99,16 @@ impl Board {
     }
 
     #[rr::requires("in_bounds self.1 p")]
-    #[rr::requires("p.1 + 2 ∈ isize")]
-    #[rr::requires("p.1 - 2 ∈ isize")]
-    #[rr::requires("p.2 + 2 ∈ isize")]
-    #[rr::requires("p.2 - 2 ∈ isize")]
-    #[rr::ensures("ret <= 8")]
+    #[rr::requires("p.1 + 2 ∈ isize ∧ p.1 - 2 ∈ isize ∧ p.2 + 2 ∈ isize ∧ p.2 - 2 ∈ isize")]
+    #[rr::requires("size_of_array_in_bytes (tuple2_sls (IntSynType isize) (IntSynType isize)) 16 ≤ MaxInt isize")]
+    #[rr::ensures("ret ≤ 8")]
     fn count_degree(&self, p: Point) -> usize {
         let mut count = 0;
 
         for m in moves() {
             #[rr::inv_vars("count")]
             #[rr::invariant("count <= length {Hist}")]
-            #[rr::ignore]
-            || {};
+            #[rr::ignore] || {};
             let next = p.mov(&m);
             if self.available(next) {
                 count += 1;
@@ -119,16 +118,14 @@ impl Board {
     }
 
     #[rr::requires("in_bounds self.cur.1 p")]
-    #[rr::exists("new_rows" : "list (list nat)")]
+    #[rr::exists("new_rows" : "list (list Z)")]
     #[rr::observe("self.ghost" : "(self.cur.1, new_rows)")]
     fn set(&mut self, p: Point, v: usize) {
-        /* use wrapper for indexing: vec_index */
         let idx = vec_index_mut(&mut self.field, p.x as usize);
         *vec_index_mut(idx, p.y as usize) = v;
     }
 }
 
-// #[rr::returns("[ *[2; 1]; *[1; 2]; *[-1; 2]; *[-2; 1]; *[-2; -1]; *[-1; -2]; *[1; -2]; *[2; -1]]")]
 #[rr::requires("Hbounds": "size_of_array_in_bytes (tuple2_sls (IntSynType isize) (IntSynType isize)) 16 ≤ MaxInt isize")]
 #[rr::ensures("∀ (a b : Z), *[a; b] ∈ ret -> (a ≤ 2)%Z ∧ (-2 ≤ a)%Z ∧ (b ≤ 2)%Z ∧ (-2 ≤ b)%Z")]
 #[rr::ensures("length ret = 8%nat")]
@@ -145,13 +142,7 @@ fn moves() -> Vec<(isize, isize)> {
     v
 }
 
-// #[ensures(forall<r: &(usize, Point)> result == Some(r) ==>
-//           exists<i> 0 <= i && i < v@.len() && v[i] == *r)]
-#[rr::only_spec]
 #[rr::ensures("if_Some ret (λ m, m ∈ v)")]
-/* TODO(sascha): try to verify when returning by value (instead of ref) */
-    // #[invariant(forall<r: &(usize, Point)> min == Some(r) ==>
-    //                   exists<i> 0 <= i && i < v@.len() && v[i] == *r)]
 fn min(v: &Vec<(usize, Point)>) -> Option<(usize, Point)> {
     let mut min: Option<(usize, Point)> = None;
     for x in vec_iter(v) {
@@ -171,15 +162,6 @@ fn min(v: &Vec<(usize, Point)>) -> Option<(usize, Point)> {
     min
 }
 
-// #[logic]
-// #[requires(a@ <= 1_000)]
-// #[ensures(a@ * a@ <= 1_000_000)]
-// fn dumb_nonlinear_arith(a: usize) {}
-
-//#[requires(0 < size@ && size@ <= 1000)]
-//#[requires(x < size)]
-//#[requires(y < size)]
-// #[rr::only_spec]
 #[rr::requires("Hx_upper": "a < size")]
 #[rr::requires("Hy_upper": "b < size")]
 #[rr::requires("16 * size ∈ isize")]
@@ -203,7 +185,7 @@ pub fn knights_tour(size: usize, a: usize, b: usize) -> Option<Board> {
             #[rr::inv_vars("candidates", "board")]
             #[rr::invariant("board = init_board")]
             #[rr::invariant("Hcandidate_bounds": 
-                "∀ (z : RT_xt (place_rfnRT (tuple2_rt Z Point_inv_t_rt))), z ∈ candidates -> in_bounds board.1 (z.:1)"
+                "∀ (z : RT_xt (place_rfnRT (tuple2_rt Z Point_inv_t_rt))), z ∈ candidates → in_bounds board.1 (z.:1)"
             )]
             #[rr::invariant("length candidates ≤ length {Hist}")]
             #[rr::ignore]||{};
@@ -228,8 +210,8 @@ fn main() {
     let (x, y) = (3, 1);
     println!("Board size: {}", SIZE);
     println!("Starting position: ({}, {})", x, y);
-    // match knights_tour(x, y) {
-    //     Some(b) => print!("{}", b),
-    //     None => println!("Fail!"),
-    // }
+     //match knights_tour(10000, x, y) {
+         //Some(b) => print!("{}", b),
+         //None => println!("Fail!"),
+     //}
 }

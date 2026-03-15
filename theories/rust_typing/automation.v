@@ -1205,6 +1205,7 @@ Ltac normalize_aggressively :=
   autounfold with solve_goal_unfold in *;
   unfold_common_caesium_defs;
   simplify_layout_assum;
+  simplify_layout_goal;
   unfold unit_sl in *.
 
 (** The main automation tactic after normalizing *)
