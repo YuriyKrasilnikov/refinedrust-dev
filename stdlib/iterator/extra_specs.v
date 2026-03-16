@@ -1,5 +1,6 @@
 Section extra.
- Context `{RRGS : !refinedrustGS Σ}.
+  Context `{RRGS : !refinedrustGS Σ}.
+  (** Map *)
   Lemma iterator_next_fused_trans_map_inv {MB_rt MI_rt MF_rt Item_rt}
   (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt)
   (FnOnce_attrs : FnOnce_spec_attrs MF_rt (tuple1_rt Item_rt) MB_rt)
@@ -43,7 +44,7 @@ Section extra.
           length clos_states = (1 + length hist')%nat ∧
           head clos_states = Some(s1.(map_clos)) ∧
           last clos_states = Some(s2.(map_clos)) ∧
-          Forall2 (λ p b, 
+          Forall2 (λ p b,
           (∃ pclos, ∃ clos1 clos2, clos_states !! p.1 = Some clos1 ∧ clos_states !! (S p.1) = Some clos2 ∧ ParamPred *[p.2] pclos ∧ (FnOnce_pre_learn π pclos clos1 *[p.2]).(simplify_boringly_impl_q _) ∧ (FnMut_postmut_learn π pclos clos1 *[p.2] clos2 b).(simplify_boringly_impl_q _))
           ) (zip (seq 0 (length hist')) hist') hist
     |}.
@@ -74,7 +75,7 @@ Section extra.
     iPoseProof (big_sepL2_Forall3 with "Hclos") as "%Hf".
     opose proof* Forall3_length_lr as Hlen1; first done.
     opose proof* Forall3_length_lm as Hlen2; first done.
-    
+
     iPureIntro.
     exists π, hist', states'.
     split; first done.
@@ -87,7 +88,7 @@ Section extra.
     { eapply Forall3_to_Forall2_l.
       eapply Forall3_impl; first apply Hf.
       done. }
-    intros []. done. 
+    intros []. done.
   Qed.
 
   (** Declared as an extern instance below, to enforce order on the argument resolution *)
@@ -171,6 +172,106 @@ Section extra.
     eexists _. done.
   Qed.
 
+  (** Take *)
+  Lemma iterator_next_fused_trans_take_inv {MI_rt Item_rt}
+  (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt) π p s1 hist s2 :
+    IteratorNextFusedTrans (adapters_take_TakeMIastraits_iterator_Iterator_spec_attrs MI_rt Item_rt It_attrs) π p s1 hist s2 -∗
+      IteratorNextFusedTrans It_attrs π p s1.1 hist s2.1 ∗
+      ⌜length hist ≤ s1.2⌝ ∗ ⌜s2.2 = (s1.2 - length hist)%nat⌝
+  .
+  Proof.
+    iInduction hist as [ | a hist] "IH" forall (s1 s2); simpl.
+    { iIntros "<-". iPureIntro. split_and!; try done; try lia. }
+    iIntros "(%s1' & (_ & %Hgt & %Heq & Hnext) & Hc)".
+    iPoseProof ("IH" with "Hc") as "(Hit & % & %)".
+    iFrame. iPureIntro.
+    split; lia.
+  Qed.
+
+  Program Definition iterator_learn_take {MI_rt Item_rt}
+  (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt)
+  p
+  (It_learn : IteratorLearnInductive It_attrs p)
+  :
+    IteratorLearnInductive (adapters_take_TakeMIastraits_iterator_Iterator_spec_attrs MI_rt Item_rt It_attrs) p := {|
+      iterator_learn_inductive_Q s1 hist s2 :=
+          It_learn.(iterator_learn_inductive_Q) s1.1 hist s2.1 ∧
+          length hist ≤ s1.2 ∧
+          s2.2 = (s1.2 - length hist)%nat
+        ;
+    |}.
+  Next Obligation.
+    iIntros (??? p It_learn π s1 hist s2).
+    iIntros "Hit".
+    iPoseProof (boringly_mono with "Hit") as "Ha".
+    { iApply iterator_next_fused_trans_take_inv. }
+    rewrite !boringly_sep. rewrite !boringly_persistent_elim.
+    iDestruct "Ha" as "(Hnext & % & %)".
+    iPoseProof (It_learn.(iterator_learn_inductive_proof) with "Hnext") as "%Hlearn".
+    iPureIntro. done.
+  Qed.
+  Global Existing Instance iterator_learn_take.
+
+
+  (** Skip *)
+  Lemma iterator_next_fused_trans_skip_inv {MI_rt Item_rt}
+  (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt) π p s1 hist s2 :
+    IteratorNextFusedTrans (adapters_skip_SkipMIastraits_iterator_Iterator_spec_attrs MI_rt Item_rt It_attrs) π p s1 hist s2 -∗
+      ∃ pref,
+        IteratorNextFusedTrans It_attrs π p s1.1 (pref ++ hist) s2.1 ∗
+        ⌜length pref ≤ s1.2⌝ ∗
+        ⌜s2.2 = (s1.2 - length pref)%nat⌝ ∗
+        (* TODO can I find a better formulation for this? *)
+        ⌜if decide (length hist = 0%nat) then pref = [] else length pref = s1.2⌝
+  .
+  Proof.
+    iInduction hist as [ | a hist] "IH" forall (s1 s2); simpl.
+    { iIntros "<-". iExists [].
+      simpl. iR. iPureIntro. split_and!; try done; try lia. }
+    iIntros "(%s1' & (_ & Hnext) & Hc)".
+    iDestruct "Hnext" as "(%seq & %s2_inner & %Hseq_len & %Hn' & Hnexts & Hnext)".
+    iPoseProof ("IH" with "Hc") as "(%prefix & Hnext' & % & % & %Hdec)".
+    destruct (decide (seq = [])) as [Hseq_zero | Hseq_nzero].
+    + subst. simpl in *. iDestruct "Hnexts" as "<-".
+      iExists []. simpl.
+      assert (prefix = []) as ->. { destruct prefix; simpl in *; first done. lia. }
+      simpl. iFrame. iPureIntro. split_and; solve_goal.
+    + iExists seq. assert (prefix = []) as ->. { destruct prefix; simpl in *; solve_goal. }
+      simpl. iSplitL.
+      { iApply iterator_next_fused_trans_app. iFrame. }
+      iPureIntro. solve_goal.
+  Qed.
+
+  Program Definition iterator_learn_skip {MI_rt Item_rt}
+  (It_attrs : traits_iterator_Iterator_spec_attrs MI_rt Item_rt)
+  p
+  (It_learn : IteratorLearnInductive It_attrs p)
+  :
+    IteratorLearnInductive (adapters_skip_SkipMIastraits_iterator_Iterator_spec_attrs MI_rt Item_rt It_attrs) p := {|
+      iterator_learn_inductive_Q s1 hist s2 :=
+          ∃ pref,
+          It_learn.(iterator_learn_inductive_Q) s1.1 (pref ++ hist) s2.1 ∧
+          length pref ≤ s1.2 ∧
+          s2.2 = (s1.2 - length pref)%nat ∧
+          (* TODO can I find a better formulation for this? *)
+          if decide (length hist = 0%nat) then pref = [] else length pref = s1.2
+        ;
+    |}.
+  Next Obligation.
+    iIntros (??? p It_learn π s1 hist s2).
+    iIntros "Hit".
+    iPoseProof (boringly_mono with "Hit") as "Ha".
+    { iApply iterator_next_fused_trans_skip_inv. }
+    rewrite boringly_exists.
+    iDestruct "Ha" as "(%prefix & Ha)".
+    rewrite !boringly_sep. rewrite !boringly_persistent_elim.
+    iDestruct "Ha" as "(Hnext & % & % & %)".
+    iPoseProof (It_learn.(iterator_learn_inductive_proof) with "Hnext") as "%Hlearn".
+    iPureIntro. exists prefix. done.
+  Qed.
+  Global Existing Instance iterator_learn_skip.
+
+  (** Range *)
   Program Definition iterator_learn_range_it
     (Clone_attrs : Clone_spec_attrs Z)
     (PartialEq_attrs : PartialEq_spec_attrs Z Z)
@@ -288,7 +389,13 @@ Section extra.
   Definition simplify_goal_range_iter_inv_inst := [instance @simplify_goal_range_iter_inv with 0%N].
   Global Existing Instance simplify_goal_range_iter_inv_inst.
 
-
+  (** A trivial learning instance so we can bottom out of iterator combinator learning even if we don't know the concrete shape of the iterator *)
+  Global Program Instance iterator_learn_trivial {Self_rt Item_rt} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) p :
+    IteratorLearnInductive A p | 1000 :=
+    {| iterator_learn_inductive_Q s1 hist s2 := True; |}.
+  Next Obligation.
+    iIntros (????????) "_". done.
+  Qed.
 End extra.
 Global Hint Extern 100 (IteratorLearnInductive (adapters_map_MapMIMFastraits_iterator_Iterator_spec_attrs _ _ _ _ _ _ _) _ ) =>
   unshelve notypeclasses refine (iterator_learn_map_stateless _ _ _ _ _ _ _ _ _); [ tc_solve | tc_solve | tc_solve | tc_solve] : typeclass_instances.

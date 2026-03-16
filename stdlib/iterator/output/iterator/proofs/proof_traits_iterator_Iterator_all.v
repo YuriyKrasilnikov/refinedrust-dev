@@ -29,13 +29,11 @@ Proof.
     iPoseProof ("Hcl" with "[$]") as "(%Heq & Hinv)".
     destruct res; simpl; rep liRStep. }
   rep <-! liRStep; liShow.
-  { iRevert select (if_iOk _ _). iRevert select (if_iErr _ _).
-    rep liRStep; liShow.
+  { rep liRStep; liShow.
     liInst Hevar_x1 x'. liInst Hevar_x2 x'0.
     rep liRStep; liShow. liInst Hevar_x0 x'1.
     rep liRStep; liShow. }
-  { iRevert select (if_iOk _ _). iRevert select (if_iErr _ _).
-    rep liRStep; liShow.
+  { rep liRStep; liShow.
     liInst Hevar_x1 (seq' ++ [e]). liInst Hevar_x2 x'1.
     rep liRStep; liShow.  }
 

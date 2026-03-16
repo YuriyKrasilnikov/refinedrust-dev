@@ -47,6 +47,20 @@ Section trans.
       + iIntros "(%s2' & (%s1' & ? & ?) & ?)".
         iFrame. iApply "IH". iFrame.
   Qed.
+  Lemma iterator_next_fused_trans_app {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist1 hist2 s2 :
+    IteratorNextFusedTrans A π p s1 (hist1 ++ hist2) s2 ⊣⊢ (∃ s2', IteratorNextFusedTrans A π p s1 hist1 s2' ∗ IteratorNextFusedTrans A π p s2' hist2 s2).
+  Proof.
+    iInduction hist1 as [ | y hist] "IH" forall (s1 s2); simpl.
+    - iSplit.
+      + iIntros "$". done.
+      + iIntros "(%s2' & -> & $)".
+    - iSplit.
+      + iIntros "(%s1' & Ha & Hb)".
+        iPoseProof ("IH" with "Hb") as "(%s2' & Hb & Hc)".
+        iFrame.
+      + iIntros "(%s2' & (%s1' & ? & ?) & ?)".
+        iFrame. iApply "IH". iFrame.
+  Qed.
 
   Lemma iterator_next_fused_trans_cons {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s2' x :
     A.(traits_iterator_Iterator_Next) π p s1 (Some x) s2 -∗

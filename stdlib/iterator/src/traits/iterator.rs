@@ -2,6 +2,8 @@
 #![rr::import("rrstd.iterator.theories", "iterator")]
 
 use crate::adapters::map::Map;
+use crate::adapters::skip::Skip;
+use crate::adapters::take::Take;
 use std::ops::{ControlFlow, Try};
 use std::cmp::{self, Ordering};
 
@@ -421,6 +423,62 @@ pub trait Iterator {
     {
         let first = self.next()?;
         Some(self.fold(first, f))
+    }
+
+    
+    #[rr::params("p")]
+    #[rr::requires(#iris "{Inv} π p self.cur")]
+    #[rr::exists("s2", "s2'", "seq")]
+    // Postcondition: we observe a list of elements of up to size n
+    #[rr::ensures(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π p self.cur seq s2")]
+    #[rr::ensures(#iris "{Inv} π p s2'")]
+    #[rr::observe("self.ghost" : "$# s2'")]
+    #[rr::ensures("length seq ≤ Z.to_nat n")]
+    // Postcondition: if we return None, then we observed None from the iterator after at most n
+    // elements
+    #[rr::ensures(#iris "if_iNone ret ({Next} π p s2 None s2')")]
+    // Postcondition if we return `Some e`, then we observed `Some e` from the iterator after n
+    // elements
+    #[rr::ensures(#iris "if_iSome ret (λ ret, {Next} π p s2 (Some ret) s2' ∗ ⌜length seq = Z.to_nat n⌝)")]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let mut i = 0;
+        while i < n {
+            #[rr::params("init", "γ")]
+            #[rr::inv_vars("self", "i")]
+            #[rr::invariant("self.ghost = γ")]
+            #[rr::exists("seq")]
+            #[rr::invariant("i ≤ n")]
+            #[rr::invariant("length seq = Z.to_nat i")]
+            #[rr::invariant(#iris "{Inv} π p self.cur")]
+            #[rr::invariant(#iris "IteratorNextFusedTrans traits_iterator_Iterator_Self_spec_attrs π p init seq self.cur")]
+            #[rr::ignore] || {};
+            if self.next().is_none() {
+                return None;
+            }
+            i += 1;
+        }
+        self.next()
+    }
+
+    #[rr::params("p")]
+    #[rr::requires(#iris "{Inv} π p self")]
+    #[rr::ensures("ret = (self, Z.to_nat n)")]
+    #[rr::ensures(#iris "traits_iterator_Iterator_Inv (adapters_skip_SkipMIastraits_iterator_Iterator_spec_attrs _ _ traits_iterator_Iterator_Self_spec_attrs) π p ret")]
+    fn skip(self, n: usize) -> Skip<Self>
+        where Self: Sized,
+    {
+        Skip::new(self, n)
+    }
+
+    #[rr::params("p")]
+    #[rr::requires(#iris "{Inv} π p self")]
+    #[rr::ensures("ret = (self, Z.to_nat n)")]
+    #[rr::ensures(#iris "traits_iterator_Iterator_Inv (adapters_take_TakeMIastraits_iterator_Iterator_spec_attrs _ _ traits_iterator_Iterator_Self_spec_attrs) π p ret")]
+    fn take(self, n: usize) -> Take<Self>
+    where
+        Self: Sized,
+    {
+        Take::new(self, n)
     }
 
     // TODO: more methods
