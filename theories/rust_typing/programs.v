@@ -682,8 +682,13 @@ Section judgments.
   Class TypedCall (E : elctx) (L : llctx) (f : frame_path) (eκs : list lft) (etys : list (sigT type)) (v : val) (P : iProp Σ) (vl : list val) (tys : list (sigT (λ rt, type rt * rt)%type)) : Type :=
     typed_call_proof T : iProp_to_Prop (typed_call E L f eκs etys v P vl tys T).
 
-  Definition typed_if (E : elctx) (L : llctx) (v : val) (P T1 T2 : iProp Σ) : iProp Σ :=
-    (P -∗ ∃ b, ⌜val_to_bool v = Some b⌝ ∗ (if b then T1 else T2)).
+  Definition typed_if (E : elctx) (L : llctx) (v : val) (P : iProp Σ) (T1 T2 : llctx → iProp Σ) : iProp Σ :=
+    (∀ F,
+    ⌜lftE ⊆ F⌝ -∗
+    rrust_ctx -∗
+    elctx_interp E -∗
+    llctx_interp L -∗
+    P ={F}=∗ ∃ b L2, ⌜val_to_bool v = Some b⌝ ∗ llctx_interp L2 ∗ (if b then T1 L2 else T2 L2)).
   Class TypedIf E L (v : val) (P : iProp Σ) : Type :=
     typed_if_proof T1 T2 : iProp_to_Prop (typed_if E L v P T1 T2).
 
@@ -776,6 +781,11 @@ Section judgments.
     ∀ F, ⌜lftE ⊆ F⌝ -∗ rrust_ctx -∗ elctx_interp E -∗ llctx_interp L ={F}=∗ ∃ L' m', llctx_interp L' ∗ T L' m'.
   Class IterateWithHooks (E : elctx) (L : llctx) {M} (m : M) : Type :=
     iterate_with_hooks_proof T : iProp_to_Prop (iterate_with_hooks E L m T).
+
+  (** Judgment for normalizing the spatial context by running normalizable propositions through [introduce_with_hooks]. *)
+  (** Implemented mostly through custom Ltac tactics interfacing with the Iris environments. *)
+  Definition normalize_spatial_context (E : elctx) (L : llctx) (P : iProp Σ) (T : llctx → iProp Σ) : iProp Σ :=
+    introduce_with_hooks E L P T.
 
   (** *** Statements *)
   Definition typed_stmt_R_t := val → llctx → iProp Σ.
