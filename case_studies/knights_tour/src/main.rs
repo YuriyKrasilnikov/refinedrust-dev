@@ -7,7 +7,7 @@
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
 #![feature(stmt_expr_attributes)]
-#![rr::import("refinedrust.examples.knights_tour.theories", "defs")]
+#![rr::import("refinedrust.extra_proofs.knights_tour", "defs")]
 #![rr::package("knights-tour")]
 #![rr::include("stdlib")]
 
