@@ -135,7 +135,7 @@ case-studies:
   stage: tests
   needs: [ stdlib ]
   variables:
-    NIX_DERIVATION: .#checks.${NIX_PLATFORM}.{evenint,hillel,minivec,paper-examples,paper-examples-rr20,tests}
+    NIX_DERIVATION: .#checks.${NIX_PLATFORM}.{evenint,hillel,minivec,paper-examples,paper-examples-rr20,linkedlist,tests,iterators,knights-tour}
 
 ace:
   extends: [ .nix, .build_to_nix_artifacts ]

@@ -2,6 +2,7 @@
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
 #![feature(stmt_expr_attributes)]
+#![rr::package("iterators")]
 #![rr::include("stdlib")]
 
 use std::vec::Vec;
