@@ -8,6 +8,8 @@
 
 use std::marker::PhantomData;
 
+mod examples;
+
 struct Link<T> {
     value: T,
     next: *const Link<T>,
@@ -160,5 +162,16 @@ impl<'a, T: 'a> Iterator for ListIter<'a, T> {
             };
             Some(elem_ref)
         }
+    }
+}
+
+#[rr::instantiate("IntoIter" := "λ x, x")]
+impl<'a, T> IntoIterator for &'a List<T> {
+    type Item = &'a T;
+    type IntoIter = ListIter<'a, T>;
+
+    #[rr::default_spec]
+    fn into_iter(self: &'a List<T>) -> Self::IntoIter {
+        self.iter()
     }
 }

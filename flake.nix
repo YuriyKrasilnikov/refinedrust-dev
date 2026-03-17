@@ -407,10 +407,6 @@
             src = ./case_studies/paper_examples;
           }
           {
-            pname = "paper-examples-rr20";
-            src = ./case_studies/refinedrust-20-paper-examples;
-          }
-          {
             pname = "iterators";
             src = ./case_studies/iterators;
           }
