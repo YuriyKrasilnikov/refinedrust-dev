@@ -25,6 +25,18 @@ pub enum ControlFlow<B, C = ()> {
     Break(B),
 }
 
+#[rr::export_as(core::ops::ControlFlow)]
+impl<B, C> ControlFlow<B, C> {
+    #[rr::returns("match self with | Ok _ => None | Err x => Some x end")]
+    pub fn break_value(self) -> Option<B>
+    {
+        match self {
+            ControlFlow::Continue(..) => None,
+            ControlFlow::Break(x) => Some(x),
+        }
+    }
+}
+
 #[rr::export_as(core::ops::FromResidual)]
 #[rr::exists("FromResidualFn" : "{xt_of R} → option {xt_of Self}")]
 pub trait FromResidual<R = <Self as Try>::Residual> {

@@ -33,7 +33,7 @@ Section trans.
         IteratorNextFusedTrans attrs π p s1' els s2
     end.
 
-  Lemma iterator_next_fused_trans_app {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 x :
+  Lemma iterator_next_fused_trans_snoc {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 x :
     IteratorNextFusedTrans A π p s1 (hist ++ [x]) s2 ⊣⊢ (∃ s2', IteratorNextFusedTrans A π p s1 hist s2' ∗ A.(traits_iterator_Iterator_Next) π p s2' (Some x) s2).
   Proof.
     iInduction hist as [ | y hist] "IH" forall (s1 s2); simpl.
@@ -47,8 +47,28 @@ Section trans.
       + iIntros "(%s2' & (%s1' & ? & ?) & ?)".
         iFrame. iApply "IH". iFrame.
   Qed.
+  Lemma iterator_next_fused_trans_app {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist1 hist2 s2 :
+    IteratorNextFusedTrans A π p s1 (hist1 ++ hist2) s2 ⊣⊢ (∃ s2', IteratorNextFusedTrans A π p s1 hist1 s2' ∗ IteratorNextFusedTrans A π p s2' hist2 s2).
+  Proof.
+    iInduction hist1 as [ | y hist] "IH" forall (s1 s2); simpl.
+    - iSplit.
+      + iIntros "$". done.
+      + iIntros "(%s2' & -> & $)".
+    - iSplit.
+      + iIntros "(%s1' & Ha & Hb)".
+        iPoseProof ("IH" with "Hb") as "(%s2' & Hb & Hc)".
+        iFrame.
+      + iIntros "(%s2' & (%s1' & ? & ?) & ?)".
+        iFrame. iApply "IH". iFrame.
+  Qed.
 
-  Lemma simplify_goal_iterator_next_fused_trans_app {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
+  Lemma iterator_next_fused_trans_cons {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s2' x :
+    A.(traits_iterator_Iterator_Next) π p s1 (Some x) s2 -∗
+    IteratorNextFusedTrans A π p s2 hist s2' -∗
+    IteratorNextFusedTrans A π p s1 (x :: hist) s2'.
+  Proof. simpl. iIntros "? $". eauto. Qed.
+
+  Lemma simplify_goal_iterator_next_fused_trans_snoc {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
     T :
     (∃ x,
       ⌜hist = hist' ++ [x]⌝ ∗
@@ -57,27 +77,27 @@ Section trans.
   Proof.
     rewrite /simplify_goal.
     iIntros "((%x & -> & Ha & Hb) & $)".
-    rewrite iterator_next_fused_trans_app.
+    rewrite iterator_next_fused_trans_snoc.
     iFrame.
   Qed.
   (* Apply transitivity in case the next relation is in context already *)
-  Definition simplify_goal_iterator_next_fused_trans_app_find_next {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
+  Definition simplify_goal_iterator_next_fused_trans_snoc_find_next {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
     `{!CheckOwnInContext (IteratorNextFusedTrans A π p s1 hist' s1')}
     e s1''
     `{!CheckOwnInContext (A.(traits_iterator_Iterator_Next) π p s1' (Some e) s1'')} T
     :=
-    simplify_goal_iterator_next_fused_trans_app A π p s1 hist s2 s1' hist' T.
-  Definition simplify_goal_iterator_next_fused_trans_app_find_next_inst := [instance @simplify_goal_iterator_next_fused_trans_app_find_next with 50%N].
-  Global Existing Instance simplify_goal_iterator_next_fused_trans_app_find_next_inst.
+    simplify_goal_iterator_next_fused_trans_snoc A π p s1 hist s2 s1' hist' T.
+  Definition simplify_goal_iterator_next_fused_trans_snoc_find_next_inst := [instance @simplify_goal_iterator_next_fused_trans_snoc_find_next with 50%N].
+  Global Existing Instance simplify_goal_iterator_next_fused_trans_snoc_find_next_inst.
 
   (* Apply transitivity if the attrs are concrete *)
-  Definition simplify_goal_iterator_next_fused_trans_app_not_var {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
+  Definition simplify_goal_iterator_next_fused_trans_snoc_not_var {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist s2 s1' hist'
     `{!CheckOwnInContext (IteratorNextFusedTrans A π p s1 hist' s1')}
     `{!IsNotVar A} T
     :=
-    simplify_goal_iterator_next_fused_trans_app A π p s1 hist s2 s1' hist' T.
-  Definition simplify_goal_iterator_next_fused_trans_app_not_var_inst := [instance @simplify_goal_iterator_next_fused_trans_app_not_var with 50%N].
-  Global Existing Instance simplify_goal_iterator_next_fused_trans_app_not_var_inst.
+    simplify_goal_iterator_next_fused_trans_snoc A π p s1 hist s2 s1' hist' T.
+  Definition simplify_goal_iterator_next_fused_trans_snoc_not_var_inst := [instance @simplify_goal_iterator_next_fused_trans_snoc_not_var with 50%N].
+  Global Existing Instance simplify_goal_iterator_next_fused_trans_snoc_not_var_inst.
 
   Lemma simplify_goal_iterator_next_fused_trans_nil {Self_rt Item_rt : RT} (A : traits_iterator_Iterator_spec_attrs Self_rt Item_rt) π p s1 hist T :
     (⌜hist = []⌝) ∗ T ⊢ simplify_goal (IteratorNextFusedTrans A π p s1 hist s1) T.

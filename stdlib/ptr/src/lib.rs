@@ -473,7 +473,7 @@ pub const fn dangling_mut<T>() -> *mut T {
 // alignment
 #[rr::only_spec]
 #[rr::export_as(#method core::ptr::const_ptr::is_aligned_to)]
-#[rr::requires("(∃ align_log, align = 2^align_log)")]
+#[rr::requires("is_power_of_two (Z.to_nat align)")]
 #[rr::returns("bool_decide (a `aligned_to` Z.to_nat align)")]
 pub fn const_ptr_is_aligned_to<T>(a: *const T, align: usize) -> bool {
     if !align.is_power_of_two() {
@@ -494,7 +494,7 @@ where
 
 #[rr::only_spec]
 #[rr::export_as(#method core::ptr::mut_ptr::is_aligned_to)]
-#[rr::requires("(∃ align_log, align = 2^align_log)")]
+#[rr::requires("is_power_of_two (Z.to_nat align)")]
 #[rr::returns("bool_decide (a `aligned_to` Z.to_nat align)")]
 pub fn mut_ptr_is_aligned_to<T>(a: *mut T, align: usize) -> bool {
     if !align.is_power_of_two() {

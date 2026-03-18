@@ -2,9 +2,12 @@
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
 #![feature(stmt_expr_attributes)]
+#![rr::package("iterators")]
+#![feature(allocator_api)]
 #![rr::include("stdlib")]
 
 use std::vec::Vec;
+use std::alloc::Allocator;
 
 mod wrappers {
     use std::vec::Vec;
@@ -127,4 +130,38 @@ pub fn decuple_range() -> Vec<u32> {
         )
         .collect();
     v
+}
+
+#[rr::params("p")] 
+#[rr::requires(#iris "{I::Inv} π p iter")]
+pub fn skip_take<I: Iterator>(iter: I, n: usize) {
+    let res = iter.take(n).skip(n).next();
+
+    assert!(res.is_none());
+}
+
+#[rr::returns("v1 ++ v2")]
+pub fn extend_index(mut v1: Vec<u32>, v2: Vec<u32>) -> Vec<u32> {
+    Extend::extend(&mut v1, v2.into_iter());
+    v1
+}
+
+/// Axiomatized version of extend to get the same spec as Creusot without Vec bounds checking.
+#[rr::exists("ExtendResult" : "{xt_of Self} → list {xt_of A} → {xt_of Self}")]
+pub trait Extend<A> {
+    #[rr::params("p")]
+    #[rr::requires(#iris "{T::Inv} π p iter")]
+    #[rr::exists("seq", "s2", "s2'")]
+    #[rr::ensures(#iris "IteratorNextFusedTrans traits_iterator_Iterator_T_spec_attrs π p iter seq s2")]
+    #[rr::ensures(#iris "{T::Next} π p s2 None s2'")]
+    #[rr::observe("self.ghost": "$#@{{ {rt_of Self} }} ({ExtendResult} self.cur seq)")]
+    fn extend<T: Iterator<Item = A>>(&mut self, iter: T);
+}
+
+#[rr::only_spec]
+#[rr::instantiate("ExtendResult" := "λ self other, self ++ other")]
+impl<T, A: Allocator> Extend<T> for Vec<T, A> {
+    fn extend<I: Iterator<Item = T>>(&mut self, iter: I) {
+        unimplemented!();
+    }
 }

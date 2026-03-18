@@ -128,9 +128,9 @@ Proof.
   Unshelve. all: try solve_goal.
 Qed.
 
-Local Lemma test_destruct_hint `{!typeGS Σ} (x : option nat) :
+Local Lemma test_destruct_hint `{!typeGS Σ} (x : option nat) E L :
   if_iNone x (False) ∗ if_iSome x (λ x, ⌜x = 5%nat⌝)
-  ⊢@{iProp Σ} ⌜destruct_hint x (λ x, x = Some 5%nat)⌝ ∗ True.
+  ⊢@{iProp Σ} prove_with_subtype E L false ProveDirect (⌜destruct_hint x (λ x, x = Some 5%nat)⌝) (λ _ _ _, True).
 Proof.
   iStartProof. repeat liRStep.
 Qed.

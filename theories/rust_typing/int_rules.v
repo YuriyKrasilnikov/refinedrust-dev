@@ -613,11 +613,16 @@ Section bool.
   Lemma type_if_bool E L π b v m T1 T2:
     (case_destruct b (λ b' _,
       li_trace (TraceIfBool b, b') (
-      if b' then T1 else T2)))
+      normalize_spatial_context E L True (if b' then T1 else T2))))
     ⊢ typed_if E L v (v ◁ᵥ{π, m} b @ bool_t) T1 T2.
   Proof.
-    unfold li_trace, case_destruct. rewrite /ty_own_val/=. iIntros "(% & Hs) (-> & Hv)".
-    iExists b. iSplit; first done. done.
+    unfold li_trace, case_destruct.
+    rewrite /ty_own_val/=.
+    iIntros "(% & Hs)".
+    iIntros (??) "CTX HE HL (-> & %Hv)".
+    iMod ("Hs" with "[] CTX HE HL [//]") as "(%L2 & HL & HT)"; first done.
+    iFrame.
+    iExists b. iR. destruct b; done.
   Qed.
   Definition type_if_bool_inst := [instance @type_if_bool].
   Global Existing Instance type_if_bool_inst.

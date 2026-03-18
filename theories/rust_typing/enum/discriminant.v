@@ -33,7 +33,7 @@ Section discriminant.
     { rewrite ty_has_op_type_unfold. apply Hv. }
     destruct mt; eauto.
   Qed.
-  Next Obligation.
+Next Obligation.
     intros ?? mt ly Hst.
     apply syn_type_has_layout_int_inv in Hst as ->.
     done.
@@ -210,9 +210,10 @@ Section switch.
         li_tactic (compute_map_lookup_goal m (default 0%Z idx) false) (λ o,
         match o with
         | Some mi =>
-           ∃ s, ⌜ss !! mi = Some s⌝ ∗ typed_stmt E L f s fn R ϝ
+           ∃ s, ⌜ss !! mi = Some s⌝ ∗
+           normalize_spatial_context E L True (λ L2, typed_stmt E L2 f s fn R ϝ)
         | None =>
-          typed_stmt E L f def fn R ϝ
+          normalize_spatial_context E L True (λ L2, typed_stmt E L2 f def fn R ϝ)
         end))))
     ⊢ typed_switch E L f v _ (enum_discriminant_t en) r it m ss def fn R ϝ.
   Proof.
@@ -224,7 +225,15 @@ Section switch.
     iDestruct "Hc" as "(%b & %tag' & %Htag' & %idx & <- & %res & <- & Ha)".
     simplify_eq.
     iExists _. iR.
-    unfold els_lookup_tag. done.
+    unfold els_lookup_tag. case_match.
+    - iDestruct "Ha" as "(%s & % & HT)".
+      iExists _. iR.
+      iIntros (?) "#CTX #HE HL Hf Hpost".
+      iMod ("HT" with "[] CTX HE HL [//]") as "(%L2 & HL & HT)"; first done.
+      iApply ("HT" with "CTX HE HL Hf Hpost").
+    - iIntros (?) "#CTX #HE HL Hf Hpost".
+      iMod ("Ha" with "[] CTX HE HL [//]") as "(%L2 & HL & HT)"; first done.
+      iApply ("HT" with "CTX HE HL Hf Hpost").
   Qed.
   Global Instance type_switch_enum_inst E L f {rt} (en : enum rt) r v it : TypedSwitch E L f v _ (enum_discriminant_t en) r it :=
     λ m ss def fn R ϝ, i2p (type_switch_enum E L f en r it m ss def fn R ϝ v).

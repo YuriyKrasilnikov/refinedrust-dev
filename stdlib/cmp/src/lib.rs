@@ -1,6 +1,9 @@
 #![feature(register_tool)]
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
+#![feature(core_intrinsics)]
+#![feature(stmt_expr_attributes)]
+#![allow(internal_features)]
 #![allow(unused)]
 
 #![rr::package("refinedrust-stdlib")]
@@ -21,6 +24,43 @@ pub enum Ordering {
     Greater = 1,
 }
 use Ordering::*;
+
+impl Ordering {
+    #[rr::returns("match self with | Less => -1 | Equal => 0 | Greater => 1 end")]
+    const fn as_raw(self) -> i8 {
+        core::intrinsics::discriminant_value(&self)
+    }
+
+    #[rr::returns("bool_decide(self = Equal)")]
+    pub const fn is_eq(self) -> bool {
+        self.as_raw() == 0
+    }
+
+    #[rr::returns ("bool_decide(self ≠ Equal)")] 
+    pub const fn is_ne(self) -> bool {
+        self.as_raw() != 0
+    }
+
+    #[rr::returns("bool_decide(self = Less)")]
+    pub const fn is_lt(self) -> bool {
+        self.as_raw() < 0
+    }
+
+    #[rr::returns("bool_decide(self = Greater)")]
+    pub const fn is_gt(self) -> bool {
+        self.as_raw() > 0
+    }
+
+    #[rr::returns("bool_decide(self ≠ Greater)")]
+    pub const fn is_le(self) -> bool {
+        self.as_raw() <= 0
+    }
+
+    #[rr::returns("bool_decide(self ≠ Less)")]
+    pub const fn is_ge(self) -> bool {
+        self.as_raw() >= 0
+    }
+}
 
 
 // NOTE: we cannot enforce transitivity and symmetry here, as that is an open-world
@@ -100,22 +140,18 @@ pub trait Ord: Eq + PartialOrd<Self> {
     #[rr::returns("{Ord} self other")]
     fn cmp(&self, other: &Self) -> Ordering;
 
-    #[rr::trust_me]
     #[rr::returns("if bool_decide ({Ord} self other = Less) then other else self")]
     fn max(self, other: Self) -> Self
         where Self: Sized,
     {
-        unimplemented!();
-        //max_by(self, other, Ord::cmp)
+        max_by(self, other, #[rr::only_spec] #[rr::returns("{Self::Ord} a b")] |a, b| Ord::cmp(a, b))
     }
 
-    #[rr::trust_me]
     #[rr::returns("if bool_decide ({Ord} self other = Less) then self else other")]
     fn min(self, other: Self) -> Self
         where Self: Sized,
     {
-        unimplemented!();
-        //min_by(self, other, Ord::cmp)
+        min_by(self, other, #[rr::only_spec] #[rr::returns("{Self::Ord} a b")] |a, b| Ord::cmp(a, b))
     }
 
     #[rr::trust_me]
@@ -141,15 +177,13 @@ pub fn max<T: Ord>(v1: T, v2: T) -> T {
 }
 
 #[rr::export_as(core::cmp::max_by)]
-#[rr::only_spec]
 #[rr::params("p")]
 #[rr::requires(#iris "{F::Pre} π p compare *[v2; v1]")]
 #[rr::exists("ord")]
 #[rr::ensures(#iris "{F::Post} π p compare *[v2; v1] ord")]
-#[rr::returns("if bool_decide(ord = Less) then v1 else v2")]
+#[rr::ensures("ret = if bool_decide(ord = Less) then v1 else v2")]
 pub fn max_by<T, F: FnOnce(&T, &T) -> Ordering>(v1: T, v2: T, compare: F) -> T {
-    unimplemented!();
-    //if compare(&v2, &v1).is_lt() { v1 } else { v2 }
+    if compare(&v2, &v1).is_lt() { v1 } else { v2 }
 }
 
 #[rr::export_as(core::cmp::min)]
@@ -159,15 +193,13 @@ pub fn min<T: Ord>(v1: T, v2: T) -> T {
 }
 
 #[rr::export_as(core::cmp::min_by)]
-#[rr::only_spec]
 #[rr::params("p")]
 #[rr::requires(#iris "{F::Pre} π p compare *[v2; v1]")]
 #[rr::exists("ord")]
 #[rr::ensures(#iris "{F::Post} π p compare *[v2; v1] ord")]
 #[rr::returns("if bool_decide(ord = Less) then v2 else v1")]
 pub fn min_by<T, F: FnOnce(&T, &T) -> Ordering>(v1: T, v2: T, compare: F) -> T {
-    unimplemented!();
-    //if compare(&v2, &v1).is_lt() { v2 } else { v1 }
+    if compare(&v2, &v1).is_lt() { v2 } else { v1 }
 }
 
 macro_rules! partial_eq_impl {

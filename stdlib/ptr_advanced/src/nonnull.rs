@@ -140,7 +140,7 @@ impl<T: ?Sized> NonNull<T> {
         self.as_ptr().is_aligned()
     }
 
-    #[rr::requires("(∃ align_log, align = 2^align_log)")]
+    #[rr::requires("is_power_of_two (Z.to_nat align)")]
     #[rr::returns("bool_decide (self `aligned_to` Z.to_nat align)")]
     pub fn is_aligned_to(self, align: usize) -> bool {
         self.as_ptr().is_aligned_to(align)

@@ -18,11 +18,12 @@ Proof.
   liInst Hevar_seq [].
   rep <-! liRStep; liShow.
   { iRename select (∀ _, _)%I into "Hwand".
-    iPoseProof ("Hwand" with "[$] [$] [$]") as "(%pclos & Hpre & ? & ? & Hcl)".
+    iPoseProof ("Hwand" with "[$] [$]") as "Hwand'".
+    iPoseProof ("Hwand'" with "[$]") as "(%pclos & Hpre & ? & ? & Hcl)".
     rep liRStep; liShow.
     liInst Hevar_x1 pclos.
     rep <-! liRStep; liShow.
-    iPoseProof ("Hcl" with "[$]") as "(? & %)".
+    iPoseProof ("Hcl" with "[$]") as "(? & _)".
     rep liRStep; liShow.
     liInst Hevar_x x'1.
     rep liRStep; liShow. }
@@ -31,6 +32,8 @@ Proof.
   liInst Hevar_x0 x'.
   rep liRStep; liShow.
   liInst Hevar_x1 seq. liInst Hevar_x2 x3.
+  rep liRStep;liShow.
+  liInst Hevar_x3 x6.
   rep liRStep;liShow.
 
   all: print_remaining_goal.

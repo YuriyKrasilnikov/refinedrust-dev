@@ -1,3 +1,4 @@
 output_dir = "output"
 lib_load_paths = ["../../stdlib"]
+extra_specs = "extra_specs.v"
 
