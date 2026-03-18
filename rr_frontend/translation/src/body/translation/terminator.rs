@@ -276,7 +276,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     /// Check if a function call targets an atomic intrinsic and classify it.
     ///
     /// Returns `Ok(None)` if the call is not an atomic intrinsic (normal function call).
-    /// Returns `Err` if the call IS an atomic intrinsic but unrecognized (B₃ FAIL-FIRST).
+    /// Returns `Err` if the call IS an atomic intrinsic but unrecognized.
     fn try_classify_atomic_intrinsic(
         &self,
         func: &mir::Operand<'tcx>,
@@ -335,20 +335,127 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
     fn filter_ordering_args(
         &self,
         args: &[span::source_map::Spanned<mir::Operand<'tcx>>],
-    ) -> (Vec<span::source_map::Spanned<mir::Operand<'tcx>>>, Option<lang::RustOrdering>) {
+    ) -> Result<(Vec<span::source_map::Spanned<mir::Operand<'tcx>>>, Option<lang::RustOrdering>), TranslationError<'tcx>> {
         let mut filtered = Vec::with_capacity(args.len());
         let mut ordering = None;
         for arg in args {
             let arg_ty = self.get_type_of_operand(&arg.node);
             if is_ordering_type(self.tcx, arg_ty) {
-                // TODO: extract actual Ordering variant from MIR operand for precise traceability.
-                // For now, conservatively mark as SeqCst (no comment emitted, no warning).
-                ordering = Some(lang::RustOrdering::SeqCst);
+                // Extract the actual Ordering variant from MIR.
+                // SeqCst is the only supported ordering (SC model).
+                // Non-SeqCst = FAIL: proof would be unsound.
+                let rust_ordering = self.extract_ordering_from_operand(&arg.node)?;
+                if rust_ordering != lang::RustOrdering::SeqCst {
+                    return Err(TranslationError::UnsupportedFeature {
+                        description: format!(
+                            "non-SeqCst ordering {:?} is not supported. \
+                             RefinedRust uses a sequentially consistent model; \
+                             proofs under SC do not guarantee correctness under weaker orderings. \
+                             Use Ordering::SeqCst or add #[rr::skip] to exclude this function.",
+                            rust_ordering
+                        ),
+                    });
+                }
+                ordering = Some(rust_ordering);
             } else {
                 filtered.push(arg.clone());
             }
         }
-        (filtered, ordering)
+        Ok((filtered, ordering))
+    }
+
+    /// Extract the Ordering variant from a MIR operand.
+    ///
+    /// In borrowck MIR, `Ordering::SeqCst` appears as:
+    ///   `_2 = Ordering::SeqCst; load(copy _1, move _2)`
+    /// We resolve through copies to find the constant discriminant.
+    fn extract_ordering_from_operand(
+        &self,
+        operand: &mir::Operand<'tcx>,
+    ) -> Result<lang::RustOrdering, TranslationError<'tcx>> {
+        match operand {
+            mir::Operand::Constant(c) => {
+                self.ordering_from_const(c.const_)
+            }
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                let local = place.local;
+                let body = self.proc.get_mir();
+                for bb_data in body.basic_blocks.iter() {
+                    for stmt in &bb_data.statements {
+                        if let mir::StatementKind::Assign(assign) = &stmt.kind {
+                            if assign.0.local == local {
+                                // Handle both representations:
+                                // - Use(Constant(..)) — older MIR or optimized
+                                // - Aggregate(Adt(.., variant_idx), []) — borrowck MIR on 03-06
+                                if let mir::Rvalue::Use(mir::Operand::Constant(c)) = &assign.1 {
+                                    return self.ordering_from_const(c.const_);
+                                }
+                                if let mir::Rvalue::Aggregate(box mir::AggregateKind::Adt(_, variant_idx, _, _, _), _) = &assign.1 {
+                                    return self.ordering_from_variant_index(variant_idx.as_u32());
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(TranslationError::UnsupportedFeature {
+                    description: "cannot determine Ordering variant from non-constant operand. \
+                         Only literal Ordering::SeqCst is supported (e.g. x.load(Ordering::SeqCst)).".to_owned(),
+                })
+            }
+            _ => {
+                Err(TranslationError::UnsupportedFeature {
+                    description: "unexpected Ordering operand form".to_owned(),
+                })
+            }
+        }
+    }
+
+    /// Convert an Ordering variant index to RustOrdering.
+    ///
+    /// In borrowck MIR on 03-06, Ordering::SeqCst is represented as
+    /// Aggregate(Adt(Ordering, variant_idx=4), []) — a fieldless enum constructor.
+    fn ordering_from_variant_index(
+        &self,
+        variant_idx: u32,
+    ) -> Result<lang::RustOrdering, TranslationError<'tcx>> {
+        match variant_idx {
+            0 => Ok(lang::RustOrdering::Relaxed),
+            1 => Ok(lang::RustOrdering::Release),
+            2 => Ok(lang::RustOrdering::Acquire),
+            3 => Ok(lang::RustOrdering::AcqRel),
+            4 => Ok(lang::RustOrdering::SeqCst),
+            _ => Err(TranslationError::UnsupportedFeature {
+                description: format!("unknown Ordering variant index: {variant_idx}"),
+            }),
+        }
+    }
+
+    /// Convert a MIR constant of type Ordering to RustOrdering.
+    ///
+    /// std::sync::atomic::Ordering has no explicit repr; default discriminants:
+    /// Relaxed=0, Release=1, Acquire=2, AcqRel=3, SeqCst=4.
+    fn ordering_from_const(
+        &self,
+        c: mir::Const<'tcx>,
+    ) -> Result<lang::RustOrdering, TranslationError<'tcx>> {
+        let typing_env = ty::TypingEnv::post_analysis(self.tcx, self.proc.get_id());
+        if let Some(val) = c.try_eval_scalar_int(self.tcx, typing_env) {
+            let discr = val.to_u32();
+            match discr {
+                0 => Ok(lang::RustOrdering::Relaxed),
+                1 => Ok(lang::RustOrdering::Release),
+                2 => Ok(lang::RustOrdering::Acquire),
+                3 => Ok(lang::RustOrdering::AcqRel),
+                4 => Ok(lang::RustOrdering::SeqCst),
+                _ => Err(TranslationError::UnsupportedFeature {
+                    description: format!("unknown Ordering discriminant: {discr}"),
+                }),
+            }
+        } else {
+            Err(TranslationError::UnsupportedFeature {
+                description: "cannot evaluate Ordering constant at compile time".to_owned(),
+            })
+        }
     }
 
     /// Generate a Coq comment preserving the original Rust ordering.
@@ -1122,7 +1229,8 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                     info!("Translating mode(atomic) method: {kind:?}");
 
                     // Filter Ordering args (no-op for mode(atomic), removes for std shim).
-                    let (filtered_args, ordering) = self.filter_ordering_args(args);
+                    // FAIL if non-SeqCst ordering detected.
+                    let (filtered_args, ordering) = self.filter_ordering_args(args)?;
 
                     // Warn only for non-SeqCst orderings
                     let is_non_sc = ordering.is_some_and(|o| o != lang::RustOrdering::SeqCst);
