@@ -863,7 +863,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         let field_def = adt_def.variants().iter().next().unwrap().fields.iter().next().unwrap();
         let field_ty = field_def.ty(tcx, substs);
         let translated_field = ty_translator.translate_type(field_ty)?;
-        let inner_rt = translated_field.get_rfn_type();
+        let _inner_rt = translated_field.get_rfn_type();
 
         // Translate return type
         let translated_ret = ty_translator.translate_type(output)?;
@@ -905,7 +905,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         if is_shared_ref && non_self_args == 0 && !ret_is_unit && !ret_is_mut_ref {
             // load: (&self) -> T
             builder.add_existential(
-                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), coq::term::Type::Infer),
             ).map_err(TranslationError::AttributeError)?;
             builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "x".to_owned()))
                 .map_err(TranslationError::AttributeError)?;
@@ -916,7 +916,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         } else if is_shared_ref && non_self_args >= 1 && !ret_is_unit && !ret_is_mut_ref {
             // swap/fetch_*: (&self, val: T, ...) -> T
             builder.add_existential(
-                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), coq::term::Type::Infer),
             ).map_err(TranslationError::AttributeError)?;
             builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "x".to_owned()))
                 .map_err(TranslationError::AttributeError)?;
@@ -927,7 +927,7 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         } else if is_by_value && non_self_args == 0 && !ret_is_unit {
             // into_inner: (self) -> T
             builder.add_existential(
-                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), coq::term::Type::Infer),
             ).map_err(TranslationError::AttributeError)?;
             builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "x".to_owned()))
                 .map_err(TranslationError::AttributeError)?;
@@ -935,11 +935,11 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
         } else if is_mut_ref && non_self_args == 0 && ret_is_mut_ref {
             // get_mut: (&mut self) -> &mut T
             builder.add_existential(
-                coq::binder::Binder::new_with_name_hint("x".to_owned(), inner_rt),
+                coq::binder::Binder::new_with_name_hint("x".to_owned(), coq::term::Type::Infer),
             ).map_err(TranslationError::AttributeError)?;
             builder.add_existential(
                 coq::binder::Binder::new_with_name_hint(
-                    "γ".to_owned(), coq::term::Type::Literal("gname".to_owned()),
+                    "γ".to_owned(), coq::term::Type::Infer,
                 ),
             ).map_err(TranslationError::AttributeError)?;
             builder.set_ret_type(specs::TypeWithRef::new(translated_ret.clone(), "(x, γ)".to_owned()))

@@ -120,12 +120,6 @@ impl<'def> LiteralUse<'def> {
     /// Get the `syn_type` term for this type use.
     #[must_use]
     pub fn generate_raw_syn_type_term(&self) -> lang::SynType {
-        // For atomic transparent single-field types, the syn_type is already
-        // the inner field's fully-determined SynType (e.g. PtrSynType).
-        // Don't apply type params — the inner layout doesn't depend on them.
-        if self.def.info.is_atomic() {
-            return self.def.syn_type.clone();
-        }
         let ty_inst: Vec<lang::SynType> = self
             .scope_inst
             .as_ref()
@@ -140,12 +134,6 @@ impl<'def> LiteralUse<'def> {
 
     #[must_use]
     pub fn generate_syn_type_term(&self) -> lang::SynType {
-        // For atomic transparent single-field types, the syn_type is already
-        // the inner field's fully-determined SynType (e.g. PtrSynType).
-        // Don't apply type params — the inner layout doesn't depend on them.
-        if self.def.info.is_atomic() {
-            return self.def.syn_type.clone();
-        }
         let ty_inst: Vec<lang::SynType> = self
             .scope_inst
             .as_ref()
@@ -154,6 +142,15 @@ impl<'def> LiteralUse<'def> {
             .into_iter()
             .map(Into::into)
             .collect();
+
+        // For mode(atomic) transparent types, return inner field's syntype
+        // to match at_ex_plain_t's ty_syn_type delegation to inner type.
+        if self.def.info.is_atomic() {
+            if let Some(inner_st) = ty_inst.first() {
+                return inner_st.clone();
+            }
+        }
+
         let specialized_spec = coq::term::App::new(self.def.syn_type.clone(), ty_inst);
         lang::SynType::Literal(format!("({specialized_spec} : syn_type)"))
     }

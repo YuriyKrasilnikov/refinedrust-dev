@@ -1112,10 +1112,17 @@ Section prove_subtype.
   Global Existing Instance prove_with_subtype_primitive_inst | 1002.
 
   Lemma prove_with_subtype_case_destruct E L step pm {A} (b : A) P T :
-    case_destruct b (λ b r, (prove_with_subtype E L step pm (P b r) T))
+    case_destruct b (λ b r,
+      normalize_spatial_context E L True (λ L2,
+      prove_with_subtype E L2 step pm (P b r) T))
     ⊢ prove_with_subtype E L step pm (case_destruct b P) T.
   Proof.
-    rewrite /case_destruct. apply prove_with_subtype_exists.
+    rewrite /case_destruct.
+    iIntros "(%b' & HT)".
+    iApply prove_with_subtype_exists. iExists b'.
+    iIntros (????) "#CTX #HE HL".
+    iMod ("HT" with "[] CTX HE HL [//]") as "(%L2 & HL & HT)"; first done.
+    by iApply ("HT" with "[] [] [] CTX HE HL").
   Qed.
   Definition prove_with_subtype_case_destruct_inst := [instance @prove_with_subtype_case_destruct].
   Global Existing Instance prove_with_subtype_case_destruct_inst.
@@ -1260,10 +1267,29 @@ Section prove_subtype.
     prove_with_subtype E L step pm P T :-
       c, b ← destruct a;
       trace (if b then DestructHintProve c else DestructHintProveKnown c);
-      return (prove_with_subtype E L step pm P T).
+      return (normalize_spatial_context E L True (λ L2,
+        (prove_with_subtype E L2 step pm P T))).
   Proof.
-    iIntros "(%b & HT)". done.
+    iIntros "(%b & HT)".
+    iIntros (????) "#CTX #HE HL".
+    iMod ("HT" with "[] CTX HE HL [//]") as "(%L2 & HL & HT)"; first done.
+    iApply ("HT" with "[] [] [] CTX HE HL"); done.
   Qed.
+
+  Lemma prove_with_subtype_destruct_hint {A} (a : A) P E L step pm T :
+    prove_with_subtype E L step pm (⌜destruct_hint a P⌝) T :-
+      c, b ← destruct a;
+      trace (if b then DestructHintProve c else DestructHintProveKnown c);
+      return (normalize_spatial_context E L True (λ L2,
+        (prove_with_subtype E L2 step pm (⌜P c⌝) T))).
+  Proof.
+    iIntros "(%b & HT)".
+    iIntros (????) "#CTX #HE HL".
+    iMod ("HT" with "[] CTX HE HL [//]") as "(%L2 & HL & HT)"; first done.
+    iApply ("HT" with "[] [] [] CTX HE HL"); done.
+  Qed.
+  Definition prove_with_subtype_destruct_hint_inst := [instance @prove_with_subtype_destruct_hint].
+  Global Existing Instance prove_with_subtype_destruct_hint_inst.
 
   (** Instances for Option *)
   (** first some simplification instances that trigger if we shouldn't destruct. *)
@@ -2919,13 +2945,14 @@ Section subsume.
     iApply ("HΦ" with "HL Hf Hv"). by iApply "HT".
   Qed.
 
-  Lemma typed_if_wand E L v (P T1 T2 T1' T2' : iProp Σ):
+  Lemma typed_if_wand E L v P (T1 T2 T1' T2' : llctx → iProp Σ):
     typed_if E L v P T1 T2 -∗
-    ((T1 -∗ T1') ∧ (T2 -∗ T2')) -∗
+    ((∀ L2, T1 L2 -∗ T1' L2) ∧ (∀ L2, T2 L2 -∗ T2' L2)) -∗
     typed_if E L v P T1' T2'.
   Proof.
-    iIntros "Hif HT Hv". iDestruct ("Hif" with "Hv") as (b ?) "HC".
-    iExists _. iSplit; first done. destruct b.
+    iIntros "Hif HT". iIntros (??) "CTX HE HL Hv".
+    iMod ("Hif" with "[] CTX HE HL Hv") as (b ?) "($ & $ & HC)"; first done.
+    destruct b.
     - iDestruct "HT" as "[HT _]". by iApply "HT".
     - iDestruct "HT" as "[_ HT]". by iApply "HT".
   Qed.
@@ -3220,13 +3247,12 @@ Section subsume.
 
   Lemma type_ife E L f e1 e2 e3 T:
     typed_val_expr E L f e1 (λ L' v m rt ty r,
-      typed_if E L' v (v ◁ᵥ{f.1, m} r @ ty) (typed_val_expr E L' f e2 T) (typed_val_expr E L' f e3 T))
+      typed_if E L' v (v ◁ᵥ{f.1, m} r @ ty) (λ L2, typed_val_expr E L2 f e2 T) (λ L2, typed_val_expr E L2 f e3 T))
     ⊢ typed_val_expr E L f (IfE BoolOp e1 e2 e3) T.
   Proof.
     iIntros "He1" (Φ) "#LFT #HE HL Hf HΦ".
     wpe_bind. iApply ("He1" with "LFT HE HL Hf"). iIntros (L1 v1 m1 rt1 ty1 r1) "HL Hf Hv1 Hif".
-    iDestruct ("Hif" with "Hv1") as "HT".
-    iDestruct "HT" as (b) "(% & HT)".
+    iMod ("Hif" with "[] LFT HE HL Hv1") as "(%b & %L2 & % & HL & HT)"; first done.
     iApply wp_if_bool; [done|..].
     iApply physical_step_intro. iNext.
     destruct b; by iApply ("HT" with "LFT HE HL Hf").
@@ -3261,41 +3287,41 @@ Section subsume.
   Lemma type_logical_and E L f e1 e2 T:
     typed_val_expr E L f e1 (λ L1 v1 m1 rt1 ty1 r1,
       typed_if E L1 v1 (v1 ◁ᵥ{f.1, m1} r1 @ ty1)
-       (typed_val_expr E L1 f e2 (λ L2 v2 m2 rt2 ty2 r2,
-        typed_if E L2 v2 (v2 ◁ᵥ{f.1, m2} r2 @ ty2)
-           (typed_value f.1 (val_of_bool true) (T L2 (val_of_bool true)))
-           (typed_value f.1 (val_of_bool false) (T L2 (val_of_bool false)))))
-       (typed_value f.1 (val_of_bool false) (T L1 (val_of_bool false))))
+       (λ L2, typed_val_expr E L2 f e2 (λ L3 v2 m2 rt2 ty2 r2,
+        typed_if E L3 v2 (v2 ◁ᵥ{f.1, m2} r2 @ ty2)
+           (λ L4, typed_value f.1 (val_of_bool true) (T L4 (val_of_bool true)))
+           (λ L4, typed_value f.1 (val_of_bool false) (T L4 (val_of_bool false)))))
+       (λ L2, typed_value f.1 (val_of_bool false) (T L2 (val_of_bool false))))
     ⊢ typed_val_expr E L f (e1 &&{BoolOp, BoolOp, U8} e2)%E T.
   Proof.
     iIntros "HT". rewrite /LogicalAnd. iApply type_ife.
     iApply (typed_val_expr_wand with "HT"). iIntros (L1 v m rt ty r) "HT".
-    iApply (typed_if_wand with "HT"). iSplit; iIntros "HT".
+    iApply (typed_if_wand with "HT"). iSplit; iIntros (L2) "HT".
     2: { iApply type_val. by rewrite !val_of_bool_i2v. }
     iApply type_ife.
-    iApply (typed_val_expr_wand with "HT"). iIntros (L2 v2 m2 rt2 ty2 r2) "HT".
+    iApply (typed_val_expr_wand with "HT"). iIntros (L3 v2 m2 rt2 ty2 r2) "HT".
     iApply (typed_if_wand with "HT").
-    iSplit; iIntros "HT"; iApply type_val; by rewrite !val_of_bool_i2v.
+    iSplit; iIntros (L4) "HT"; iApply type_val; by rewrite !val_of_bool_i2v.
   Qed.
 
   Lemma type_logical_or E L f e1 e2 T:
     typed_val_expr E L f e1 (λ L1 v1 m1 rt1 ty1 r1,
       typed_if E L1 v1 (v1 ◁ᵥ{f.1, m1} r1 @ ty1)
-      (typed_value f.1 (val_of_bool true) (T L1 (val_of_bool true)))
-      (typed_val_expr E L1 f e2 (λ L2 v2 m2 rt2 ty2 r2,
-        typed_if E L2 v2 (v2 ◁ᵥ{f.1, m2} r2 @ ty2)
-          (typed_value f.1 (val_of_bool true) (T L2 (val_of_bool true)))
-          (typed_value f.1 (val_of_bool false) (T L2 (val_of_bool false))))))
+      (λ L2, typed_value f.1 (val_of_bool true) (T L2 (val_of_bool true)))
+      (λ L2, typed_val_expr E L2 f e2 (λ L3 v2 m2 rt2 ty2 r2,
+        typed_if E L3 v2 (v2 ◁ᵥ{f.1, m2} r2 @ ty2)
+          (λ L4, typed_value f.1 (val_of_bool true) (T L4 (val_of_bool true)))
+          (λ L4, typed_value f.1 (val_of_bool false) (T L4 (val_of_bool false))))))
     ⊢ typed_val_expr E L f (e1 ||{BoolOp, BoolOp, U8} e2)%E T.
   Proof.
     iIntros "HT". rewrite /LogicalOr. iApply type_ife.
     iApply (typed_val_expr_wand with "HT"). iIntros (L1 v m rt ty r) "HT".
-    iApply (typed_if_wand with "HT"). iSplit; iIntros "HT".
+    iApply (typed_if_wand with "HT"). iSplit; iIntros (L2) "HT".
     1: { iApply type_val. by rewrite !val_of_bool_i2v. }
     iApply type_ife.
-    iApply (typed_val_expr_wand with "HT"). iIntros (L2 v2 m2 rt2 ty2 r2) "HT".
+    iApply (typed_val_expr_wand with "HT"). iIntros (L3 v2 m2 rt2 ty2 r2) "HT".
     iApply (typed_if_wand with "HT").
-    iSplit; iIntros "HT"; iApply type_val; by rewrite !val_of_bool_i2v.
+    iSplit; iIntros (L4) "HT"; iApply type_val; by rewrite !val_of_bool_i2v.
   Qed.
 
   (** Similar to type_assign, use is formulated with a skip over the expression, in order to allow
@@ -4641,12 +4667,12 @@ Section subsume.
   Lemma type_if E L f e s1 s2 fn R join ϝ :
     typed_val_expr E L f e (λ L' v m rt ty r,
       typed_if E L' v (v ◁ᵥ{f.1, m} r @ ty)
-          (typed_stmt E L' f s1 fn R ϝ) (typed_stmt E L' f s2 fn R ϝ))
+          (λ L2, typed_stmt E L2 f s1 fn R ϝ) (λ L2, typed_stmt E L2 f s2 fn R ϝ))
     ⊢ typed_stmt E L f (if{BoolOp, join}: e then s1 else s2) fn R ϝ.
   Proof.
     iIntros "He". iIntros (?) "#CTX #HE HL Hf Hcont". wps_bind.
     iApply ("He" with "CTX HE HL Hf"). iIntros (L' v m rt ty r) "HL Hf Hv Hs".
-    iDestruct ("Hs" with "Hv") as "(%b & % & Hs)".
+    iMod ("Hs" with "[] CTX HE HL Hv") as "(%b & %L2 & % & HL & Hs)"; first done.
     iApply wps_if_bool; [done|..].
     iApply physical_step_intro; iNext.
     by destruct b; iApply ("Hs" with "CTX HE HL Hf").

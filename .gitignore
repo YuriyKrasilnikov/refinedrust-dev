@@ -14,7 +14,7 @@ _RocqProject
 .nia.cache
 rustc-ice-*
 _CoqProject
-dune-project
+/dune-project
 dune-workspace
 
 case_studies/**/Cargo.lock

@@ -82,66 +82,6 @@ lazymatch rt with
       end
   end.
 
-Ltac liDestruct_hook term ::=
-  (** Revert branching hypotheses that are affected by the term.
-    For pure terms, Lithium itself already takes care of this. *)
-  li_unfold_lets_in_context;
-  repeat iSelect (if_iNone _ _) (fun H =>
-    match iTypeOf H with
-    | Some (_, if_iNone ?x _) =>
-        match term with
-        | context [x] => idtac
-        end;
-        iRevert H
-    end
-  );
-  repeat iSelect (if_iSome _ _) (fun H =>
-    match iTypeOf H with
-    | Some (_, if_iSome ?x _) =>
-        match term with
-        | context [x] => idtac
-        end;
-        iRevert H
-    end
-  );
-  repeat iSelect (if_iOk _ _) (fun H =>
-    match iTypeOf H with
-    | Some (_, if_iOk ?x _) =>
-        match term with
-        | context [x] => idtac
-        end;
-        iRevert H
-    end
-  );
-  repeat iSelect (if_iErr _ _) (fun H =>
-    match iTypeOf H with
-    | Some (_, if_iErr ?x _) =>
-        match term with
-        | context [x] => idtac
-        end;
-        iRevert H
-    end
-  );
-  repeat iSelect (if_iFalse _ _) (fun H =>
-    match iTypeOf H with
-    | Some (_, if_iFalse ?x _) =>
-        match term with
-        | context [x] => idtac
-        end;
-        iRevert H
-    end
-  );
-  repeat iSelect (if_iTrue _ _) (fun H =>
-    match iTypeOf H with
-    | Some (_, if_iTrue ?x _) =>
-        match term with
-        | context [x] => idtac
-        end;
-        iRevert H
-    end
-  );
-  try let_bind_envs
-.
 
 Ltac liExtensible_to_i2p_hook P bind cont ::=
   lazymatch P with
@@ -282,7 +222,85 @@ Section automation.
   Lemma tac_find_tc_inst (H : Type) (HP : H) (T : H → iProp Σ) :
     T HP ⊢ find_tc_inst H T.
   Proof. iIntros "HT". iExists HP. iFrame. Qed.
+
+
+  (** Machinery for context normalization *)
+  Lemma tac_normalize_revert_hypothesis Δ i P E L R T :
+    envs_lookup i Δ = Some (false, P) →
+    envs_entails (envs_delete false i false Δ) (normalize_spatial_context E L (P ∗ R) T) →
+    envs_entails Δ (normalize_spatial_context E L R T).
+  Proof.
+    rewrite envs_entails_unseal. intros ? HQ.
+    rewrite (envs_lookup_sound' _ false) // bi.intuitionistically_if_elim.
+    iIntros "(HP & Hctx)".
+    iPoseProof (HQ with "Hctx") as "HT".
+    rewrite /normalize_spatial_context/introduce_with_hooks.
+    iIntros (??) "CTX HE HL HR".
+    iApply ("HT" with "[//] CTX HE HL"). iFrame.
+  Qed.
+  Lemma tac_normalize_done Δ E L R T :
+    envs_entails Δ (introduce_with_hooks E L R T) →
+    envs_entails Δ (normalize_spatial_context E L R T).
+  Proof. done. Qed.
 End automation.
+
+(** Determines whether an assumption in the spatial context should be reverted for normalization *)
+Ltac should_normalize term :=
+  match term with
+  | if_iNone None _ =>
+      idtac
+  | if_iNone Some _ =>
+      idtac
+  | if_iSome (Some _) _ =>
+      idtac
+  | if_iSome None _ =>
+      idtac
+  | if_iOk (Ok _) _ =>
+      idtac
+  | if_iOk (Err _) _ =>
+      idtac
+  | if_iErr (Err _) _ =>
+      idtac
+  | if_iErr (Ok _) _ =>
+      idtac
+  | if_iTrue true _ =>
+      idtac
+  | if_iTrue false _ =>
+      idtac
+  | if_iFalse true _ =>
+      idtac
+  | if_iFalse false _ =>
+      idtac
+  | _ =>
+      let term := eval simpl in term in
+      match term with
+      | (_ ∗ _)%I =>
+          idtac
+      | (∃ _, _)%I =>
+          idtac
+      | True%I =>
+          idtac
+      end
+  end.
+
+Ltac liRNormalizeSpatialContext :=
+  lazymatch goal with
+  | |- envs_entails _ (normalize_spatial_context ?E ?L ?R ?T) =>
+    (* Recursive Ltac to revert all the hypotheses we should normalize *)
+    let rec go Hs :=
+    lazymatch Hs with
+    | Esnoc ?Hs2 ?id ?Q => first [
+      should_normalize Q;
+      notypeclasses refine (tac_normalize_revert_hypothesis _ id Q _ _ _ _ _ _); [li_pm_reflexivity | li_pm_reduce ]
+      | go Hs2 ]
+    | Enil =>
+        notypeclasses refine (tac_normalize_done _ _ _ _ _ _)
+    end in
+    lazymatch goal with
+    | |- envs_entails (Envs ?Hi ?Hs _) _ => go Hs
+    | H := (Envs ?Hi ?Hs _) |- envs_entails _ _ => go Hs
+    end
+  end.
 
 Ltac liRIntroduceLetInGoal :=
   lazymatch goal with
@@ -465,6 +483,8 @@ Ltac liRExpr :=
 
 Ltac liRJudgement :=
   lazymatch goal with
+    | |- envs_entails _ (normalize_spatial_context ?E ?L _ ?T) =>
+        liRNormalizeSpatialContext
     (* place finish *)
     | |- envs_entails _ (typed_place_finish ?π ?E ?L _ _ _ _ _ _ _ ?T) =>
       (* simplify eqcasts *)
@@ -1225,37 +1245,33 @@ Ltac normalize_aggressively :=
   autounfold with solve_goal_unfold in *;
   unfold_common_caesium_defs;
   simplify_layout_assum;
+  simplify_layout_goal;
   unfold unit_sl in *.
 
 (** The main automation tactic after normalizing *)
 Ltac solve_goal_final_hook ::=
+  unfold reverse_coercion in *; simpl in *;
   refined_solver lia
 .
 
 (** The main sidecondition tactic, called after [sidecond_solver]: basically, an adaptation of [solve_goal].
   Important: does not change the goal if it doesn't fully solve it. *)
 Ltac sidecond_hammer_it :=
-  simpl;
-  try fast_done;
   solve_goal_prepare_hook;
 
   normalize_and_simpl_goal;
   solve_goal_normalized_prepare_hook; reduce_closed_Z; enrich_context;
   repeat case_bool_decide => //; repeat case_decide => //; repeat case_match => //;
 
-  try solve_goal_final_hook;
-
-  (* if the goal isn't solved yet, try harder to normalize *)
-  normalize_aggressively;
-  normalize_and_simpl_goal;
-  solve_goal_normalized_prepare_hook; reduce_closed_Z; enrich_context;
-  repeat case_bool_decide => //; repeat case_decide => //; repeat case_match => //;
-
-  solve_goal_final_hook
-.
+  solve_goal_final_hook.
 Ltac sidecond_hammer :=
   sidecond_hammer_normalize;
-  try sidecond_hammer_it
+  simpl;
+  try fast_done;
+  try sidecond_hammer_it;
+  (* if the goal isn't solved yet, try harder to normalize *)
+  (* NB [normalize_aggressively] needs the layout facts still in the goal *)
+  try (normalize_aggressively; sidecond_hammer_it)
 .
 
 (** For solving [CanSolve] conditions *)

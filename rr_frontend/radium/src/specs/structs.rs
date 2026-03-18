@@ -615,22 +615,16 @@ impl<'def> Abstract<'def> {
                 synty.to_string()
             });
 
-        let info = types::AdtShimInfo::new(None, self.has_invariant(), atomic_inner_st.clone());
-
-        // For mode(atomic) + repr(transparent) + single field, use the inner
-        // field's syn_type instead of the struct's sls. This ensures that
-        // local_live allocations match at_ex_plain_t's ty_syn_type delegation.
-        let syn_type = if let Some(ref inner_st) = atomic_inner_st {
-            lang::SynType::Literal(inner_st.clone())
-        } else {
-            lang::SynType::Literal(self.sls_def_name().to_owned())
-        };
+        // mode(atomic) invariant (at_ex_plain_t) does not use trait attrs —
+        // only the type parameter T is part of the Coq spec_with signature.
+        let needs_trait_attrs = self.has_invariant() && !self.is_atomic();
+        let info = types::AdtShimInfo::new(None, needs_trait_attrs, atomic_inner_st);
 
         types::Literal {
             rust_name: Some(self.name().to_owned()),
             type_term: self.public_type_name(),
             refinement_type: coq::term::Type::Literal(self.public_rt_def_name()),
-            syn_type,
+            syn_type: lang::SynType::Literal(self.sls_def_name().to_owned()),
             info,
         }
     }

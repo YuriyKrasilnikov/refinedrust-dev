@@ -58,7 +58,7 @@ fn make_lft_map_string(els: &Vec<(coq::Ident, coq::Ident)>) -> String {
 
 #[derive(Clone, Eq, PartialEq, Debug, Display)]
 pub enum LitTerm {
-    #[display("TypeRt {}", _0)]
+    #[display("TypeRt ({})", _0)]
     TypeRt(RustType),
     #[display("AppDef [{}] [{}]", fmt_list!(_0, "; "), fmt_list!(_1, "; "))]
     AppDef(Vec<String>, Vec<Self>),
@@ -235,7 +235,10 @@ impl RustType {
 
             Type::Literal(lit) => {
                 if let Some(scope_inst) = lit.scope_inst.as_ref() {
-                    let inst: RustScopeInst = scope_inst.into();
+                    let mut inst: RustScopeInst = scope_inst.into();
+                    if !lit.def.info.needs_trait_attrs() {
+                        inst.trait_attrs.clear();
+                    }
                     Self::Lit(vec![lit.def.type_term.clone()], inst)
                 } else {
                     Self::Lit(vec![lit.def.type_term.clone()], RustScopeInst::default())

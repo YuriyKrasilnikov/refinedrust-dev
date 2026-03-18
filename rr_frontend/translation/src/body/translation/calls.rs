@@ -172,8 +172,38 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
                 callee_did,
                 ty_params.as_slice(),
             )?;
+            drop(scope);
 
-            let fn_inst = quantified_args.fn_scope_inst;
+            let mut fn_inst = quantified_args.fn_scope_inst;
+
+            // Unified augmentation for remote atomic methods.
+            //
+            // For methods on atomic type aliases (AtomicBool = Atomic<bool>,
+            // AtomicPtr<T> = Atomic<*mut T>, etc.), the MIR generic args may not match
+            // the ADT's actual type params. E.g., AtomicPtr<u8>'s MIR has T=u8 but the
+            // underlying Atomic<*mut u8> needs T=*mut u8 as the inner type.
+            //
+            // We resolve aliases via tcx.type_of(impl_did).instantiate(...) → Atomic<*mut u8>,
+            // then use the resolved ADT substs as surrounding type params.
+            if !callee_did.is_local()
+                && let Some(impl_did) = tcx.impl_of_assoc(callee_did)
+                && !tcx.impl_is_of_trait(impl_did)
+            {
+                let n = tcx.generics_of(impl_did).own_params.len().min(ty_params.len());
+                let self_ty = tcx.type_of(impl_did).instantiate(tcx, &ty_params.as_slice()[..n]);
+                if let ty::TyKind::Adt(adt_def, adt_substs) = self_ty.kind()
+                    && self.ty_translator.translator.lookup_adt_shim(adt_def.did())
+                        .is_some_and(|lit| lit.info.is_atomic())
+                {
+                    fn_inst.clear_surrounding();
+                    for v in adt_substs.iter() {
+                        if let Some(ty) = v.as_type() {
+                            let translated = self.ty_translator.translate_type(ty)?;
+                            fn_inst.add_surrounding_ty_param(translated);
+                        }
+                    }
+                }
+            }
 
             info!(
                 "Registered procedure instance {} of {:?} with {:?} and layouts {:?}",

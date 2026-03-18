@@ -496,10 +496,12 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
             // generate the code for closure trait shims
             writeln!(code_file, "(* closure shims *)").unwrap();
-            for info in self.procedure_registry.closure_info.values() {
-                for def in &info.generated_functions {
-                    writeln!(code_file, "{}", def.code).unwrap();
-                    writeln!(code_file).unwrap();
+            for (did, info) in &self.procedure_registry.closure_info {
+                if self.procedure_registry.lookup_function_mode(did.def_id).unwrap().needs_def() {
+                    for def in &info.generated_functions {
+                        writeln!(code_file, "{}", def.code).unwrap();
+                        writeln!(code_file).unwrap();
+                    }
                 }
             }
             write!(code_file, "End code.").unwrap();
@@ -642,11 +644,13 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
 
         // also write templates for the closure shim proofs
         {
-            for info in self.procedure_registry.closure_info.values() {
-                for fun in &info.generated_functions {
-                    let path = file_path(fun.name());
-                    let mut template_file = io::BufWriter::new(File::create(path.as_path()).unwrap());
-                    write_template(&mut template_file, fun, false);
+            for (did, info) in &self.procedure_registry.closure_info {
+                if self.procedure_registry.lookup_function_mode(did.def_id).unwrap().needs_proof() {
+                    for fun in &info.generated_functions {
+                        let path = file_path(fun.name());
+                        let mut template_file = io::BufWriter::new(File::create(path.as_path()).unwrap());
+                        write_template(&mut template_file, fun, false);
+                    }
                 }
             }
         }
@@ -730,9 +734,12 @@ impl<'rcx> VerificationCtxt<'_, 'rcx> {
         }
 
         // also write proofs for closure shims
-        for info in self.procedure_registry.closure_info.values() {
+        for (did, info) in &self.procedure_registry.closure_info {
             for fun in &info.generated_functions {
-                write_proof(fun);
+                let mode = self.procedure_registry.lookup_function_mode(did.def_id).unwrap();
+                if mode.needs_proof() {
+                    write_proof(fun);
+                }
             }
         }
 
@@ -1029,42 +1036,103 @@ fn register_shims<'tcx>(vcx: &mut VerificationCtxt<'tcx, '_>) -> Result<(), base
         }
     }
 
-    for shim in vcx.shim_registry.get_adt_shims() {
-        let Some(resolved_did) = search::try_resolve_did(vcx.tcx, &shim.path) else {
-            println!("Warning: cannot find defid for shim {:?}, skipping", shim.path);
-            continue;
-        };
-
-        // If the resolved DefId is a type alias (e.g. nightly where AtomicU8 = Atomic<u8>),
-        // resolve through to the underlying ADT's DefId. For struct DefIds this is idempotent.
-        let did = vcx
-            .tcx
-            .type_of(resolved_did)
-            .instantiate_identity()
-            .ty_adt_def()
-            .map_or(resolved_did, |adt| adt.did());
-
-        // On newer nightlies, multiple type aliases (AtomicU8, AtomicI32, ...) resolve
-        // to the same underlying ADT (Atomic<T>). Skip duplicates — the first registration
-        // marks the ADT as atomic; inner type is determined from substs at call site.
-        if vcx.type_translator.lookup_adt_shim(did).is_some() {
-            info!("ADT shim for {:?} already registered (alias collision), skipping", shim.path);
+    // For method shims that resolved: propagate registration to all per-type inherent
+    // impls of the same ADT. This handles type aliases (e.g. nightly where AtomicU8 = Atomic<u8>)
+    // where multiple per-type impls exist but only one method DefId was found by path resolution.
+    for shim in vcx.shim_registry.get_function_shims() {
+        if !shim.is_method {
             continue;
         }
-
-        let lit = specs::types::Literal {
-            rust_name: None,
-            type_term: shim.sem_type.clone(),
-            syn_type: lang::SynType::Literal(shim.syn_type.clone()),
-            refinement_type: coq::term::Type::Literal(shim.refinement_type.clone()),
-            info: shim.info.clone(),
+        let Some(registered_did) = resolve_shim(vcx, &shim.path, true) else {
+            continue;
         };
-
-        if let Err(e) = vcx.type_translator.register_adt_shim(did, &lit) {
-            println!("Warning: {}", e);
+        if vcx.procedure_registry.lookup_function(registered_did).is_none() {
+            continue;
         }
+        let Some(assoc_item) = vcx.tcx.opt_associated_item(registered_did) else {
+            continue;
+        };
+        let impl_did = assoc_item.container_id(vcx.tcx);
+        let self_ty = vcx.tcx.type_of(impl_did).instantiate_identity();
+        let Some(adt_def) = self_ty.ty_adt_def() else {
+            continue;
+        };
+        let method_name = assoc_item.name();
+        let meta = vcx.procedure_registry.lookup_function(registered_did).unwrap();
+        for other_impl in vcx.tcx.inherent_impls(adt_def.did()) {
+            for item in vcx.tcx.associated_items(*other_impl).in_definition_order() {
+                if item.name() == method_name
+                    && vcx.procedure_registry.lookup_function(item.def_id).is_none()
+                {
+                    let propagated_meta = procedures::Meta::new(
+                        meta.get_spec_name().to_owned(),
+                        meta.get_code_name().to_owned(),
+                        meta.get_trait_req_incl_name().to_owned(),
+                        meta.get_name().to_owned(),
+                        meta.get_mode(),
+                        meta.is_trait_default(),
+                        false,
+                    );
+                    vcx.procedure_registry.register_function(item.def_id, propagated_meta)?;
+                }
+            }
+        }
+    }
 
-        info!("Resolved ADT shim {:?} as {:?} did", shim, did);
+    // Register ADT shims in two passes: non-alias types first, then type aliases.
+    // On newer nightlies (03-06+), atomic types are type aliases for a generic Atomic<T>.
+    // All aliases resolve to the same ADT DefId. By processing non-aliases first, the
+    // generic shim (Atomic_inv_t with T parameter) registers before any alias shim
+    // (AtomicUsize_inv_t without parameter), and dedup naturally skips the aliases.
+    for pass in 0..2 {
+        for shim in vcx.shim_registry.get_adt_shims() {
+            let Some(resolved_did) = search::try_resolve_did(vcx.tcx, &shim.path) else {
+                if pass == 0 {
+                    println!("Warning: cannot find defid for shim {:?}, skipping", shim.path);
+                }
+                continue;
+            };
+
+            let is_alias = matches!(vcx.tcx.def_kind(resolved_did), hir::def::DefKind::TyAlias);
+
+            // Pass 0: non-alias only. Pass 1: alias only.
+            if (pass == 0) == is_alias {
+                continue;
+            }
+
+            // For type aliases, resolve through to the underlying ADT's DefId.
+            // Not applied for variants (e.g. Option::None) — type_of() would return
+            // the parent enum type, incorrectly mapping variant DefId to enum DefId.
+            let did = if is_alias {
+                vcx.tcx
+                    .type_of(resolved_did)
+                    .instantiate_identity()
+                    .ty_adt_def()
+                    .map_or(resolved_did, |adt| adt.did())
+            } else {
+                resolved_did
+            };
+
+            // Skip if already registered (dedup for aliases pointing to same ADT).
+            if vcx.type_translator.lookup_adt_shim(did).is_some() {
+                info!("ADT shim for {:?} already registered, skipping", shim.path);
+                continue;
+            }
+
+            let lit = specs::types::Literal {
+                rust_name: None,
+                type_term: shim.sem_type.clone(),
+                syn_type: lang::SynType::Literal(shim.syn_type.clone()),
+                refinement_type: coq::term::Type::Literal(shim.refinement_type.clone()),
+                info: shim.info.clone(),
+            };
+
+            if let Err(e) = vcx.type_translator.register_adt_shim(did, &lit) {
+                println!("Warning: {}", e);
+            }
+
+            info!("Resolved ADT shim {:?} as {:?} did", shim, did);
+        }
     }
 
     for shim in vcx.shim_registry.get_trait_shims() {
@@ -1793,7 +1861,8 @@ fn register_closure_impls(vcx: &VerificationCtxt<'_, '_>) -> Result<(), String> 
                 code_name,
                 trait_req_incl_name,
                 fn_name,
-                procedures::Mode::Prove,
+                // inherit the mode from the closure itself
+                mode,
                 true,
                 false,
             );

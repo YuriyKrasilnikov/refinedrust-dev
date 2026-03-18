@@ -538,6 +538,11 @@ impl<'def> GenericScopeInst<'def> {
         self.surrounding_tys.push(ty);
     }
 
+    pub fn clear_surrounding(&mut self) {
+        self.surrounding_tys.clear();
+        self.surrounding_trait_requirements.clear();
+    }
+
     pub fn add_lft_param(&mut self, lft: Lft) {
         self.lfts.push(lft);
     }

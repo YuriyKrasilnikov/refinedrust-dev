@@ -6,7 +6,7 @@
 // refinedrust-rustc auto-injects them via -Zcrate-attr.
 // If this test fails to compile, the injection is broken.
 
-#![rr::include("atomic")]
+#![rr::include("stdlib")]
 
 use std::sync::atomic::{AtomicU8, Ordering};
 

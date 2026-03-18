@@ -1,7 +1,7 @@
 #![feature(register_tool)]
 #![register_tool(rr)]
 #![feature(custom_inner_attributes)]
-#![rr::include("atomic")]
+#![rr::include("stdlib")]
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI8;
