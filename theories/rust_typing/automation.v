@@ -1271,7 +1271,14 @@ Ltac sidecond_hammer :=
   try sidecond_hammer_it;
   (* if the goal isn't solved yet, try harder to normalize *)
   (* NB [normalize_aggressively] needs the layout facts still in the goal *)
-  try (normalize_aggressively; sidecond_hammer_it)
+  try (normalize_aggressively; sidecond_hammer_it);
+  (* Solve [Inhabited] arithmetic goals (e.g. [Inhabited (255 ∈ u8)]).
+     These arise from typeclass resolution when typing integer literals via [type_val_int].
+     [apply populate] removes the wrapper, then [unsafe_unfold_common_caesium_defs]
+     unseals [MinInt]/[MaxInt] so [lia] can solve the resulting arithmetic. *)
+  try match goal with
+  | |- Inhabited _ => apply populate; unsafe_unfold_common_caesium_defs; simpl in *; lia
+  end
 .
 
 (** For solving [CanSolve] conditions *)
@@ -1318,6 +1325,9 @@ Ltac print_remaining_goal :=
   end.
 Ltac print_remaining_sidecond :=
   try done; try apply: inhabitant;
+  try match goal with
+  | |- Inhabited _ => apply populate; unsafe_unfold_common_caesium_defs; simpl in *; lia
+  end;
   match goal with
   | H := FUNCTION_NAME ?s |- _ =>
     print_remaining_shelved_goal s
