@@ -32,10 +32,10 @@ fn test_ordering_via_variable(x: &AtomicU8) {
 #[rr::skip] fn test_fence() { std::sync::atomic::fence(Ordering::SeqCst); }
 
 // as_ptr — not an atomic operation, no shim
-#[rr::skip] fn test_as_ptr(x: &AtomicU8) { let _p = x.as_ptr(); }
+#[rr::verify] fn test_as_ptr(x: &AtomicU8) { let _p = x.as_ptr(); }
 
-// from_ptr — unsafe, no shim
-#[rr::skip] unsafe fn test_from_ptr(p: *mut u8) { let _a = unsafe { AtomicU8::from_ptr(p) }; }
+// from_ptr — constructs atomic reference from raw pointer (unsafe)
+#[rr::verify] unsafe fn test_from_ptr(p: *mut u8) { let _a = unsafe { AtomicU8::from_ptr(p) }; }
 
 // ============================================================
 // Automation limits — frontend passes, Coq proof incomplete

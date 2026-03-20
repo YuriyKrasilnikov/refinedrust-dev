@@ -38,4 +38,12 @@ impl<T> Atomic<T> {
     pub fn get_mut(&mut self) -> &mut T {
         unimplemented!();
     }
+
+    pub fn as_ptr(&self) -> *mut T {
+        unimplemented!();
+    }
+
+    pub unsafe fn from_ptr<'a>(ptr: *mut T) -> &'a Self {
+        unimplemented!();
+    }
 }

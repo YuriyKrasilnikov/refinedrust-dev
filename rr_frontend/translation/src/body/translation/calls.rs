@@ -777,6 +777,20 @@ impl<'a, 'def: 'a, 'tcx: 'def> TX<'a, 'def, 'tcx> {
 
         // add annotations to initialize the regions for the call (before the call)
         let mut stmt_annots = Vec::new();
+
+        // Introduce early regions that appear in callee_lft_param_inst but are not
+        // yet in named_lfts. This happens for functions with lifetime params not
+        // connected to input references (e.g. from_ptr<'a>(ptr: *mut T) -> &'a Self):
+        // the early region is a Polonius inference variable without a borrow chain,
+        // so no StartLft was generated for it.
+        for early in &classification.early_regions {
+            let lft = self.format_region(*early);
+            stmt_annots.push(code::Annotation::StartLft(
+                lft,
+                vec![coq::Ident::new("_flft")],
+            ));
+        }
+
         for (r, class) in &classification.classification {
             let lft = self.format_region(*r);
             match class {

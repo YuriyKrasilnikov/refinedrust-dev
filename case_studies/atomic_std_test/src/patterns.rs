@@ -143,3 +143,64 @@ fn test_struct_field_load(c: &Counter) {
 fn test_struct_field_store(c: &Counter) {
     c.count.store(42, Ordering::SeqCst);
 }
+
+// ============================================================
+// Pointer conversion (as_ptr / from_ptr)
+// ============================================================
+
+// as_ptr + dereference returned raw pointer
+#[rr::skip]
+unsafe fn test_as_ptr_deref(x: &AtomicU8) {
+    let p = x.as_ptr();
+    let _v = unsafe { *p };
+}
+
+// from_ptr + load through returned reference
+#[rr::verify]
+unsafe fn test_from_ptr_load(p: *mut u8) {
+    let a = unsafe { AtomicU8::from_ptr(p) };
+    let _v = a.load(Ordering::SeqCst);
+}
+
+// as_ptr → from_ptr roundtrip
+#[rr::verify]
+unsafe fn test_as_ptr_from_ptr_roundtrip(x: &AtomicU8) {
+    let p = x.as_ptr();
+    let a = unsafe { AtomicU8::from_ptr(p) };
+    let _v = a.load(Ordering::SeqCst);
+}
+
+// from_ptr with explicit 'static lifetime — stuck on 'static lifetime handling
+#[rr::skip]
+unsafe fn test_from_ptr_static(p: *mut u8) {
+    let _a: &'static AtomicU8 = unsafe { AtomicU8::from_ptr(p) };
+}
+
+// ============================================================
+// AtomicPtr extended operations
+// ============================================================
+
+// AtomicPtr store + load roundtrip
+#[rr::verify]
+fn test_ptr_store_load(x: &AtomicPtr<u8>, p: *mut u8) {
+    x.store(p, Ordering::SeqCst);
+    let _v = x.load(Ordering::SeqCst);
+}
+
+// AtomicPtr swap
+#[rr::verify]
+fn test_ptr_swap_val(x: &AtomicPtr<u8>, p: *mut u8) {
+    let _old = x.swap(p, Ordering::SeqCst);
+}
+
+// ============================================================
+// Unsupported std atomic API — documented
+// ============================================================
+
+// fetch_update — requires closure, cannot map to single Caesium primitive
+#[rr::skip]
+fn test_fetch_update(x: &AtomicU8) {
+    let _r = x.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+        if v < 200 { Some(v + 1) } else { None }
+    });
+}
