@@ -1325,6 +1325,8 @@ Ltac print_remaining_goal :=
   end.
 Ltac print_remaining_sidecond :=
   try done; try apply: inhabitant;
+  (* Solve [Inhabited] arithmetic goals that survived [sidecond_hammer].
+     Same logic as in [sidecond_hammer]: unwrap Inhabited, unseal MinInt/MaxInt, lia. *)
   try match goal with
   | |- Inhabited _ => apply populate; unsafe_unfold_common_caesium_defs; simpl in *; lia
   end;

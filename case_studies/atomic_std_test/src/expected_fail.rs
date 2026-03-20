@@ -44,6 +44,9 @@ fn test_ordering_via_variable(x: &AtomicU8) {
 // Checked add on atomic load — overflow sidecondition unprovable without precondition
 #[rr::skip] fn test_checked_add(x: &AtomicU8) { let _v = x.load(Ordering::SeqCst) + 1; }
 
+// Checked sub on atomic load — underflow at v=0
+#[rr::skip] fn test_checked_sub(x: &AtomicU8) { let _v = x.load(Ordering::SeqCst) - 1; }
+
 // Two loads + checked add — same overflow issue, two existentials
 #[rr::skip]
 fn test_two_loads_add(x: &AtomicU8, y: &AtomicU8) {
