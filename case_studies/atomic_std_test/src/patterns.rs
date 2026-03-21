@@ -245,20 +245,19 @@ unsafe fn test_as_ptr_from_ptr_roundtrip(x: &AtomicU8) {
     let _v = a.load(Ordering::SeqCst);
 }
 
-// Explicit lifetime annotation on let binding — annotation ordering issue
-// get_initial_closure_constraints generates CopyLftName from local PlaceRegion
-// BEFORE it's defined by assignment annotations. Needs topological sort of bb0 annotations.
-#[rr::skip]
+// Explicit lifetime annotation on let binding
+#[rr::verify]
 unsafe fn test_from_ptr_static(p: *mut u8) {
     let _a: &'static AtomicU8 = unsafe { AtomicU8::from_ptr(p) };
 }
 
-#[rr::skip]
+#[rr::verify]
 fn test_explicit_static_ref(x: &'static AtomicU8) {
     let _v: &'static AtomicU8 = x;
 }
 
-#[rr::skip]
+
+#[rr::verify]
 fn test_explicit_lifetime_ref<'a>(x: &'a AtomicU8) {
     let _v: &'a AtomicU8 = x;
 }

@@ -239,6 +239,34 @@ impl<'a, 'tcx: 'a> PoloniusInfo<'a, 'tcx> {
         RegionKind::Unknown(unconstrained)
     }
 
+    /// Check if a region variable appears in the type of a function argument.
+    ///
+    /// Arguments are locals `_1..=_arg_count` in MIR. Regions appearing only in local
+    /// variable types (index > arg_count) return false.
+    ///
+    /// This distinguishes closure capture PlaceRegions (from args, defined early by
+    /// initial constraints) from TypeAnnotation PlaceRegions (from locals, defined late
+    /// by body assignments).
+    #[must_use]
+    pub(crate) fn is_arg_place_region(&self, region: facts::Region) -> bool {
+        let arg_count = self.mir.arg_count;
+        let mut found = false;
+        let mut clos = |r: ty::Region<'tcx>, _| match r.kind() {
+            ty::RegionKind::ReVar(rv) if rv == region.into() => {
+                found = true;
+                r
+            },
+            _ => r,
+        };
+        let mut folder = RegionFolder::new(self.tcx, &mut clos);
+        for (local, decl) in self.mir.local_decls.iter_enumerated() {
+            if local.index() >= 1 && local.index() <= arg_count {
+                folder.fold_ty(decl.ty);
+            }
+        }
+        found
+    }
+
     #[must_use]
     pub(crate) fn mk_atomic_region(&self, r: facts::Region) -> AtomicRegion {
         let kind = self.get_region_kind(r);

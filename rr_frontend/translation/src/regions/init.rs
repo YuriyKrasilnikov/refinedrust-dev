@@ -278,6 +278,22 @@ pub(crate) fn get_initial_closure_constraints<'a>(
             let lft2 = info.mk_atomic_region(*r2);
 
             if lft1.is_place() && lft2.is_value() {
+                // Only accept constraints where the PlaceRegion belongs to a
+                // function argument (e.g. closure self-ref `_1`), not a local
+                // variable. For closures, capture PlaceRegions come from args
+                // and are defined early by initial constraints — ordering is
+                // correct. For explicit lifetime type annotations (`let _v: &'a T = x`),
+                // borrowck creates TypeAnnotation inference variables with scope All
+                // that produce bidirectional PlaceRegion↔Unknown constraints here.
+                // Those PlaceRegions belong to local variables, defined later by
+                // body assignments. Accepting them would add the Unknown region to
+                // inclusion_tracker (making it "known"), causing the assignment pass
+                // to generate CopyLftName annotations that reference undefined
+                // lifetimes in the Coq output.
+                if !info.is_arg_place_region(*r1) {
+                    continue;
+                }
+
                 inclusion_tracker.add_static_inclusion(*r1, *r2, root_point);
                 inclusion_tracker.add_static_inclusion(*r2, *r1, root_point);
 
